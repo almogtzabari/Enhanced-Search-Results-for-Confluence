@@ -20,7 +20,7 @@ Enhance your Confluence experience with improved search functionality! This brow
 1. **Clone or Download the Repository**:
 
    ```bash
-   git clone https://gitlab.gpu.arm.com/Almog.Tzabary/enhanced-confluence-search-results.git
+   git clone https://github.com/almogtzabari/Enhanced-Search-Results-for-Confluence.git
    ```
 
 2. **Load the Extension in Your Browser**:
