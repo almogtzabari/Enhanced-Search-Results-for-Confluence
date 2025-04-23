@@ -1,9 +1,48 @@
-(function() {
-    // Function to get URL parameters
+document.addEventListener('DOMContentLoaded', () => {
+    /**
+     * ========== CONSTANTS & GLOBALS ==========
+     */
+    const SCROLL_OFFSET = 500;     // magic number previously used for infinite scrolling
+    const RESULTS_PER_REQUEST = 50; // magic number for how many results per fetch
+
+    // We’ll use 'let' if a variable’s value changes, and 'const' otherwise.
+    let searchText = '';
+    let baseUrl = '';
+    let domainName = '';
+
+    // Tree/Filtering/Sorting state
+    let nodeIdCounter = 0;
+    let nodeMap = {};
+    let roots = [];
+    let searchResultIds = new Set();
+    let allExpanded = true;
+    let loading = false;
+    let allResultsLoaded = false;
+    let start = 0;
+    let totalSize = null;
+    let allResults = [];
+    let filteredResults = [];
+    let spaceList = [];
+    let contributorList = [];
+    let fullSpaceList = [];
+    let fullContributorList = [];
+
+    // Variables for sorting
+    let currentSortColumn = '';
+    let currentSortOrder = 'asc'; // 'asc' or 'desc'
+
+    // Dark mode
+    let isDarkMode = false;
+
+    /**
+     * ========== UTILITY FUNCTIONS ==========
+     */
+
+    // Get URL parameters
     function getQueryParams() {
-        let params = {};
-        let queryString = window.location.search.substring(1);
-        let regex = /([^&=]+)=([^&]*)/g;
+        const params = {};
+        const queryString = window.location.search.substring(1);
+        const regex = /([^&=]+)=([^&]*)/g;
         let m;
         while ((m = regex.exec(queryString))) {
             params[decodeURIComponent(m[1])] = decodeURIComponent(m[2]);
@@ -12,18 +51,18 @@
     }
 
     function escapeHtml(text) {
-        var map = {
+        const map = {
             '&': '&amp;',
             '<': '&lt;',
             '>': '&gt;',
             '"': '&quot;',
             "'": '&#039;'
         };
-        return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+        return text.replace(/[&<>"']/g, m => map[m]);
     }
 
     function isValidInput(input) {
-        // Allow only alphanumeric characters, spaces, and some special characters
+        // Allow only alphanumeric characters, spaces, and certain special characters
         const regex = /^[a-zA-Z0-9\s\-_.@]*$/;
         return regex.test(input);
     }
@@ -33,129 +72,39 @@
         return input.replace(/[^a-zA-Z0-9\s\-_.@]/g, '');
     }
 
-    let params = getQueryParams();
-    let searchText = params.searchText || '';
-    let baseUrl = params.baseUrl || '';
-
-    // Get the domain name from the baseUrl
-    var domainName = '';
-    try {
-        domainName = (new URL(baseUrl)).hostname;
-    } catch (e) {
-        console.error('Invalid baseUrl:', baseUrl);
+    function formatDate(dateString) {
+        const date = new Date(dateString);
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0'); // months are zero-based
+        const year = date.getFullYear();
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${day}/${month}/${year} at ${hours}:${minutes}`;
     }
 
-    // Update document title
-    document.title = `Search results for '${escapeHtml(searchText)}' on ${domainName}`;
-
-    // Update the page header title
-    document.getElementById('page-title').textContent = `Enhanced Confluence Search Results (${domainName})`;
-
-    var nodeIdCounter = 0;
-    var nodeMap = {};
-    var roots = [];
-    var searchResultIds = new Set();
-    var allExpanded = true;
-    var loading = false;
-    var allResultsLoaded = false;
-    var start = 0;
-    var limit = 50; // Number of results per request
-    var totalSize = null;
-    var allResults = []; // Store all results for table view
-    var filteredResults = []; // Results after filtering
-    var spaceList = []; // List of spaces for filtering
-    var contributorList = []; // List of contributors for filtering
-    var fullSpaceList = []; // Full list of spaces
-    var fullContributorList = []; // Full list of contributors
-
-    // Variables for sorting
-    var currentSortColumn = '';
-    var currentSortOrder = 'asc'; // 'asc' or 'desc'
-
-    // Theme toggle
-    var isDarkMode = false;
-
-    document.addEventListener('DOMContentLoaded', function() {
-
-        // Add event listener to the new search input and button
-        var newSearchInput = document.getElementById('new-search-input');
-        var newSearchButton = document.getElementById('new-search-button');
-        newSearchInput.value = searchText;
-
-        newSearchInput.addEventListener('keydown', function(event) {
-            if (event.key === 'Enter') {
-                event.preventDefault();
-                performNewSearch(newSearchInput.value.trim());
-            }
-        });
-        newSearchButton.addEventListener('click', function() {
-            performNewSearch(newSearchInput.value.trim());
-        });
-
-        // Theme toggle checkbox
-        var themeToggleCheckbox = document.getElementById('theme-toggle-checkbox');
-        themeToggleCheckbox.addEventListener('change', function() {
-            toggleTheme(themeToggleCheckbox.checked);
-        });
-
-        function toggleTheme(isChecked) {
-            var body = document.body;
-            isDarkMode = isChecked;
-            if (isDarkMode) {
-                body.classList.add('dark-mode');
-            } else {
-                body.classList.remove('dark-mode');
-            }
-            // Save preference to localStorage
-            localStorage.setItem('isDarkMode', isDarkMode);
-        }
-
-        // Load theme preference on page load
-        (function loadThemePreference() {
-            var savedTheme = localStorage.getItem('isDarkMode');
-            if (savedTheme === 'true') {
-                isDarkMode = true;
-                document.body.classList.add('dark-mode');
-                themeToggleCheckbox.checked = true;
-            }
-        })();
-
-        // Initialize the page
-        document.getElementById('tree-container').style.display = 'block'; // Show the tree view by default
-
-        // Perform initial search if searchText is provided
-        if (searchText) {
-            performNewSearch(searchText);
-        }
-
-        // Add initial event listeners
-        addEventListeners();
-    });
+    /**
+     * ========== CORE LOGIC FUNCTIONS ==========
+     */
 
     function buildCQL() {
-        let cqlParts = [`type=page`];
-
+        const cqlParts = ['type=page'];
         // Escape double quotes in searchText
-        let escapedSearchText = searchText.replace(/"/g, '\\"');
-
+        const escapedSearchText = searchText.replace(/"/g, '\\"');
         // Construct text query
-        let textQuery = `(text ~ "${escapedSearchText}" OR title ~ "${escapedSearchText}")`;
+        const textQuery = `(text ~ "${escapedSearchText}" OR title ~ "${escapedSearchText}")`;
         cqlParts.push(textQuery);
 
-        let spaceFilterValue = document.getElementById('space-filter').dataset.key || '';
-        let contributorFilterValue = document.getElementById('contributor-filter').dataset.key || '';
+        // Grab filter values
+        const spaceFilterValue = document.getElementById('space-filter').dataset.key || '';
+        const contributorFilterValue = document.getElementById('contributor-filter').dataset.key || '';
 
         if (spaceFilterValue) {
             cqlParts.push(`space="${spaceFilterValue}"`);
         }
-
         if (contributorFilterValue) {
-            // Use appropriate creator field based on available data
             cqlParts.push(`creator="${contributorFilterValue}"`);
         }
-
-        let cql = cqlParts.join(' AND ');
-        return encodeURIComponent(cql);
+        return encodeURIComponent(cqlParts.join(' AND '));
     }
 
     async function performNewSearch(query) {
@@ -163,7 +112,6 @@
             alert('Please enter a search query.');
             return;
         }
-
         if (!isValidInput(query)) {
             alert('Invalid search query. Please use only alphanumeric characters, spaces, and -_.@');
             return;
@@ -173,7 +121,6 @@
 
         // Update document title
         document.title = `Search results for '${escapeHtml(query)}' on ${domainName}`;
-
         // Update the page header title
         document.getElementById('page-title').textContent = `Enhanced Confluence Search Results (${domainName})`;
 
@@ -204,11 +151,10 @@
         // Clear containers
         document.getElementById('tree-container').innerHTML = '';
         document.getElementById('table-container').innerHTML = '';
-        // Also clear the filter options
+        // Clear the filter options
         document.getElementById('space-options').innerHTML = '';
         document.getElementById('contributor-options').innerHTML = '';
 
-        // Start loading new results
         loadMoreResults();
     }
 
@@ -217,32 +163,27 @@
         loading = true;
         showLoadingIndicator(true);
 
-        var cql = buildCQL();
-
+        const cql = buildCQL();
         // Updated search URL to include expand parameter
-        var searchUrl = `${baseUrl}/rest/api/content/search?cql=${cql}&limit=${limit}&start=${start}&expand=ancestors,space,history,version`;
+        const searchUrl = `${baseUrl}/rest/api/content/search?cql=${cql}&limit=${RESULTS_PER_REQUEST}&start=${start}&expand=ancestors,space,history,version`;
 
         try {
-            var searchResponse = await fetch(searchUrl, {
+            const response = await fetch(searchUrl, {
                 method: 'GET',
-                headers: {
-                    'Accept': 'application/json'
-                },
+                headers: { 'Accept': 'application/json' },
                 credentials: 'include' // Include cookies for authentication
             });
 
-            if (!searchResponse.ok) {
-                throw new Error('Error fetching search results: ' + searchResponse.statusText);
+            if (!response.ok) {
+                throw new Error(`Error fetching search results: ${response.statusText}`);
             }
 
-            var searchData = await searchResponse.json();
-
+            const searchData = await response.json();
             if (totalSize === null) {
                 totalSize = searchData.totalSize;
             }
 
-            var results = searchData.results;
-
+            const results = searchData.results;
             if (results.length === 0) {
                 allResultsLoaded = true;
                 if (allResults.length === 0) {
@@ -255,45 +196,42 @@
 
             start += results.length;
 
-            // Process each result directly
-            for (var pageData of results) {
-                var pageId = pageData.id;
+            // Process each result
+            for (const pageData of results) {
+                const pageId = pageData.id;
                 if (searchResultIds.has(pageId)) {
                     continue; // Skip duplicates
                 }
                 searchResultIds.add(pageId);
-
                 allResults.push(pageData); // Add to all results
             }
 
-            // Update the space and contributor filter options based on the new results
+            // Update filter options (spaces/contributors)
             updateFilterOptions();
 
-            // Update the views
-            filteredResults = allResults.slice(); // Copy all results
+            // Re-filter and sort
+            filteredResults = allResults.slice();
             filterResults();
 
             if (start >= totalSize) {
                 allResultsLoaded = true;
             }
-        } catch (error) {
-            console.error(error);
-            alert('An error occurred: ' + error.message);
+        } catch (err) {
+            console.error(err);
+            alert(`An error occurred: ${err.message}`);
         }
         showLoadingIndicator(false);
         loading = false;
     }
 
-    // Function to update space and contributor filter options
     function updateFilterOptions() {
-        // Collect space and contributor information from allResults
         spaceList = [];
         contributorList = [];
 
-        allResults.forEach(function(pageData) {
-            // Collect space information
+        allResults.forEach(pageData => {
+            // Spaces
             if (pageData.space && pageData.space.key && pageData.space.name) {
-                let spaceKey = pageData.space.key;
+                const spaceKey = pageData.space.key;
                 if (!spaceList.some(s => s.key === spaceKey)) {
                     spaceList.push({
                         key: spaceKey,
@@ -302,11 +240,10 @@
                     });
                 }
             }
-
-            // Collect contributor information (creator)
+            // Contributors (creator)
             if (pageData.history && pageData.history.createdBy) {
-                let contributor = pageData.history.createdBy;
-                let contributorKey = contributor.username || contributor.userKey || contributor.accountId;
+                const contributor = pageData.history.createdBy;
+                const contributorKey = contributor.username || contributor.userKey || contributor.accountId;
                 if (contributorKey && !contributorList.some(c => c.key === contributorKey)) {
                     contributorList.push({
                         key: contributorKey,
@@ -316,116 +253,95 @@
             }
         });
 
-        // Store the full lists
-        fullSpaceList = spaceList.slice(); // Make a copy
-        fullContributorList = contributorList.slice(); // Make a copy
+        // Store full lists (for filtering as user types)
+        fullSpaceList = [...spaceList];
+        fullContributorList = [...contributorList];
 
-        // Sort the lists
+        // Sort them
         fullSpaceList.sort((a, b) => a.name.localeCompare(b.name));
         fullContributorList.sort((a, b) => a.name.localeCompare(b.name));
 
-        // Display the options
+        // Initial display
         displayFilteredSpaceOptions('');
         displayFilteredContributorOptions('');
     }
 
     function displayFilteredSpaceOptions(filterValue) {
-        var spaceOptionsContainer = document.getElementById('space-options');
+        const spaceOptionsContainer = document.getElementById('space-options');
         spaceOptionsContainer.innerHTML = '';
 
-        var filteredSpaces = fullSpaceList.filter(space =>
+        const filteredSpaces = fullSpaceList.filter(space =>
             space.name.toLowerCase().includes(filterValue.toLowerCase())
         );
 
         filteredSpaces.forEach(space => {
-            var option = document.createElement('div');
+            const option = document.createElement('div');
             option.classList.add('option');
             option.textContent = space.name;
             option.dataset.key = space.key;
             spaceOptionsContainer.appendChild(option);
         });
 
-        // Add event listeners for options
         addOptionListeners(spaceOptionsContainer, 'space-filter', 'space-options');
     }
 
     function displayFilteredContributorOptions(filterValue) {
-        var contributorOptionsContainer = document.getElementById('contributor-options');
+        const contributorOptionsContainer = document.getElementById('contributor-options');
         contributorOptionsContainer.innerHTML = '';
 
-        var filteredContributors = fullContributorList.filter(contributor =>
+        const filteredContributors = fullContributorList.filter(contributor =>
             contributor.name.toLowerCase().includes(filterValue.toLowerCase())
         );
 
         filteredContributors.forEach(contributor => {
-            var option = document.createElement('div');
+            const option = document.createElement('div');
             option.classList.add('option');
             option.textContent = contributor.name;
             option.dataset.key = contributor.key;
             contributorOptionsContainer.appendChild(option);
         });
 
-        // Add event listeners for options
         addOptionListeners(contributorOptionsContainer, 'contributor-filter', 'contributor-options');
     }
 
     function addOptionListeners(container, inputId, optionsId) {
-        container.querySelectorAll('.option').forEach(function(option) {
-            option.addEventListener('click', function() {
-                var input = document.getElementById(inputId);
+        container.querySelectorAll('.option').forEach(option => {
+            option.addEventListener('click', () => {
+                const input = document.getElementById(inputId);
                 input.value = option.textContent;
                 input.dataset.key = option.dataset.key;
                 container.style.display = 'none';
-
                 resetDataAndFetchResults();
             });
         });
     }
 
-    function formatDate(dateString) {
-        let date = new Date(dateString);
-        let day = String(date.getDate()).padStart(2, '0');
-        let month = String(date.getMonth() + 1).padStart(2, '0'); // Months are zero-based
-        let year = date.getFullYear();
-        let hours = String(date.getHours()).padStart(2, '0');
-        let minutes = String(date.getMinutes()).padStart(2, '0');
-
-        return day + '/' + month + '/' + year + ' at ' + hours + ':' + minutes;
-    }
-
     function filterResults() {
-        var textFilterValue = document.getElementById('text-filter').value.toLowerCase();
+        const textFilterValue = document.getElementById('text-filter').value.toLowerCase();
 
-        filteredResults = allResults.filter(function(pageData) {
-            var matchesText = true;
-
-            if (textFilterValue) {
-                var title = pageData.title.toLowerCase();
-                matchesText = title.includes(textFilterValue);
-            }
-
-            return matchesText;
+        filteredResults = allResults.filter(pageData => {
+            if (!textFilterValue) return true;
+            const title = pageData.title.toLowerCase();
+            return title.includes(textFilterValue);
         });
 
-        // Apply sorting
+        // Apply sorting if any
         if (currentSortColumn) {
             sortResults(currentSortColumn, currentSortOrder);
         }
 
-        // Update the views with filtered results
         if (filteredResults.length === 0) {
             showNoResultsMessage();
         } else {
             updateTableHtml(filteredResults);
             updateTreeHtml(filteredResults);
-            addEventListeners();
+            addEventListeners(); // re-attach to new DOM
         }
     }
 
     function sortResults(column, order) {
-        filteredResults.sort(function(a, b) {
+        filteredResults.sort((a, b) => {
             let valA, valB;
-
             switch (column) {
                 case 'Page Name':
                     valA = a.title.toLowerCase();
@@ -436,21 +352,32 @@
                     valB = b.space ? b.space.name.toLowerCase() : '';
                     break;
                 case 'Contributor':
-                    valA = a.history && a.history.createdBy ? a.history.createdBy.displayName.toLowerCase() : '';
-                    valB = b.history && b.history.createdBy ? b.history.createdBy.displayName.toLowerCase() : '';
+                    valA = (a.history && a.history.createdBy)
+                        ? a.history.createdBy.displayName.toLowerCase()
+                        : '';
+                    valB = (b.history && b.history.createdBy)
+                        ? b.history.createdBy.displayName.toLowerCase()
+                        : '';
                     break;
                 case 'Date Created':
-                    valA = a.history && a.history.createdDate ? new Date(a.history.createdDate) : new Date(0);
-                    valB = b.history && b.history.createdDate ? new Date(b.history.createdDate) : new Date(0);
+                    valA = (a.history && a.history.createdDate)
+                        ? new Date(a.history.createdDate)
+                        : new Date(0);
+                    valB = (b.history && b.history.createdDate)
+                        ? new Date(b.history.createdDate)
+                        : new Date(0);
                     break;
                 case 'Last Modified':
-                    valA = a.version && a.version.when ? new Date(a.version.when) : new Date(0);
-                    valB = b.version && b.version.when ? new Date(b.version.when) : new Date(0);
+                    valA = (a.version && a.version.when)
+                        ? new Date(a.version.when)
+                        : new Date(0);
+                    valB = (b.version && b.version.when)
+                        ? new Date(b.version.when)
+                        : new Date(0);
                     break;
                 default:
                     return 0;
             }
-
             if (valA < valB) return order === 'asc' ? -1 : 1;
             if (valA > valB) return order === 'asc' ? 1 : -1;
             return 0;
@@ -458,18 +385,18 @@
     }
 
     function updateTreeHtml(results) {
-        // Clear existing nodeMap and roots
+        // Clear existing structure
         nodeMap = {};
         roots = [];
-        // Build the tree structure
-        for (var pageData of results) {
-            // Create nodes for ancestors
+
+        // Build node objects
+        for (const pageData of results) {
             if (pageData.ancestors) {
-                for (var ancestor of pageData.ancestors) {
-                    var id = ancestor.id;
+                for (const ancestor of pageData.ancestors) {
+                    const id = ancestor.id;
                     if (!nodeMap[id]) {
                         nodeMap[id] = {
-                            id: id,
+                            id,
                             title: ancestor.title,
                             url: baseUrl + ancestor._links.webui,
                             children: [],
@@ -479,11 +406,11 @@
                     }
                 }
             }
-            // Create node for the page itself
-            var id = pageData.id;
+            // Create node for this page
+            const id = pageData.id;
             if (!nodeMap[id]) {
                 nodeMap[id] = {
-                    id: id,
+                    id,
                     title: pageData.title,
                     url: baseUrl + pageData._links.webui,
                     children: [],
@@ -493,66 +420,58 @@
             }
         }
 
-        // Now, build the tree by linking nodes
-        for (var pageData of results) {
-            var ancestors = pageData.ancestors || [];
-            var pageNode = nodeMap[pageData.id];
-
-            // Start from the root ancestor
+        // Link up parents/children
+        for (const pageData of results) {
+            const ancestors = pageData.ancestors || [];
+            const pageNode = nodeMap[pageData.id];
             if (ancestors.length > 0) {
-                var rootAncestorId = ancestors[0].id;
-                var rootAncestorNode = nodeMap[rootAncestorId];
-
-                // Build the hierarchy
-                var parentNode = null;
-                for (var ancestor of ancestors) {
-                    var ancestorNode = nodeMap[ancestor.id];
+                let parentNode = null;
+                for (const ancestor of ancestors) {
+                    const ancestorNode = nodeMap[ancestor.id];
                     if (parentNode && !parentNode.children.includes(ancestorNode)) {
                         parentNode.children.push(ancestorNode);
                     }
                     parentNode = ancestorNode;
                 }
-
-                // Add the page as a child of its parent
                 if (parentNode && !parentNode.children.includes(pageNode)) {
                     parentNode.children.push(pageNode);
                 }
-
-                // Ensure the root ancestor is added to roots if not already present
+                // The first ancestor is top-level
+                const rootAncestorNode = nodeMap[ancestors[0].id];
                 if (!roots.includes(rootAncestorNode)) {
                     roots.push(rootAncestorNode);
                 }
             } else {
-                // Page has no ancestors, it's a root page
+                // This page has no ancestors => root
                 if (!roots.includes(pageNode)) {
                     roots.push(pageNode);
                 }
             }
         }
 
-        // Generate the tree HTML
-        var treeContainer = document.getElementById('tree-container');
-        var treeHtml = generateTreeHtml(roots);
+        // Generate Tree HTML
+        const treeContainer = document.getElementById('tree-container');
+        const treeHtml = generateTreeHtml(roots);
         treeContainer.innerHTML = treeHtml;
     }
 
     function generateTreeHtml(nodes) {
         let html = '<ul>';
-        for (let node of nodes) {
-            let nodeClass = node.isSearchResult ? 'search-result' : 'ancestor';
-            let hasChildren = node.children.length > 0;
-            let nodeId = 'node-' + (nodeIdCounter++);
-            let arrow = hasChildren ? '<span class="arrow expanded"></span>' : '<span class="arrow empty"></span>';
+        for (const node of nodes) {
+            const nodeClass = node.isSearchResult ? 'search-result' : 'ancestor';
+            const hasChildren = node.children.length > 0;
+            const currentNodeId = `node-${nodeIdCounter++}`;
+            const arrow = hasChildren
+                ? '<span class="arrow expanded"></span>'
+                : '<span class="arrow empty"></span>';
 
-            html += '<li id="' + nodeId + '" class="' + nodeClass + '">';
-            html += arrow + ' <a href="' + node.url + '" target="_blank">' + node.title + '</a>';
-
+            html += `<li id="${currentNodeId}" class="${nodeClass}">`;
+            html += `${arrow} <a href="${node.url}" target="_blank">${node.title}</a>`;
             if (hasChildren) {
                 html += '<div class="children" style="display: block;">';
                 html += generateTreeHtml(node.children);
                 html += '</div>';
             }
-
             html += '</li>';
         }
         html += '</ul>';
@@ -560,9 +479,8 @@
     }
 
     function updateTableHtml(results) {
-        let html = generateTableHtml(results);
-        var tableContainer = document.getElementById('table-container');
-        tableContainer.innerHTML = html;
+        const tableContainer = document.getElementById('table-container');
+        tableContainer.innerHTML = generateTableHtml(results);
     }
 
     function generateTableHtml(results) {
@@ -576,25 +494,33 @@
         html += '</tr></thead>';
         html += '<tbody>';
 
-        for (let pageData of results) {
-            let title = pageData.title;
-            let url = baseUrl + pageData._links.webui;
-            let spaceName = pageData.space ? pageData.space.name : '';
-            let spaceUrl = pageData.space && pageData.space._links && pageData.space._links.webui ? baseUrl + pageData.space._links.webui : '';
-            let createdDate = pageData.history && pageData.history.createdDate ? formatDate(pageData.history.createdDate) : 'N/A';
-            let modifiedDate = pageData.version && pageData.version.when ? formatDate(pageData.version.when) : 'N/A';
-            let contributorName = pageData.history && pageData.history.createdBy ? pageData.history.createdBy.displayName : 'Unknown';
+        for (const pageData of results) {
+            const title = pageData.title;
+            const url = baseUrl + pageData._links.webui;
+            const spaceName = pageData.space ? pageData.space.name : '';
+            const spaceUrl = (pageData.space && pageData.space._links && pageData.space._links.webui)
+                ? (baseUrl + pageData.space._links.webui)
+                : '';
+            const createdDate = (pageData.history && pageData.history.createdDate)
+                ? formatDate(pageData.history.createdDate)
+                : 'N/A';
+            const modifiedDate = (pageData.version && pageData.version.when)
+                ? formatDate(pageData.version.when)
+                : 'N/A';
+            const contributorName = (pageData.history && pageData.history.createdBy)
+                ? pageData.history.createdBy.displayName
+                : 'Unknown';
 
             html += '<tr>';
-            html += '<td><a href="' + url + '" target="_blank">' + title + '</a></td>';
+            html += `<td><a href="${url}" target="_blank">${title}</a></td>`;
             if (spaceName && spaceUrl) {
-                html += '<td><a href="' + spaceUrl + '" target="_blank">' + spaceName + '</a></td>';
+                html += `<td><a href="${spaceUrl}" target="_blank">${spaceName}</a></td>`;
             } else {
-                html += '<td>' + spaceName + '</td>';
+                html += `<td>${spaceName}</td>`;
             }
-            html += '<td>' + contributorName + '</td>';
-            html += '<td>' + createdDate + '</td>';
-            html += '<td>' + modifiedDate + '</td>';
+            html += `<td>${contributorName}</td>`;
+            html += `<td>${createdDate}</td>`;
+            html += `<td>${modifiedDate}</td>`;
             html += '</tr>';
         }
 
@@ -603,131 +529,121 @@
     }
 
     function showNoResultsMessage() {
-        var treeContainer = document.getElementById('tree-container');
-        var tableContainer = document.getElementById('table-container');
-        var message = '<p>No results found.</p>';
-
-        treeContainer.innerHTML = message;
-        tableContainer.innerHTML = message;
+        const message = '<p>No results found.</p>';
+        document.getElementById('tree-container').innerHTML = message;
+        document.getElementById('table-container').innerHTML = message;
     }
 
+    function showLoadingIndicator(show) {
+        const indicator = document.getElementById('loading-indicator');
+        indicator.style.display = show ? 'block' : 'none';
+    }
+
+    /**
+     * ========== EVENT HANDLERS ==========
+     */
+
     function addEventListeners() {
-        // Tree View Events
-        var arrows = document.querySelectorAll('.arrow');
-
-        arrows.forEach(function(arrow) {
+        // 1) Tree arrows (expand/collapse)
+        const arrows = document.querySelectorAll('.arrow');
+        arrows.forEach(arrow => {
             if (!arrow.dataset.listenerAdded) {
-                arrow.addEventListener('click', function(event) {
-                    var li = event.target.parentElement;
-                    var childrenDiv = li.querySelector('.children');
-
-                    if (childrenDiv) {
-                        if (childrenDiv.style.display === 'none') {
-                            childrenDiv.style.display = 'block';
-                            arrow.classList.remove('collapsed');
-                            arrow.classList.add('expanded');
-                        } else {
-                            childrenDiv.style.display = 'none';
-                            arrow.classList.remove('expanded');
-                            arrow.classList.add('collapsed');
-                        }
+                arrow.addEventListener('click', event => {
+                    const li = event.target.parentElement;
+                    const childrenDiv = li.querySelector('.children');
+                    if (!childrenDiv) return;
+                    if (childrenDiv.style.display === 'none') {
+                        childrenDiv.style.display = 'block';
+                        arrow.classList.remove('collapsed');
+                        arrow.classList.add('expanded');
+                    } else {
+                        childrenDiv.style.display = 'none';
+                        arrow.classList.remove('expanded');
+                        arrow.classList.add('collapsed');
                     }
                 });
                 arrow.dataset.listenerAdded = true;
             }
         });
 
-        // Toggle All Button
-        var toggleButton = document.getElementById('toggle-all');
-        toggleButton.removeEventListener('click', toggleAllHandler);
+        // 2) Toggle all
+        const toggleButton = document.getElementById('toggle-all');
+        toggleButton.removeEventListener('click', toggleAllHandler); // remove old before re-adding
         toggleButton.addEventListener('click', toggleAllHandler);
 
-        // View Switcher Buttons
-        var treeViewBtn = document.getElementById('tree-view-btn');
-        var tableViewBtn = document.getElementById('table-view-btn');
-
+        // 3) Tree/Table view buttons
+        const treeViewBtn = document.getElementById('tree-view-btn');
+        const tableViewBtn = document.getElementById('table-view-btn');
         treeViewBtn.removeEventListener('click', switchToTreeView);
         treeViewBtn.addEventListener('click', switchToTreeView);
-
         tableViewBtn.removeEventListener('click', switchToTableView);
         tableViewBtn.addEventListener('click', switchToTableView);
 
-        // Initialize view to Tree View
-        if (!document.getElementById('table-view-btn').classList.contains('active')) {
-            switchToTreeView();
-        } else {
-            switchToTableView();
-        }
-
-        // Filter Controls
-        var textFilter = document.getElementById('text-filter');
-        var spaceFilter = document.getElementById('space-filter');
-        var contributorFilter = document.getElementById('contributor-filter');
-
+        // 4) Filters (text, space, contributor)
+        const textFilter = document.getElementById('text-filter');
         textFilter.removeEventListener('input', filterResults);
         textFilter.addEventListener('input', filterResults);
 
-        // Add input event listeners for typing
-        spaceFilter.addEventListener('input', function(event) {
-            if (!isValidInput(event.target.value)) {
+        const spaceFilter = document.getElementById('space-filter');
+        const contributorFilter = document.getElementById('contributor-filter');
+
+        spaceFilter.addEventListener('input', evt => {
+            if (!isValidInput(evt.target.value)) {
                 alert('Invalid input. Please use only alphanumeric characters, spaces, and -_.@');
-                event.target.value = '';
+                evt.target.value = '';
             } else {
-                event.target.value = sanitizeInput(event.target.value);
+                evt.target.value = sanitizeInput(evt.target.value);
             }
-            displayFilteredSpaceOptions(event.target.value);
+            displayFilteredSpaceOptions(evt.target.value);
             document.getElementById('space-options').style.display = 'block';
         });
 
-        contributorFilter.addEventListener('input', function(event) {
-            if (!isValidInput(event.target.value)) {
+        contributorFilter.addEventListener('input', evt => {
+            if (!isValidInput(evt.target.value)) {
                 alert('Invalid input. Please use only alphanumeric characters, spaces, and -_.@');
-                event.target.value = '';
+                evt.target.value = '';
             } else {
-                event.target.value = sanitizeInput(event.target.value);
+                evt.target.value = sanitizeInput(evt.target.value);
             }
-            displayFilteredContributorOptions(event.target.value);
+            displayFilteredContributorOptions(evt.target.value);
             document.getElementById('contributor-options').style.display = 'block';
         });
 
         // Show options on focus
-        spaceFilter.addEventListener('focus', function(event) {
-            displayFilteredSpaceOptions(event.target.value);
+        spaceFilter.addEventListener('focus', evt => {
+            displayFilteredSpaceOptions(evt.target.value);
             document.getElementById('space-options').style.display = 'block';
         });
-
-        contributorFilter.addEventListener('focus', function(event) {
-            displayFilteredContributorOptions(event.target.value);
+        contributorFilter.addEventListener('focus', evt => {
+            displayFilteredContributorOptions(evt.target.value);
             document.getElementById('contributor-options').style.display = 'block';
         });
 
-        // Clear icons for filters
-        var spaceClear = document.getElementById('space-clear');
-        var contributorClear = document.getElementById('contributor-clear');
-
+        // Clear icons
+        const spaceClear = document.getElementById('space-clear');
         spaceClear.removeEventListener('click', clearSpaceFilter);
         spaceClear.addEventListener('click', clearSpaceFilter);
 
+        const contributorClear = document.getElementById('contributor-clear');
         contributorClear.removeEventListener('click', clearContributorFilter);
         contributorClear.addEventListener('click', clearContributorFilter);
 
-        // Close options when clicking outside
-        document.addEventListener('click', function(event) {
-            if (!event.target.closest('#space-filter-container')) {
+        // Close filter options on clicking outside
+        document.addEventListener('click', evt => {
+            if (!evt.target.closest('#space-filter-container')) {
                 document.getElementById('space-options').style.display = 'none';
             }
-            if (!event.target.closest('#contributor-filter-container')) {
+            if (!evt.target.closest('#contributor-filter-container')) {
                 document.getElementById('contributor-options').style.display = 'none';
             }
         });
 
-        // Table Header Sorting
-        var tableHeaders = document.querySelectorAll('#table-container th');
-
-        tableHeaders.forEach(function(header) {
+        // 5) Table Header Sorting
+        const tableHeaders = document.querySelectorAll('#table-container th');
+        tableHeaders.forEach(header => {
             header.style.cursor = 'pointer';
-            header.addEventListener('click', function() {
-                var column = header.getAttribute('data-column');
+            header.addEventListener('click', () => {
+                const column = header.getAttribute('data-column');
                 if (currentSortColumn === column) {
                     currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
                 } else {
@@ -737,6 +653,36 @@
                 filterResults();
             });
         });
+    }
+
+    function toggleAllHandler() {
+        const childrenDivs = document.querySelectorAll('.children');
+        const arrows = document.querySelectorAll('.arrow');
+        const toggleButton = document.getElementById('toggle-all');
+
+        if (allExpanded) {
+            // Collapse all
+            childrenDivs.forEach(div => {
+                div.style.display = 'none';
+            });
+            arrows.forEach(arrow => {
+                arrow.classList.remove('expanded');
+                arrow.classList.add('collapsed');
+            });
+            toggleButton.textContent = 'Expand All';
+            allExpanded = false;
+        } else {
+            // Expand all
+            childrenDivs.forEach(div => {
+                div.style.display = 'block';
+            });
+            arrows.forEach(arrow => {
+                arrow.classList.remove('collapsed');
+                arrow.classList.add('expanded');
+            });
+            toggleButton.textContent = 'Collapse All';
+            allExpanded = true;
+        }
     }
 
     function switchToTreeView() {
@@ -755,95 +701,120 @@
         document.getElementById('toggle-all').style.display = 'none';
     }
 
-    function clearSpaceFilter(event) {
-        event.stopPropagation();
-        var spaceFilter = document.getElementById('space-filter');
+    function clearSpaceFilter(evt) {
+        evt.stopPropagation();
+        const spaceFilter = document.getElementById('space-filter');
         spaceFilter.value = '';
         spaceFilter.dataset.key = '';
         displayFilteredSpaceOptions('');
         resetDataAndFetchResults();
     }
 
-    function clearContributorFilter(event) {
-        event.stopPropagation();
-        var contributorFilter = document.getElementById('contributor-filter');
+    function clearContributorFilter(evt) {
+        evt.stopPropagation();
+        const contributorFilter = document.getElementById('contributor-filter');
         contributorFilter.value = '';
         contributorFilter.dataset.key = '';
         displayFilteredContributorOptions('');
         resetDataAndFetchResults();
     }
 
-    function toggleAllHandler() {
-        var childrenDivs = document.querySelectorAll('.children');
-        var arrows = document.querySelectorAll('.arrow');
-        var toggleButton = document.getElementById('toggle-all');
+    /**
+     * ========== INFINITE SCROLL & SCROLL-TO-TOP ==========
+     */
 
-        if (allExpanded) {
-            // Collapse all
-            childrenDivs.forEach(function(div) {
-                div.style.display = 'none';
-            });
-            arrows.forEach(function(arrow) {
-                arrow.classList.remove('expanded');
-                arrow.classList.add('collapsed');
-            });
-            toggleButton.textContent = 'Expand All';
-            allExpanded = false;
-        } else {
-            // Expand all
-            childrenDivs.forEach(function(div) {
-                div.style.display = 'block';
-            });
-            arrows.forEach(function(arrow) {
-                arrow.classList.remove('collapsed');
-                arrow.classList.add('expanded');
-            });
-            toggleButton.textContent = 'Collapse All';
-            allExpanded = true;
-        }
-    }
-
-    function showLoadingIndicator(show) {
-        var indicator = document.getElementById('loading-indicator');
-        if (show) {
-            indicator.style.display = 'block';
-        } else {
-            indicator.style.display = 'none';
-        }
-    }
-
-    // Infinite Scrolling
     function infiniteScrollHandler() {
-        if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
+        if ((window.innerHeight + window.scrollY) >= (document.body.offsetHeight - SCROLL_OFFSET)) {
             loadMoreResults();
         }
     }
-
     window.addEventListener('scroll', infiniteScrollHandler);
 
-    // Scroll to Top Button
-    var scrollToTopButton = document.getElementById('scroll-to-top');
-    scrollToTopButton.addEventListener('click', function() {
+    const scrollToTopButton = document.getElementById('scroll-to-top');
+    scrollToTopButton.addEventListener('click', () => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     });
-
     // Show or hide Scroll to Top button
-    window.addEventListener('scroll', function() {
-        if (window.scrollY > 200) {
-            scrollToTopButton.style.display = 'block';
-        } else {
-            scrollToTopButton.style.display = 'none';
-        }
+    window.addEventListener('scroll', () => {
+        scrollToTopButton.style.display = (window.scrollY > 200) ? 'block' : 'none';
     });
 
-    // Initialize the page
-    document.getElementById('tree-container').style.display = 'block'; // Show the tree view by default
+    /**
+     * ========== THEME TOGGLE ==========
+     */
 
-    // Perform initial search if searchText is provided
+    function toggleTheme(isChecked) {
+        const body = document.body;
+        isDarkMode = isChecked;
+        if (isDarkMode) {
+            body.classList.add('dark-mode');
+        } else {
+            body.classList.remove('dark-mode');
+        }
+        // Save preference
+        localStorage.setItem('isDarkMode', isDarkMode);
+    }
+
+    /**
+     * ========== INITIALIZATION (RUN ON DOM READY) ==========
+     */
+    // Parse query params
+    const params = getQueryParams();
+    searchText = params.searchText || '';
+    baseUrl = params.baseUrl || '';
+
+    // Derive domain name from baseUrl
+    try {
+        domainName = new URL(baseUrl).hostname;
+    } catch (e) {
+        console.error('Invalid baseUrl:', baseUrl);
+    }
+
+    // Update document title
+    document.title = `Search results for '${escapeHtml(searchText)}' on ${domainName}`;
+    // Update page header
+    const pageTitleElem = document.getElementById('page-title');
+    if (pageTitleElem) {
+        pageTitleElem.textContent = `Enhanced Confluence Search Results (${domainName})`;
+    }
+
+    // Theme toggle checkbox
+    const themeToggleCheckbox = document.getElementById('theme-toggle-checkbox');
+    if (themeToggleCheckbox) {
+        themeToggleCheckbox.addEventListener('change', () => toggleTheme(themeToggleCheckbox.checked));
+        // Load saved theme
+        const savedTheme = localStorage.getItem('isDarkMode');
+        if (savedTheme === 'true') {
+            isDarkMode = true;
+            document.body.classList.add('dark-mode');
+            themeToggleCheckbox.checked = true;
+        }
+    }
+
+    // New search elements
+    const newSearchInput = document.getElementById('new-search-input');
+    const newSearchButton = document.getElementById('new-search-button');
+    if (newSearchInput && newSearchButton) {
+        newSearchInput.value = searchText;
+        newSearchInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                performNewSearch(newSearchInput.value.trim());
+            }
+        });
+        newSearchButton.addEventListener('click', () => {
+            performNewSearch(newSearchInput.value.trim());
+        });
+    }
+
+    // By default, show tree container
+    document.getElementById('tree-container').style.display = 'block';
+
+    // Perform initial search if we have searchText
     if (searchText) {
         performNewSearch(searchText);
     }
 
-    // Add initial event listeners
+    // Attach global event listeners
     addEventListeners();
-})();
+});
