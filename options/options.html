@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Enhanced Confluence Search Results - Options</title>
+    <link rel="stylesheet" href="options.css">
+</head>
+<body>
+    <div class="header">
+        <h1>Enhanced Confluence Search Results</h1>
+    </div>
+    <div class="toggle-container">
+        <label class="dark-mode-label">Dark Mode</label>
+        <label class="switch">
+            <input type="checkbox" id="darkModeToggle">
+            <span class="slider round"></span>
+        </label>
+    </div>
+    <div class="container">
+        <h2>Extension Settings</h2>
+        <div class="form-group">
+            <label>Domains and Search Input IDs:</label>
+            <div id="domainSettings">
+                <!-- Dynamic content will be inserted here -->
+            </div>
+            <button id="addDomain">Add Domain</button>
+        </div>
+        <button id="save" disabled>Save</button>
+        <div class="status-container">
+            <div id="status" class="status"></div>
+        </div>
+    </div>
+
+    <script src="options.js"></script>
+</body>
+</html>
