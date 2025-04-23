@@ -1,3 +1,9 @@
+/**
+ * options.js
+ * Handles the options/settings page for the Enhanced Confluence Search Results extension.
+ * Users can configure domain-specific search input IDs and toggle dark mode.
+ */
+
 document.addEventListener('DOMContentLoaded', () => {
     const domainSettingsContainer = document.getElementById('domainSettings');
     const addDomainButton = document.getElementById('addDomain');
@@ -5,49 +11,47 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusDiv = document.getElementById('status');
     const darkModeToggle = document.getElementById('darkModeToggle');
 
-    // Load existing settings
+    // === Load and Apply Saved Settings ===
     chrome.storage.sync.get(['domainSettings', 'darkMode'], (data) => {
-        if (data.domainSettings && data.domainSettings.length > 0) {
-            data.domainSettings.forEach(entry => {
-                addDomainEntry(entry.domain, entry.searchInputId);
-            });
+        const domainSettings = data.domainSettings || [];
+
+        if (domainSettings.length > 0) {
+            domainSettings.forEach(entry => addDomainEntry(entry.domain, entry.searchInputId));
         } else {
+            // Show at least one blank entry if no settings saved
             addDomainEntry('', '');
         }
+
         if (data.darkMode) {
             darkModeToggle.checked = true;
             document.body.classList.add('dark-mode');
         }
-        // Enable save button if there is any data loaded
-        if (data.domainSettings && data.domainSettings.length > 0) {
+
+        if (domainSettings.length > 0) {
             saveButton.disabled = false;
         }
     });
 
-    // Add Domain Entry
+    // === Event: Add Domain Entry ===
     addDomainButton.addEventListener('click', () => {
         addDomainEntry('', '');
         saveButton.disabled = false;
     });
 
-    // Toggle Dark Mode
+    // === Event: Toggle Dark Mode ===
     darkModeToggle.addEventListener('change', () => {
-        if (darkModeToggle.checked) {
-            document.body.classList.add('dark-mode');
-            chrome.storage.sync.set({ darkMode: true });
-        } else {
-            document.body.classList.remove('dark-mode');
-            chrome.storage.sync.set({ darkMode: false });
-        }
+        const isDark = darkModeToggle.checked;
+        document.body.classList.toggle('dark-mode', isDark);
+        chrome.storage.sync.set({ darkMode: isDark });
     });
 
-    // Save settings and request permissions
+    // === Event: Save Settings ===
     saveButton.addEventListener('click', () => {
         const domainEntries = domainSettingsContainer.querySelectorAll('.domain-entry');
         const domainSettings = [];
         const domains = [];
 
-        domainEntries.forEach(entry => {
+        for (const entry of domainEntries) {
             const domainInput = entry.querySelector('.domain-input');
             const searchInputIdInput = entry.querySelector('.search-input-id-input');
 
@@ -61,26 +65,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 showStatus('Invalid input. Please check your domain and search input ID.', 'error');
                 return;
             }
-        });
+        }
 
         if (domainSettings.length === 0) {
             showStatus('Please enter at least one valid domain.', 'error');
             return;
         }
 
-        // Save settings
         chrome.storage.sync.set({ domainSettings }, () => {
-            // Request permissions for the domains
             const origins = domains.map(domain => `*://${domain}/*`);
 
-            chrome.permissions.request({
-                origins: origins
-            }, (granted) => {
+            // Request permissions for all domains
+            chrome.permissions.request({ origins }, (granted) => {
                 if (granted) {
                     showStatus('Settings saved and permissions granted!', 'success');
                     saveButton.disabled = true;
                 } else {
-                    // Check for runtime errors
                     if (chrome.runtime.lastError) {
                         console.error(chrome.runtime.lastError);
                         showStatus(`Permissions denied: ${chrome.runtime.lastError.message}`, 'error');
@@ -92,6 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // === Helper: Add Domain Entry to DOM ===
     function addDomainEntry(domainValue, searchInputIdValue) {
         const entryDiv = document.createElement('div');
         entryDiv.className = 'domain-entry';
@@ -125,25 +126,23 @@ document.addEventListener('DOMContentLoaded', () => {
         entryDiv.appendChild(domainInput);
         entryDiv.appendChild(searchInputIdInput);
         entryDiv.appendChild(removeButton);
-
         domainSettingsContainer.appendChild(entryDiv);
     }
 
+    // === Helper: Show Status Message ===
     function showStatus(message, type) {
         statusDiv.textContent = message;
         statusDiv.className = `status ${type}`;
-        // Do not clear the status message automatically
-        // It will remain until the user makes another change or navigates away
     }
 
+    // === Helper: Domain Format Validation ===
     function isValidDomain(domain) {
-        // Simple regex to validate domain format
         const regex = /^(?!:\/\/)([a-zA-Z0-9-_]+\.)*[a-zA-Z0-9][a-zA-Z0-9-_]+\.[a-zA-Z]{2,11}?$/;
         return regex.test(domain);
     }
 
+    // === Helper: Input ID Validation ===
     function isValidInputId(inputId) {
-        // Allow only alphanumeric characters, hyphens, and underscores
         const regex = /^[a-zA-Z0-9-_]+$/;
         return regex.test(inputId);
     }
