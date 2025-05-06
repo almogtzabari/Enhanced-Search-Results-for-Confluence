@@ -82,14 +82,56 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${day}/${month}/${year} at ${hours}:${minutes}`;
     }
 
+    // ---- URL-security helpers ---------------------------------------------
+
+    /**
+     * Accepts the user-supplied baseUrl *once*, validates it and normalises it
+     * to "<scheme>://<host>" (no path / query / fragment allowed).
+     * Returns an empty string if the value is unsafe.
+     */
+    function sanitiseBaseUrl(raw) {
+        try {
+            const u = new URL(raw);
+            // allow only http(s) and (optionally) an allow-list of hosts
+            if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error();
+            // If you only ever search the one Confluence host you can
+            // replace the next line with e.g.
+            // if (u.hostname !== 'confluence.mycorp.com') throw new Error();
+            return u.origin;                // "https://confluence.mycorp.com"
+        } catch (_) {
+            console.error('Rejected baseUrl:', raw);
+            return '';
+        }
+    }
+
+    /**
+     * Safely joins a *relative* Confluence path (e.g. "/spaces/FOO") onto the
+     * already-sanitised baseUrl.  
+     * If the path is not a string or is absolute / schemeful, returns "#".
+     */
+    function buildConfluenceUrl(path) {
+        if (typeof path !== 'string' ||
+            path.startsWith('http:') ||
+            path.startsWith('https:') ||
+            path.includes('javascript:') ||
+            path.includes('data:')) {
+            return '#';
+        }
+        try {
+            return new URL(path, baseUrl).toString();   // automatic encoding
+        } catch (_) {
+            return '#';
+        }
+    }
+
     /**
      * ========== CORE LOGIC FUNCTIONS ==========
      */
 
     function buildCQL() {
         const cqlParts = ['type=page'];
-        // Escape double quotes in searchText
-        const escapedSearchText = searchText.replace(/"/g, '\\"');
+        // Escape backslash **first**, then double quotes
+        const escapedSearchText = searchText.replace(/(["\\])/g, '\\$1');
         // Construct text query
         const textQuery = `(text ~ "${escapedSearchText}" OR title ~ "${escapedSearchText}")`;
         cqlParts.push(textQuery);
@@ -236,7 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     spaceList.push({
                         key: spaceKey,
                         name: pageData.space.name,
-                        url: baseUrl + pageData.space._links.webui
+                        url: buildConfluenceUrl(pageData.space._links.webui)
                     });
                 }
             }
@@ -304,7 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
         addOptionListeners(contributorOptionsContainer, 'contributor-filter', 'contributor-options');
     }
 
-    function addOptionListeners(container, inputId, optionsId) {
+    function addOptionListeners(container, inputId) {
         container.querySelectorAll('.option').forEach(option => {
             option.addEventListener('click', () => {
                 const input = document.getElementById(inputId);
@@ -398,7 +440,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         nodeMap[id] = {
                             id,
                             title: ancestor.title,
-                            url: baseUrl + ancestor._links.webui,
+                            url: buildConfluenceUrl(ancestor._links.webui),
                             children: [],
                             isSearchResult: false,
                             expanded: true
@@ -412,7 +454,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 nodeMap[id] = {
                     id,
                     title: pageData.title,
-                    url: baseUrl + pageData._links.webui,
+                    url: buildConfluenceUrl(pageData._links.webui),
                     children: [],
                     isSearchResult: true,
                     expanded: true
@@ -504,7 +546,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Page Name
             const nameCell = document.createElement('td');
             const nameLink = document.createElement('a');
-            nameLink.href = baseUrl + page._links.webui;
+            nameLink.href = buildConfluenceUrl(page._links.webui);
             nameLink.target = '_blank';
             nameLink.textContent = page.title || 'Untitled';
             nameCell.appendChild(nameLink);
@@ -515,7 +557,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (page.space && page.space.name) {
                 if (page.space._links?.webui) {
                     const spaceLink = document.createElement('a');
-                    spaceLink.href = baseUrl + page.space._links.webui;
+                    spaceLink.href = buildConfluenceUrl(page.space._links.webui);
                     spaceLink.target = '_blank';
                     spaceLink.textContent = page.space.name;
                     spaceCell.appendChild(spaceLink);
@@ -783,7 +825,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Parse query params
     const params = getQueryParams();
     searchText = params.searchText || '';
-    baseUrl = params.baseUrl || '';
+    baseUrl    = sanitiseBaseUrl(params.baseUrl || '');
 
     // Derive domain name from baseUrl
     try {

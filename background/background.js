@@ -1,5 +1,5 @@
 // Listen for messages from content scripts or other parts of the extension
-chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+chrome.runtime.onMessage.addListener(function (request) {
     if (request.action === 'openTab') {
         chrome.tabs.create({ url: request.url });
     }
@@ -22,7 +22,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                     if (hasPermission) {
                         // Inject the content script into the tab
                         chrome.scripting.executeScript({
-                            target: { tabId: tabId },
+                            target: { tabId },
                             files: ['content/content.js']
                         });
                     } else {

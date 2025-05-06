@@ -36,7 +36,7 @@
             if (!searchText) {
                 const searchInputElement = document.getElementById(searchInputId);
                 if (!searchInputElement || !searchInputElement.value.trim()) {
-                    alert("No search text entered in the search box.");
+                    alert('No search text entered in the search box.');
                     return;
                 }
                 searchText = searchInputElement.value.trim();
