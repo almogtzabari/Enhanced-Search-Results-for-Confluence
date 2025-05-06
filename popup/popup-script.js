@@ -479,53 +479,75 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateTableHtml(results) {
-        const tableContainer = document.getElementById('table-container');
-        tableContainer.innerHTML = generateTableHtml(results);
-    }
-
-    function generateTableHtml(results) {
-        let html = '<table>';
-        html += '<thead><tr>';
-        html += '<th data-column="Page Name">Page Name</th>';
-        html += '<th data-column="Page Space">Page Space</th>';
-        html += '<th data-column="Contributor">Contributor</th>';
-        html += '<th data-column="Date Created">Date Created</th>';
-        html += '<th data-column="Last Modified">Last Modified</th>';
-        html += '</tr></thead>';
-        html += '<tbody>';
-
-        for (const pageData of results) {
-            const title = pageData.title;
-            const url = baseUrl + pageData._links.webui;
-            const spaceName = pageData.space ? pageData.space.name : '';
-            const spaceUrl = (pageData.space && pageData.space._links && pageData.space._links.webui)
-                ? (baseUrl + pageData.space._links.webui)
-                : '';
-            const createdDate = (pageData.history && pageData.history.createdDate)
-                ? formatDate(pageData.history.createdDate)
-                : 'N/A';
-            const modifiedDate = (pageData.version && pageData.version.when)
-                ? formatDate(pageData.version.when)
-                : 'N/A';
-            const contributorName = (pageData.history && pageData.history.createdBy)
-                ? pageData.history.createdBy.displayName
-                : 'Unknown';
-
-            html += '<tr>';
-            html += `<td><a href="${url}" target="_blank">${title}</a></td>`;
-            if (spaceName && spaceUrl) {
-                html += `<td><a href="${spaceUrl}" target="_blank">${spaceName}</a></td>`;
-            } else {
-                html += `<td>${spaceName}</td>`;
+        const container = document.getElementById('table-container');
+        container.innerHTML = ''; // clear previous
+    
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+    
+        const headers = ['Page Name', 'Page Space', 'Contributor', 'Date Created', 'Last Modified'];
+        headers.forEach(headerText => {
+            const th = document.createElement('th');
+            th.textContent = headerText;
+            th.setAttribute('data-column', headerText);
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+    
+        const tbody = document.createElement('tbody');
+    
+        results.forEach(page => {
+            const row = document.createElement('tr');
+    
+            // Page Name
+            const nameCell = document.createElement('td');
+            const nameLink = document.createElement('a');
+            nameLink.href = baseUrl + page._links.webui;
+            nameLink.target = '_blank';
+            nameLink.textContent = page.title || 'Untitled';
+            nameCell.appendChild(nameLink);
+            row.appendChild(nameCell);
+    
+            // Page Space
+            const spaceCell = document.createElement('td');
+            if (page.space && page.space.name) {
+                if (page.space._links?.webui) {
+                    const spaceLink = document.createElement('a');
+                    spaceLink.href = baseUrl + page.space._links.webui;
+                    spaceLink.target = '_blank';
+                    spaceLink.textContent = page.space.name;
+                    spaceCell.appendChild(spaceLink);
+                } else {
+                    spaceCell.textContent = page.space.name;
+                }
             }
-            html += `<td>${contributorName}</td>`;
-            html += `<td>${createdDate}</td>`;
-            html += `<td>${modifiedDate}</td>`;
-            html += '</tr>';
-        }
-
-        html += '</tbody></table>';
-        return html;
+            row.appendChild(spaceCell);
+    
+            // Contributor
+            const contributorCell = document.createElement('td');
+            contributorCell.textContent =
+                page.history?.createdBy?.displayName || 'Unknown';
+            row.appendChild(contributorCell);
+    
+            // Date Created
+            const createdCell = document.createElement('td');
+            createdCell.textContent =
+                page.history?.createdDate ? formatDate(page.history.createdDate) : 'N/A';
+            row.appendChild(createdCell);
+    
+            // Last Modified
+            const modifiedCell = document.createElement('td');
+            modifiedCell.textContent =
+                page.version?.when ? formatDate(page.version.when) : 'N/A';
+            row.appendChild(modifiedCell);
+    
+            tbody.appendChild(row);
+        });
+    
+        table.appendChild(tbody);
+        container.appendChild(table);
     }
 
     function showNoResultsMessage() {
