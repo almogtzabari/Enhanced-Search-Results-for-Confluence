@@ -311,40 +311,43 @@ document.addEventListener('DOMContentLoaded', () => {
     function displayFilteredSpaceOptions(filterValue) {
         const spaceOptionsContainer = document.getElementById('space-options');
         spaceOptionsContainer.innerHTML = '';
-
+    
         const filteredSpaces = fullSpaceList.filter(space =>
             space.name.toLowerCase().includes(filterValue.toLowerCase())
         );
-
+    
         filteredSpaces.forEach(space => {
             const option = document.createElement('div');
             option.classList.add('option');
             option.textContent = space.name;
+            option.title = space.name; // ✅ Show full name on hover
             option.dataset.key = space.key;
             spaceOptionsContainer.appendChild(option);
         });
-
+    
         addOptionListeners(spaceOptionsContainer, 'space-filter', 'space-options');
     }
-
+    
     function displayFilteredContributorOptions(filterValue) {
         const contributorOptionsContainer = document.getElementById('contributor-options');
         contributorOptionsContainer.innerHTML = '';
-
+    
         const filteredContributors = fullContributorList.filter(contributor =>
             contributor.name.toLowerCase().includes(filterValue.toLowerCase())
         );
-
+    
         filteredContributors.forEach(contributor => {
             const option = document.createElement('div');
             option.classList.add('option');
             option.textContent = contributor.name;
+            option.title = contributor.name; // ✅ Show full name on hover
             option.dataset.key = contributor.key;
             contributorOptionsContainer.appendChild(option);
         });
-
+    
         addOptionListeners(contributorOptionsContainer, 'contributor-filter', 'contributor-options');
     }
+    
 
     function addOptionListeners(container, inputId) {
         container.querySelectorAll('.option').forEach(option => {

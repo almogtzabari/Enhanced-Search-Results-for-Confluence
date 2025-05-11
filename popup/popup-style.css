@@ -271,14 +271,24 @@ body.dark-mode {
 }
 
 .filter-select .option {
-    padding: 8px;
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    font-size: 14px;
+    height: 20px; /* consistent height */
     cursor: pointer;
     color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-bottom: 1px solid var(--input-border-color);
 }
+
 
 .filter-select .option:hover {
     background-color: var(--option-background-hover);
 }
+
 
 .filter-select .clear-icon {
     position: absolute;
