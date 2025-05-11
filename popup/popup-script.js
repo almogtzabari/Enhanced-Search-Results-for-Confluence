@@ -106,7 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Safely joins a *relative* Confluence path (e.g. "/spaces/FOO") onto the
-     * already-sanitised baseUrl.  
+     * already-sanitised baseUrl.
      * If the path is not a string or is absolute / schemeful, returns "#".
      */
     function buildConfluenceUrl(path) {
@@ -349,6 +349,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
 
+
     function addOptionListeners(container, inputId) {
         container.querySelectorAll('.option').forEach(option => {
             option.addEventListener('click', () => {
@@ -526,11 +527,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateTableHtml(results) {
         const container = document.getElementById('table-container');
         container.innerHTML = ''; // clear previous
-    
+
         const table = document.createElement('table');
         const thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
-    
+
         const headers = ['Page Name', 'Page Space', 'Contributor', 'Date Created', 'Last Modified'];
         headers.forEach(headerText => {
             const th = document.createElement('th');
@@ -540,12 +541,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         thead.appendChild(headerRow);
         table.appendChild(thead);
-    
+
         const tbody = document.createElement('tbody');
-    
+
         results.forEach(page => {
             const row = document.createElement('tr');
-    
+
             // Page Name
             const nameCell = document.createElement('td');
             const nameLink = document.createElement('a');
@@ -554,7 +555,7 @@ document.addEventListener('DOMContentLoaded', () => {
             nameLink.textContent = page.title || 'Untitled';
             nameCell.appendChild(nameLink);
             row.appendChild(nameCell);
-    
+
             // Page Space
             const spaceCell = document.createElement('td');
             if (page.space && page.space.name) {
@@ -569,28 +570,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
             row.appendChild(spaceCell);
-    
+
             // Contributor
             const contributorCell = document.createElement('td');
             contributorCell.textContent =
                 page.history?.createdBy?.displayName || 'Unknown';
             row.appendChild(contributorCell);
-    
+
             // Date Created
             const createdCell = document.createElement('td');
             createdCell.textContent =
                 page.history?.createdDate ? formatDate(page.history.createdDate) : 'N/A';
             row.appendChild(createdCell);
-    
+
             // Last Modified
             const modifiedCell = document.createElement('td');
             modifiedCell.textContent =
                 page.version?.when ? formatDate(page.version.when) : 'N/A';
             row.appendChild(modifiedCell);
-    
+
             tbody.appendChild(row);
         });
-    
+
         table.appendChild(tbody);
         container.appendChild(table);
     }
