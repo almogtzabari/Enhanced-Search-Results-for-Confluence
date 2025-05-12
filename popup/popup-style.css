@@ -638,3 +638,12 @@ button:active {
     vertical-align:middle;
     display:inline-block;   /* prevents collapse if parent uses flex */
 }
+
+.table-container td:first-child a {
+    display: inline-block;
+    max-width: 400px;  /* or adjust based on layout */
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
