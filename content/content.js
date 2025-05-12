@@ -1,70 +1,90 @@
-/**
- * content.js
- * Injected into Confluence pages based on user-defined domain settings.
- * Waits for the search input element and binds an Enter key listener.
- * When Enter is pressed, a new tab opens with enhanced search results.
- */
-
-(function() {
-    // Ensure the script runs even if the DOM is already loaded
+(function () {
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initialize);
+        document.addEventListener('DOMContentLoaded', init);
     } else {
-        initialize();
+        init();
     }
 
-    // === Initialization Entry Point ===
-    function initialize() {
-        let searchInputId = 'search-filter-input'; // Default ID if not overridden by settings
+    function init() {
+        let searchInputId = 'search-filter-input'; // Default search input ID
 
         // Retrieve domain-specific settings from Chrome storage
-        chrome.storage.sync.get(['domainSettings'], (data) => {
-            const domainSettings = data.domainSettings || [];
-            const currentDomain = window.location.hostname;
-            const matchingSetting = domainSettings.find(entry => currentDomain.includes(entry.domain));
-
-            if (matchingSetting) {
-                searchInputId = matchingSetting.searchInputId || 'search-filter-input';
-                waitForSearchInput();
+        chrome.storage.sync.get(['domainSettings'], ({ domainSettings = [] }) => {
+            const match = domainSettings.find((e) => window.location.hostname.includes(e.domain));
+            if (match) {
+                searchInputId = match.searchInputId || searchInputId;
+                waitForInput();
             }
         });
 
-        // === Trigger the enhanced search popup when Enter is pressed ===
-        function executeSearch(initialSearchText) {
-            let searchText = initialSearchText || '';
-
-            if (!searchText) {
-                const searchInputElement = document.getElementById(searchInputId);
-                if (!searchInputElement || !searchInputElement.value.trim()) {
-                    alert('No search text entered in the search box.');
-                    return;
-                }
-                searchText = searchInputElement.value.trim();
-            }
+        // Opens a popup with search results or an empty input for user queries
+        function executeSearch(initial = '') {
+            let text = initial;
+            const input = document.getElementById(searchInputId);
+            if (!text && input) text = input.value.trim();
 
             const baseUrl = window.location.origin;
-            let pageUrl = chrome.runtime.getURL('popup/popup.html');
-            pageUrl += `?searchText=${encodeURIComponent(searchText)}&baseUrl=${encodeURIComponent(baseUrl)}`;
-
-            // Ask the background script to open a new tab with the results
-            chrome.runtime.sendMessage({ action: 'openTab', url: pageUrl });
+            const url = `${chrome.runtime.getURL('popup/popup.html')}?searchText=${encodeURIComponent(
+                text,
+            )}&baseUrl=${encodeURIComponent(baseUrl)}`;
+            chrome.runtime.sendMessage({ action: 'openTab', url });
         }
 
-        // === Poll until the target search input appears on the page ===
-        function waitForSearchInput() {
-            const interval = setInterval(() => {
-                const searchInputElement = document.getElementById(searchInputId);
-                if (searchInputElement) {
-                    // Attach Enter key listener to trigger search
-                    searchInputElement.addEventListener('keydown', (event) => {
-                        if (event.key === 'Enter') {
-                            event.preventDefault();
+        // Monitors the DOM for the search input and adds the Enhanced Search button
+        function waitForInput() {
+            const observer = new MutationObserver(() => {
+                const input = document.getElementById(searchInputId);
+                if (input && !document.getElementById('enhanced-search-button')) {
+                    addEnhancedButton(input);
+                    input.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
                             executeSearch();
                         }
                     });
-                    clearInterval(interval);
                 }
-            }, 500); // Retry every 500ms
+            });
+
+            // Observe changes in the DOM to detect the search input
+            observer.observe(document.body, { childList: true, subtree: true });
+
+            // Check if the search input is already present
+            const input = document.getElementById(searchInputId);
+            if (input && !document.getElementById('enhanced-search-button')) {
+                addEnhancedButton(input);
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        executeSearch();
+                    }
+                });
+            }
+        }
+
+        // Creates and styles the Enhanced Search button, then appends it next to the search input
+        function addEnhancedButton(input) {
+            if (document.getElementById('enhanced-search-button')) return;
+
+            const btn = document.createElement('button');
+            btn.id = 'enhanced-search-button';
+            btn.textContent = '🔍 Enhanced Search';
+
+            const h = input.offsetHeight || 28;
+            Object.assign(btn.style, {
+                marginLeft: '8px',
+                height: `${h}px`,
+                padding: '0 12px',
+                borderRadius: '3px',
+                border: '1px solid #0052CC',
+                background: '#0052CC',
+                color: '#FFF',
+                fontSize: '12px',
+                lineHeight: `${h}px`,
+                cursor: 'pointer',
+            });
+
+            btn.addEventListener('click', () => executeSearch());
+            input.insertAdjacentElement('afterend', btn);
         }
     }
 })();
