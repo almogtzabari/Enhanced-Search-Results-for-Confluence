@@ -63,14 +63,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function isValidInput(input) {
-        // Allow only alphanumeric characters, spaces, and certain special characters
-        const regex = /^[a-zA-Z0-9\s\-_.@]*$/;
+        // Allow any Unicode letters or numbers, plus spaces and -_.@
+        // (requires the `u` flag for \p{} property escapes, supported in modern Chromium)
+        const regex = /^[\p{L}\p{N}\s\-_.@]*$/u;
         return regex.test(input);
     }
 
     function sanitizeInput(input) {
-        // Remove any potentially harmful characters
-        return input.replace(/[^a-zA-Z0-9\s\-_.@]/g, '');
+        // Strip everything except letters, numbers, spaces and -_.@
+        return input.replace(/[^\p{L}\p{N}\s\-_.@]/gu, '');
     }
 
     function formatDate(dateString) {
