@@ -284,11 +284,9 @@ body.dark-mode {
     border-bottom: 1px solid var(--input-border-color);
 }
 
-
 .filter-select .option:hover {
     background-color: var(--option-background-hover);
 }
-
 
 .filter-select .clear-icon {
     position: absolute;
@@ -385,7 +383,7 @@ a:hover {
     vertical-align: middle;
 }
 
-.search-result > a {
+search-result > a {
     font-weight: 500;
 }
 
@@ -631,4 +629,21 @@ button:active {
         width: 100%;
         max-width: 300px;
     }
+}
+
+.space-icon{
+    width:16px;
+    height:16px;
+    margin-right:4px;
+    vertical-align:middle;
+    display:inline-block;   /* prevents collapse if parent uses flex */
+}
+
+.avatar-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 4px;
+    vertical-align: middle;
+    display: inline-block;
+    border-radius: 50%;
 }

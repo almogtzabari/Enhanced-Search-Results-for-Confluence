@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let contributorList = [];
     let fullSpaceList = [];
     let fullContributorList = [];
+    let spaceIconCache = {};
 
     // Variables for sorting
     let currentSortColumn = '';
@@ -266,14 +267,16 @@ document.addEventListener('DOMContentLoaded', () => {
         loading = false;
     }
 
-    function updateFilterOptions() {
+    async function updateFilterOptions() {
         spaceList = [];
         contributorList = [];
+        const spaceKeys = new Set();
 
         allResults.forEach(pageData => {
             // Spaces
             if (pageData.space && pageData.space.key && pageData.space.name) {
                 const spaceKey = pageData.space.key;
+                spaceKeys.add(spaceKey);
                 if (!spaceList.some(s => s.key === spaceKey)) {
                     spaceList.push({
                         key: spaceKey,
@@ -295,6 +298,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+        // Fetch and cache space icons
+        await fetchAndCacheSpaceIcons([...spaceKeys]);
+
         // Store full lists (for filtering as user types)
         fullSpaceList = [...spaceList];
         fullContributorList = [...contributorList];
@@ -308,34 +314,95 @@ document.addEventListener('DOMContentLoaded', () => {
         displayFilteredContributorOptions('');
     }
 
+    // Function to fetch and cache space icons
+    async function fetchAndCacheSpaceIcons(spaceKeys) {
+        if (spaceKeys.length === 0) {
+            console.log('No space keys to fetch icons for.');
+            return;
+        }
+
+        // Construct the query string with multiple spaceKey parameters
+        const spaceKeysParam = spaceKeys.map(key => `spaceKey=${encodeURIComponent(key)}`).join('&');
+        const url = `${baseUrl}/rest/api/space?${spaceKeysParam}&expand=icon`;
+
+        console.log('Fetching space icons from URL:', url);
+
+        try {
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' },
+                credentials: 'include' // Include cookies for authentication
+            });
+
+            if (!response.ok) {
+                throw new Error(`Error fetching space icons: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            console.log('API response:', data);
+
+            if (!data.results || data.results.length === 0) {
+                console.warn('No space icons returned by the API.');
+                return;
+            }
+
+            data.results.forEach(space => {
+                if (space.key && space.icon && space.icon.path) {
+                    spaceIconCache[space.key] = `${baseUrl}${space.icon.path}`;
+                    console.log(`Cached icon for space ${space.key}: ${spaceIconCache[space.key]}`);
+                }
+            });
+        } catch (err) {
+            console.error('Failed to fetch space icons:', err);
+        }
+    }
+
     function displayFilteredSpaceOptions(filterValue) {
         const spaceOptionsContainer = document.getElementById('space-options');
         spaceOptionsContainer.innerHTML = '';
-    
+
         const filteredSpaces = fullSpaceList.filter(space =>
             space.name.toLowerCase().includes(filterValue.toLowerCase())
         );
-    
+
         filteredSpaces.forEach(space => {
             const option = document.createElement('div');
             option.classList.add('option');
-            option.textContent = space.name;
-            option.title = space.name; // ✅ Show full name on hover
+
+            // Add space icon if available, otherwise use Confluence's default icon
+            const iconImg = document.createElement('img');
+            if (spaceIconCache[space.key]) {
+                iconImg.src = spaceIconCache[space.key];
+            } else {
+                iconImg.src = `${baseUrl}/images/logo/default-space-logo.svg`; // Confluence's default space icon
+            }
+            iconImg.alt = `${space.name} icon`;
+            iconImg.classList.add('space-icon'); // Add a CSS class for styling
+            option.appendChild(iconImg);
+
+            // Add space name
+            const textNode = document.createTextNode(space.name);
+            option.appendChild(textNode);
+
+            // Set additional attributes
+            option.title = space.name; // Show full name on hover
             option.dataset.key = space.key;
+
+            // Append to container
             spaceOptionsContainer.appendChild(option);
         });
-    
+
         addOptionListeners(spaceOptionsContainer, 'space-filter', 'space-options');
     }
-    
+
     function displayFilteredContributorOptions(filterValue) {
         const contributorOptionsContainer = document.getElementById('contributor-options');
         contributorOptionsContainer.innerHTML = '';
-    
+
         const filteredContributors = fullContributorList.filter(contributor =>
             contributor.name.toLowerCase().includes(filterValue.toLowerCase())
         );
-    
+
         filteredContributors.forEach(contributor => {
             const option = document.createElement('div');
             option.classList.add('option');
@@ -344,11 +411,9 @@ document.addEventListener('DOMContentLoaded', () => {
             option.dataset.key = contributor.key;
             contributorOptionsContainer.appendChild(option);
         });
-    
+
         addOptionListeners(contributorOptionsContainer, 'contributor-filter', 'contributor-options');
     }
-    
-
 
     function addOptionListeners(container, inputId) {
         container.querySelectorAll('.option').forEach(option => {
@@ -526,7 +591,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateTableHtml(results) {
         const container = document.getElementById('table-container');
-        container.innerHTML = ''; // clear previous
+        container.innerHTML = ''; // Clear previous content
 
         const table = document.createElement('table');
         const thead = document.createElement('thead');
@@ -559,15 +624,26 @@ document.addEventListener('DOMContentLoaded', () => {
             // Page Space
             const spaceCell = document.createElement('td');
             if (page.space && page.space.name) {
-                if (page.space._links?.webui) {
-                    const spaceLink = document.createElement('a');
-                    spaceLink.href = buildConfluenceUrl(page.space._links.webui);
-                    spaceLink.target = '_blank';
-                    spaceLink.textContent = page.space.name;
-                    spaceCell.appendChild(spaceLink);
+                const spaceContainer = document.createElement('div');
+                spaceContainer.classList.add('space-cell');
+
+                // Add space icon if available, otherwise use Confluence's default icon
+                const iconImg = document.createElement('img');
+                if (spaceIconCache[page.space.key]) {
+                    iconImg.src = spaceIconCache[page.space.key];
                 } else {
-                    spaceCell.textContent = page.space.name;
+                    iconImg.src = `${baseUrl}/images/logo/default-space-logo.svg`; // Confluence's default space icon
                 }
+                iconImg.alt = `${page.space.name} icon`;
+                iconImg.classList.add('space-icon'); // Add a CSS class for styling
+                spaceContainer.appendChild(iconImg);
+
+                // Add space name
+                const spaceName = document.createElement('span');
+                spaceName.textContent = page.space.name;
+                spaceContainer.appendChild(spaceName);
+
+                spaceCell.appendChild(spaceContainer);
             }
             row.appendChild(spaceCell);
 
