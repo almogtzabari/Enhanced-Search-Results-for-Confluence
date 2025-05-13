@@ -26,7 +26,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let contributorList = [];
     let fullSpaceList = [];
     let fullContributorList = [];
-    let spaceIconCache = {};
 
     // Variables for sorting
     let currentSortColumn = '';
@@ -209,7 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const cql = buildCQL();
         // Updated search URL to include expand parameter
-        const searchUrl = `${baseUrl}/rest/api/content/search?cql=${cql}&limit=${RESULTS_PER_REQUEST}&start=${start}&expand=ancestors,space,history,version`;
+        const searchUrl = `${baseUrl}/rest/api/content/search?cql=${cql}&limit=${RESULTS_PER_REQUEST}&start=${start}&expand=ancestors,space.icon,history.createdBy,version`;
 
         try {
             const response = await fetch(searchUrl, {
@@ -271,36 +270,43 @@ document.addEventListener('DOMContentLoaded', () => {
     async function updateFilterOptions() {
         spaceList = [];
         contributorList = [];
-        const spaceKeys = new Set();
 
         allResults.forEach(pageData => {
             // Spaces
             if (pageData.space && pageData.space.key && pageData.space.name) {
                 const spaceKey = pageData.space.key;
-                spaceKeys.add(spaceKey);
+                const iconUrl = pageData.space.icon?.path ? `${baseUrl}${pageData.space.icon.path}` : `${baseUrl}/images/logo/default-space-logo.svg`;
                 if (!spaceList.some(s => s.key === spaceKey)) {
                     spaceList.push({
                         key: spaceKey,
                         name: pageData.space.name,
-                        url: buildConfluenceUrl(pageData.space._links.webui)
+                        url: buildConfluenceUrl(pageData.space._links.webui),
+                        iconUrl
                     });
                 }
+                pageData.space.iconUrl = iconUrl;
             }
             // Contributors (creator)
             if (pageData.history && pageData.history.createdBy) {
                 const contributor = pageData.history.createdBy;
                 const contributorKey = contributor.username || contributor.userKey || contributor.accountId;
-                if (contributorKey && !contributorList.some(c => c.key === contributorKey)) {
-                    contributorList.push({
-                        key: contributorKey,
-                        name: contributor.displayName
-                    });
+                if (contributorKey) {
+                    let avatarPath = contributor.profilePicture?.path;
+                    if (!avatarPath) {
+                        avatarPath = '/images/icons/profilepics/default.png'; // Confluence fallback
+                    }
+                    const avatarUrl = `${baseUrl}${avatarPath}`;
+                    if (!contributorList.some(c => c.key === contributorKey)) {
+                        contributorList.push({
+                            key: contributorKey,
+                            name: contributor.displayName,
+                            avatarUrl
+                        });
+                    }
+                    pageData.history.createdBy.avatarUrl = avatarUrl;
                 }
             }
         });
-
-        // Fetch and cache space icons
-        await fetchAndCacheSpaceIcons([...spaceKeys]);
 
         // Store full lists (for filtering as user types)
         fullSpaceList = [...spaceList];
@@ -313,49 +319,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Initial display
         displayFilteredSpaceOptions('');
         displayFilteredContributorOptions('');
-    }
-
-    // Function to fetch and cache space icons
-    async function fetchAndCacheSpaceIcons(spaceKeys) {
-        if (spaceKeys.length === 0) {
-            console.log('No space keys to fetch icons for.');
-            return;
-        }
-
-        // Construct the query string with multiple spaceKey parameters
-        const spaceKeysParam = spaceKeys.map(key => `spaceKey=${encodeURIComponent(key)}`).join('&');
-        const url = `${baseUrl}/rest/api/space?${spaceKeysParam}&expand=icon`;
-
-        console.log('Fetching space icons from URL:', url);
-
-        try {
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: { 'Accept': 'application/json' },
-                credentials: 'include' // Include cookies for authentication
-            });
-
-            if (!response.ok) {
-                throw new Error(`Error fetching space icons: ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            console.log('API response:', data);
-
-            if (!data.results || data.results.length === 0) {
-                console.warn('No space icons returned by the API.');
-                return;
-            }
-
-            data.results.forEach(space => {
-                if (space.key && space.icon && space.icon.path) {
-                    spaceIconCache[space.key] = `${baseUrl}${space.icon.path}`;
-                    console.log(`Cached icon for space ${space.key}: ${spaceIconCache[space.key]}`);
-                }
-            });
-        } catch (err) {
-            console.error('Failed to fetch space icons:', err);
-        }
     }
 
     function displayFilteredSpaceOptions(filterValue) {
@@ -372,11 +335,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Add space icon if available, otherwise use Confluence's default icon
             const iconImg = document.createElement('img');
-            if (spaceIconCache[space.key]) {
-                iconImg.src = spaceIconCache[space.key];
-            } else {
-                iconImg.src = `${baseUrl}/images/logo/default-space-logo.svg`; // Confluence's default space icon
-            }
+            iconImg.src = space.iconUrl;
             iconImg.alt = `${space.name} icon`;
             iconImg.classList.add('space-icon'); // Add a CSS class for styling
             option.appendChild(iconImg);
@@ -407,8 +366,17 @@ document.addEventListener('DOMContentLoaded', () => {
         filteredContributors.forEach(contributor => {
             const option = document.createElement('div');
             option.classList.add('option');
-            option.textContent = contributor.name;
-            option.title = contributor.name; // ✅ Show full name on hover
+
+            const img = document.createElement('img');
+            img.src = contributor.avatarUrl;
+            img.alt = `${contributor.name}'s avatar`;
+            img.classList.add('contributor-avatar');
+            option.appendChild(img);
+
+            const textNode = document.createTextNode(contributor.name);
+            option.appendChild(textNode);
+
+            option.title = contributor.name;
             option.dataset.key = contributor.key;
             contributorOptionsContainer.appendChild(option);
         });
@@ -595,6 +563,19 @@ document.addEventListener('DOMContentLoaded', () => {
         container.innerHTML = ''; // Clear previous content
 
         const table = document.createElement('table');
+        const colGroup = document.createElement('colgroup');
+        const col1 = document.createElement('col');
+        col1.style.width = '40%';
+        const col2 = document.createElement('col');
+        col2.style.width = '25%';
+        const col3 = document.createElement('col');
+        col3.style.width = '25%';
+        const col4 = document.createElement('col');
+        col4.style.width = '10%';
+        const col5 = document.createElement('col');
+        col5.style.width = '10%';
+        [col1, col2, col3, col4, col5].forEach(col => colGroup.appendChild(col));
+        table.appendChild(colGroup);
         const thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
 
@@ -618,7 +599,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const nameLink = document.createElement('a');
             nameLink.href = buildConfluenceUrl(page._links.webui);
             nameLink.target = '_blank';
-            nameLink.textContent = page.title || 'Untitled';
+            const titleSpan = document.createElement('span');
+            titleSpan.classList.add('ellipsis-text');
+            const fullTitle = page.title || 'Untitled';
+            titleSpan.textContent = fullTitle;
+            titleSpan.title = fullTitle;
+            nameLink.appendChild(titleSpan);
             nameCell.appendChild(nameLink);
             row.appendChild(nameCell);
 
@@ -630,28 +616,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Add space icon if available, otherwise use Confluence's default icon
                 const iconImg = document.createElement('img');
-                if (spaceIconCache[page.space.key]) {
-                    iconImg.src = spaceIconCache[page.space.key];
-                } else {
-                    iconImg.src = `${baseUrl}/images/logo/default-space-logo.svg`; // Confluence's default space icon
-                }
+                iconImg.src = page.space.iconUrl || `${baseUrl}/images/logo/default-space-logo.svg`;
                 iconImg.alt = `${page.space.name} icon`;
                 iconImg.classList.add('space-icon'); // Add a CSS class for styling
                 spaceContainer.appendChild(iconImg);
 
                 // Add space name
-                const spaceName = document.createElement('span');
-                spaceName.textContent = page.space.name;
-                spaceContainer.appendChild(spaceName);
-
+                const spaceLink = document.createElement('a');
+                spaceLink.href = buildConfluenceUrl(page.space._links?.webui);
+                spaceLink.target = '_blank';
+                const spaceSpan = document.createElement('span');
+                spaceSpan.classList.add('ellipsis-text');
+                spaceSpan.textContent = page.space.name;
+                spaceSpan.title = page.space.name;
+                spaceLink.appendChild(spaceSpan);
+                spaceContainer.appendChild(spaceLink);
                 spaceCell.appendChild(spaceContainer);
             }
             row.appendChild(spaceCell);
 
             // Contributor
             const contributorCell = document.createElement('td');
-            contributorCell.textContent =
-                page.history?.createdBy?.displayName || 'Unknown';
+            contributorCell.classList.add('contributor-cell');
+            const contributor = page.history?.createdBy;
+            if (contributor) {
+                const avatarImg = document.createElement('img');
+                avatarImg.src = contributor.avatarUrl || `${baseUrl}/images/icons/profilepics/default.png`;
+                avatarImg.alt = `${contributor.displayName}'s avatar`;
+                avatarImg.classList.add('contributor-avatar');
+                contributorCell.appendChild(avatarImg);
+
+                const nameLink = document.createElement('a');
+                let contributorUrl = '#';
+                if (contributor.username) {
+                    contributorUrl = `${baseUrl}/display/~${contributor.username}`;
+                } else if (contributor.userKey) {
+                    contributorUrl = `${baseUrl}/display/~${contributor.userKey}`;
+                } else if (contributor.accountId) {
+                    contributorUrl = `${baseUrl}/display/~${contributor.accountId}`;
+                }
+                nameLink.href = contributorUrl;
+                nameLink.target = '_blank';
+                const nameSpan = document.createElement('span');
+                nameSpan.classList.add('ellipsis-text');
+                nameSpan.textContent = contributor.displayName;
+                nameSpan.title = contributor.displayName;
+                nameLink.appendChild(nameSpan);
+                contributorCell.appendChild(nameLink);
+            } else {
+                contributorCell.textContent = 'Unknown';
+            }
             row.appendChild(contributorCell);
 
             // Date Created

@@ -441,6 +441,7 @@ table {
     box-shadow: 0 2px 4px var(--shadow-color);
     border-radius: var(--border-radius);
     overflow: hidden;
+    table-layout: fixed;
 }
 
 th, td {
@@ -639,11 +640,54 @@ button:active {
     display:inline-block;   /* prevents collapse if parent uses flex */
 }
 
-.table-container td:first-child a {
-    display: inline-block;
-    max-width: 400px;  /* or adjust based on layout */
-    overflow: hidden;
+.table-container td:first-child a,
+td:nth-child(2) a,
+td:nth-child(3) a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     white-space: nowrap;
+    overflow: hidden;
     text-overflow: ellipsis;
+    width: 100%;
+}
+
+
+/* Contributor avatar styling */
+.contributor-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    margin-right: 8px;
     vertical-align: middle;
+    display: inline-block;
+}
+
+/* Flex container for space and contributor cells */
+.space-cell,
+.contributor-cell {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Ensure icon images stay inline and don't shrink */
+.space-cell img,
+.contributor-avatar {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.ellipsis-text {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
