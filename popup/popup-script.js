@@ -541,7 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         chrome.storage.sync.get(['showTooltips'], (data) => {
-            if (!data || data.showTooltips !== true) return;
+            if (data.showTooltips === false) return;
 
             document.querySelectorAll('.search-result').forEach(node => {
                 node.addEventListener('mouseenter', e => {
