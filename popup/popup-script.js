@@ -376,10 +376,11 @@ document.addEventListener('DOMContentLoaded', () => {
             img.classList.add('contributor-avatar');
             option.appendChild(img);
 
-            const textNode = document.createTextNode(contributor.name);
+            const nameText = contributor.name || contributor.key || 'Unknown';
+            const textNode = document.createTextNode(nameText);
             option.appendChild(textNode);
 
-            option.title = contributor.name;
+            option.title = nameText;
             option.dataset.key = contributor.key;
             contributorOptionsContainer.appendChild(option);
         });
@@ -662,8 +663,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 nameLink.target = '_blank';
                 const nameSpan = document.createElement('span');
                 nameSpan.classList.add('ellipsis-text');
-                nameSpan.textContent = contributor.displayName;
-                nameSpan.title = contributor.displayName;
+                let contributorName = contributor.displayName || '';
+                if (contributorName.startsWith('Unknown User')) {
+                    contributorName = contributor.username || contributor.userKey || contributor.accountId || 'Unknown';
+                }
+                nameSpan.textContent = contributorName;
+                nameSpan.title = contributorName;
                 nameLink.appendChild(nameSpan);
                 contributorCell.appendChild(nameLink);
             } else {
