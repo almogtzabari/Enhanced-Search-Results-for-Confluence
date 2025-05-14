@@ -1,3 +1,6 @@
+// Detect Firefox
+const isFirefox = typeof browser !== 'undefined' && typeof InstallTrigger !== 'undefined';
+
 // Listen for messages from content scripts or other parts of the extension
 chrome.runtime.onMessage.addListener(function (request) {
     if (request.action === 'openTab') {
@@ -9,18 +12,26 @@ chrome.runtime.onMessage.addListener(function (request) {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status !== 'complete') return;
 
-    // Retrieve user-configured domain settings from storage
     chrome.storage.sync.get('domainSettings', (data) => {
         if (data.domainSettings && data.domainSettings.length > 0) {
             const url = new URL(tab.url);
             const matchingSetting = data.domainSettings.find(entry => url.hostname.includes(entry.domain));
-            if (matchingSetting) {
-                const origin = `*://${matchingSetting.domain}/*`;
+            if (!matchingSetting) return;
 
-                // Check if we have permission
+            const origin = `*://${matchingSetting.domain}/*`;
+
+            if (isFirefox) {
+                // Firefox always uses tabs.executeScript (Manifest V2)
+                chrome.tabs.executeScript(tabId, {
+                    file: 'content/content.js'
+                }, () => {
+                    if (chrome.runtime.lastError) {
+                        console.error('Injection failed:', chrome.runtime.lastError);
+                    }
+                });
+            } else if (chrome.permissions && chrome.permissions.contains) {
                 chrome.permissions.contains({ origins: [origin] }, (hasPermission) => {
                     if (hasPermission) {
-                        // Inject the content script into the tab
                         chrome.scripting.executeScript({
                             target: { tabId },
                             files: ['content/content.js']
