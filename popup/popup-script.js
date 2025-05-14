@@ -982,10 +982,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // React to darkMode setting changes from other parts of the extension
     chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'sync' && changes.darkMode) {
-            const isDark = changes.darkMode.newValue;
-            document.body.classList.toggle('dark-mode', isDark);
-            isDarkMode = isDark;
+        if (area === 'sync') {
+            if (changes.darkMode) {
+                const isDark = changes.darkMode.newValue;
+                document.body.classList.toggle('dark-mode', isDark);
+                isDarkMode = isDark;
+            }
+            if (changes.showTooltips) {
+                const showTooltips = changes.showTooltips.newValue;
+                const tooltip = document.getElementById('tree-tooltip');
+                if (!tooltip) return;
+                document.querySelectorAll('.search-result').forEach(node => {
+                    node.removeEventListener('mouseenter', node._tooltipEnter);
+                    node.removeEventListener('mousemove', node._tooltipMove);
+                    node.removeEventListener('mouseleave', node._tooltipLeave);
+                    delete node._tooltipEnter;
+                    delete node._tooltipMove;
+                    delete node._tooltipLeave;
+                });
+                if (showTooltips) {
+                    document.querySelectorAll('.search-result').forEach(node => {
+                        const enter = e => {
+                            const title = node.dataset.title;
+                            const contributor = node.dataset.contributor;
+                            const modified = node.dataset.modified;
+                            tooltip.innerHTML = `<strong>${title}</strong><br>By: ${contributor}<br>Last Modified: ${modified}`;
+                            tooltip.style.display = 'block';
+                        };
+                        const move = e => {
+                            tooltip.style.left = `${e.pageX + 10}px`;
+                            tooltip.style.top = `${e.pageY + 10}px`;
+                        };
+                        const leave = () => {
+                            tooltip.style.display = 'none';
+                        };
+                        node._tooltipEnter = enter;
+                        node._tooltipMove = move;
+                        node._tooltipLeave = leave;
+                        node.addEventListener('mouseenter', enter);
+                        node.addEventListener('mousemove', move);
+                        node.addEventListener('mouseleave', leave);
+                    });
+                }
+            }
         }
     });
 
