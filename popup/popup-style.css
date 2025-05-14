@@ -632,12 +632,14 @@ button:active {
     }
 }
 
-.space-icon{
-    width:16px;
-    height:16px;
-    margin-right:4px;
-    vertical-align:middle;
-    display:inline-block;   /* prevents collapse if parent uses flex */
+.space-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 4px;
+    vertical-align: middle;
+    display: inline-block;
+    border-radius: 50%;
+    object-fit: cover;
 }
 
 .table-container td:first-child a,
@@ -663,25 +665,31 @@ td:nth-child(3) a {
     display: inline-block;
 }
 
-/* Flex container for space and contributor cells */
 .space-cell,
 .contributor-cell {
     display: flex;
     align-items: center;
     gap: 6px;
+    height: 30px;
+}
+
+.space-cell .ellipsis-text,
+.contributor-cell .ellipsis-text {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    display: block;
+    line-height: 1;
+    font-size: 14px;
 }
 
-/* Ensure icon images stay inline and don't shrink */
 .space-cell img,
 .contributor-avatar {
-    flex-shrink: 0;
-    width: 16px;
-    height: 16px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
-    display: inline-block;
+    object-fit: cover;
+    display: block;
 }
 
 .ellipsis-text {

@@ -569,11 +569,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const col2 = document.createElement('col');
         col2.style.width = '25%';
         const col3 = document.createElement('col');
-        col3.style.width = '25%';
+        col3.style.width = '20%';
         const col4 = document.createElement('col');
-        col4.style.width = '10%';
+        col4.style.width = '12%';
         const col5 = document.createElement('col');
-        col5.style.width = '10%';
+        col5.style.width = '12%';
         [col1, col2, col3, col4, col5].forEach(col => colGroup.appendChild(col));
         table.appendChild(colGroup);
         const thead = document.createElement('thead');
