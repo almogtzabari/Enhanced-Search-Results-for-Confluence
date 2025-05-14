@@ -973,22 +973,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Theme toggle checkbox
-    const themeToggleCheckbox = document.getElementById('theme-toggle-checkbox');
-    if (themeToggleCheckbox) {
-        chrome.storage.sync.get(['darkMode'], (data) => {
-            const isDark = Boolean(data.darkMode);
-            themeToggleCheckbox.checked = isDark;
+    // Load dark mode preference from storage and apply it
+    chrome.storage.sync.get(['darkMode'], (data) => {
+        const isDark = Boolean(data.darkMode);
+        document.body.classList.toggle('dark-mode', isDark);
+        isDarkMode = isDark;
+    });
+
+    // React to darkMode setting changes from other parts of the extension
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'sync' && changes.darkMode) {
+            const isDark = changes.darkMode.newValue;
             document.body.classList.toggle('dark-mode', isDark);
             isDarkMode = isDark;
-        });
-
-        themeToggleCheckbox.addEventListener('change', () => {
-            const enabled = themeToggleCheckbox.checked;
-            document.body.classList.toggle('dark-mode', enabled);
-            chrome.storage.sync.set({ darkMode: enabled });
-            isDarkMode = enabled;
-        });
-    }
+        }
+    });
 
     // New search elements
     const newSearchInput = document.getElementById('new-search-input');
@@ -1012,6 +1011,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Perform initial search if we have searchText
     if (searchText) {
         performNewSearch(searchText);
+    }
+
+    const optionsBtn = document.getElementById('open-options');
+    if (optionsBtn) {
+        optionsBtn.addEventListener('click', () => {
+            if (chrome.runtime.openOptionsPage) {
+                chrome.runtime.openOptionsPage();
+            } else {
+                window.open(chrome.runtime.getURL('options/options.html'));
+            }
+        });
     }
 
     // Attach global event listeners
