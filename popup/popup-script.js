@@ -62,15 +62,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function isValidInput(input) {
-        // Allow any Unicode letters or numbers, plus spaces and -_.@
-        // (requires the `u` flag for \p{} property escapes, supported in modern Chromium)
-        const regex = /^[\p{L}\p{N}\s\-_.@]*$/u;
+        // Allow letters, numbers, spaces, -_.@ and double quotes for quoted phrases
+        const regex = /^[\p{L}\p{N}\s\-_.@"']*$/u;
         return regex.test(input);
     }
 
     function sanitizeInput(input) {
-        // Strip everything except letters, numbers, spaces and -_.@
-        return input.replace(/[^\p{L}\p{N}\s\-_.@]/gu, '');
+        // Allow letters, numbers, spaces, -_.@, double quotes, and single quotes
+        return input.replace(/[^\p{L}\p{N}\s\-_.@"']/gu, '');
     }
 
     function formatDate(dateString) {
