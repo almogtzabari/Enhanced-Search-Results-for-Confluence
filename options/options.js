@@ -24,7 +24,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         darkModeToggle.checked = Boolean(data.darkMode);
-        tooltipToggle.checked = Boolean(data.showTooltips);
+        const tooltipEnabled = data.showTooltips !== false;
+        tooltipToggle.checked = tooltipEnabled;
+        if (!('showTooltips' in data)) {
+            chrome.storage.sync.set({ showTooltips: true });
+        }
 
         if (darkModeToggle.checked) {
             document.body.classList.add('dark-mode');
@@ -84,14 +88,22 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        chrome.storage.sync.set({ domainSettings }, () => {
-            const origins = domains.map(domain => `*://${domain}/*`);
+        const isFirefox = typeof InstallTrigger !== 'undefined';
 
-            // Request permissions for all domains
+        if (isFirefox) {
+            // Firefox: assume permission declared in manifest
+            chrome.storage.sync.set({ domainSettings }, () => {
+                showStatus('Settings saved (permissions assumed granted in Firefox).', 'success');
+                saveButton.disabled = true;
+            });
+        } else if (chrome.permissions && typeof chrome.permissions.request === 'function') {
+            const origins = domains.map(domain => `*://${domain}/*`);
             chrome.permissions.request({ origins }, (granted) => {
                 if (granted) {
-                    showStatus('Settings saved and permissions granted!', 'success');
-                    saveButton.disabled = true;
+                    chrome.storage.sync.set({ domainSettings }, () => {
+                        showStatus('Settings saved and permissions granted!', 'success');
+                        saveButton.disabled = true;
+                    });
                 } else {
                     if (chrome.runtime.lastError) {
                         console.error(chrome.runtime.lastError);
@@ -101,7 +113,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
             });
-        });
+        } else {
+            // Fallback (shouldn't happen in Chrome or Firefox)
+            chrome.storage.sync.set({ domainSettings }, () => {
+                showStatus('Settings saved (no permission API).', 'success');
+                saveButton.disabled = true;
+            });
+        }
     });
 
     // === Helper: Add Domain Entry to DOM ===
