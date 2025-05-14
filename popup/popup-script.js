@@ -469,11 +469,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateTreeHtml(results) {
-        // Clear existing structure
         nodeMap = {};
         roots = [];
 
-        // Build node objects
         for (const pageData of results) {
             if (pageData.ancestors) {
                 for (const ancestor of pageData.ancestors) {
@@ -490,7 +488,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
             }
-            // Create node for this page
             const id = pageData.id;
             if (!nodeMap[id]) {
                 nodeMap[id] = {
@@ -499,12 +496,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     url: buildConfluenceUrl(pageData._links.webui),
                     children: [],
                     isSearchResult: true,
-                    expanded: true
+                    expanded: true,
+                    contributor: pageData.history?.createdBy?.displayName || 'Unknown',
+                    modified: pageData.version?.when ? formatDate(pageData.version.when) : 'N/A'
                 };
             }
         }
 
-        // Link up parents/children
         for (const pageData of results) {
             const ancestors = pageData.ancestors || [];
             const pageNode = nodeMap[pageData.id];
@@ -520,23 +518,48 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (parentNode && !parentNode.children.includes(pageNode)) {
                     parentNode.children.push(pageNode);
                 }
-                // The first ancestor is top-level
                 const rootAncestorNode = nodeMap[ancestors[0].id];
                 if (!roots.includes(rootAncestorNode)) {
                     roots.push(rootAncestorNode);
                 }
             } else {
-                // This page has no ancestors => root
                 if (!roots.includes(pageNode)) {
                     roots.push(pageNode);
                 }
             }
         }
 
-        // Generate Tree HTML
         const treeContainer = document.getElementById('tree-container');
-        const treeHtml = generateTreeHtml(roots);
-        treeContainer.innerHTML = treeHtml;
+        treeContainer.innerHTML = generateTreeHtml(roots);
+
+        let tooltip = document.getElementById('tree-tooltip');
+        if (!tooltip) {
+            tooltip = document.createElement('div');
+            tooltip.id = 'tree-tooltip';
+            tooltip.className = 'tree-tooltip';
+            document.body.appendChild(tooltip);
+        }
+
+        chrome.storage.sync.get(['showTooltips'], (data) => {
+            if (!data || data.showTooltips !== true) return;
+
+            document.querySelectorAll('.search-result').forEach(node => {
+                node.addEventListener('mouseenter', e => {
+                    const title = node.dataset.title;
+                    const contributor = node.dataset.contributor;
+                    const modified = node.dataset.modified;
+                    tooltip.innerHTML = `<strong>${title}</strong><br>By: ${contributor}<br>Last Modified: ${modified}`;
+                    tooltip.style.display = 'block';
+                });
+                node.addEventListener('mousemove', e => {
+                    tooltip.style.left = `${e.pageX + 10}px`;
+                    tooltip.style.top = `${e.pageY + 10}px`;
+                });
+                node.addEventListener('mouseleave', () => {
+                    tooltip.style.display = 'none';
+                });
+            });
+        });
     }
 
     function generateTreeHtml(nodes) {
@@ -549,7 +572,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? '<span class="arrow expanded"></span>'
                 : '<span class="arrow empty"></span>';
 
-            html += `<li id="${currentNodeId}" class="${nodeClass}">`;
+            const tooltipAttrs = node.isSearchResult
+                ? ` data-title="${escapeHtml(node.title)}" data-contributor="${escapeHtml(node.contributor)}" data-modified="${escapeHtml(node.modified)}"`
+                : '';
+
+            html += `<li id="${currentNodeId}" class="${nodeClass}"${tooltipAttrs}>`;
             html += `${arrow} <a href="${node.url}" target="_blank">${node.title}</a>`;
             if (hasChildren) {
                 html += '<div class="children" style="display: block;">';
@@ -918,8 +945,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             body.classList.remove('dark-mode');
         }
-        // Save preference
-        localStorage.setItem('isDarkMode', isDarkMode);
+        // Save preference in sync storage
+        chrome.storage.sync.set({ darkMode: isDarkMode });
     }
 
     /**
@@ -948,14 +975,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Theme toggle checkbox
     const themeToggleCheckbox = document.getElementById('theme-toggle-checkbox');
     if (themeToggleCheckbox) {
-        themeToggleCheckbox.addEventListener('change', () => toggleTheme(themeToggleCheckbox.checked));
-        // Load saved theme
-        const savedTheme = localStorage.getItem('isDarkMode');
-        if (savedTheme === 'true') {
-            isDarkMode = true;
-            document.body.classList.add('dark-mode');
-            themeToggleCheckbox.checked = true;
-        }
+        chrome.storage.sync.get(['darkMode'], (data) => {
+            const isDark = Boolean(data.darkMode);
+            themeToggleCheckbox.checked = isDark;
+            document.body.classList.toggle('dark-mode', isDark);
+            isDarkMode = isDark;
+        });
+
+        themeToggleCheckbox.addEventListener('change', () => {
+            const enabled = themeToggleCheckbox.checked;
+            document.body.classList.toggle('dark-mode', enabled);
+            chrome.storage.sync.set({ darkMode: enabled });
+            isDarkMode = enabled;
+        });
     }
 
     // New search elements
