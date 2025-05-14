@@ -655,6 +655,22 @@ td:nth-child(3) a {
 }
 
 
+/* Tooltip styles for tree view */
+.tree-tooltip {
+    position: absolute;
+    z-index: 10000;
+    background: var(--header-background);
+    color: var(--text-color);
+    padding: 10px;
+    border: 1px solid var(--input-border-color);
+    border-radius: var(--border-radius);
+    font-size: 13px;
+    box-shadow: 0 2px 6px var(--shadow-color);
+    pointer-events: none;
+    white-space: nowrap;
+    display: none;
+}
+
 /* Contributor avatar styling */
 .contributor-avatar {
     width: 20px;

@@ -10,9 +10,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveButton = document.getElementById('save');
     const statusDiv = document.getElementById('status');
     const darkModeToggle = document.getElementById('darkModeToggle');
+    const tooltipToggle = document.getElementById('tooltipToggle');
 
     // === Load and Apply Saved Settings ===
-    chrome.storage.sync.get(['domainSettings', 'darkMode'], (data) => {
+    chrome.storage.sync.get(['domainSettings', 'darkMode', 'showTooltips'], (data) => {
         const domainSettings = data.domainSettings || [];
 
         if (domainSettings.length > 0) {
@@ -22,8 +23,10 @@ document.addEventListener('DOMContentLoaded', () => {
             addDomainEntry('', '');
         }
 
-        if (data.darkMode) {
-            darkModeToggle.checked = true;
+        darkModeToggle.checked = Boolean(data.darkMode);
+        tooltipToggle.checked = Boolean(data.showTooltips);
+
+        if (darkModeToggle.checked) {
             document.body.classList.add('dark-mode');
         }
 
@@ -42,7 +45,16 @@ document.addEventListener('DOMContentLoaded', () => {
     darkModeToggle.addEventListener('change', () => {
         const isDark = darkModeToggle.checked;
         document.body.classList.toggle('dark-mode', isDark);
-        chrome.storage.sync.set({ darkMode: isDark });
+        chrome.storage.sync.set({ darkMode: isDark }, () => {
+            console.log('Dark mode setting saved:', isDark);
+        });
+    });
+
+    tooltipToggle.addEventListener('change', () => {
+        const show = tooltipToggle.checked;
+        chrome.storage.sync.set({ showTooltips: show }, () => {
+            console.log('Tooltip setting saved:', show);
+        });
     });
 
     // === Event: Save Settings ===

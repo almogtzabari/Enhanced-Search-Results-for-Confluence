@@ -22,21 +22,6 @@ body {
     color: #333333;
 }
 
-/* Toggle Switch Styles */
-.toggle-container {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    text-align: center;
-}
-
-.dark-mode-label {
-    display: block;
-    font-weight: bold;
-    color: #333;
-    margin-bottom: 5px;
-}
-
 .switch {
     position: relative;
     display: inline-block;
@@ -44,7 +29,7 @@ body {
     height: 25px;
 }
 
-.switch input { 
+.switch input {
     opacity: 0;
     width: 0;
     height: 0;
@@ -235,11 +220,6 @@ body.dark-mode input:checked + .slider:before {
     background-color: #fff;
 }
 
-/* Add styles for the domain settings */
-#domainSettings {
-    margin-bottom: 20px;
-}
-
 .domain-entry {
     display: flex;
     align-items: center;
@@ -266,16 +246,6 @@ body.dark-mode input:checked + .slider:before {
     box-sizing: border-box;
 }
 
-.domain-entry .remove-domain {
-    background-color: #d32f2f;
-    color: #ffffff;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    padding: 10px 16px;
-    max-width: 100px;
-}
-
 /* Adjust Dark Mode styles */
 body.dark-mode .domain-entry .domain-input,
 body.dark-mode .domain-entry .search-input-id-input {
@@ -290,16 +260,6 @@ body.dark-mode .domain-entry .remove-domain {
 
 body.dark-mode .domain-entry .remove-domain:hover {
     background-color: #ef5350;
-}
-
-#addDomain {
-    background-color: #1a73e8;
-    color: #ffffff;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    padding: 10px 16px;
-    margin-top: 10px;
 }
 
 #addDomain:hover {
@@ -319,32 +279,6 @@ body.dark-mode #addDomain:hover {
     margin-bottom: 20px;
 }
 
-.domain-entry {
-    display: flex;
-    align-items: center;
-    margin-bottom: 10px;
-}
-
-.domain-entry .domain-input {
-    padding: 10px;
-    margin-right: 10px;
-    font-size: 14px;
-    width: 40%;
-    border: 1px solid #cccccc;
-    border-radius: 4px;
-    box-sizing: border-box;
-}
-
-.domain-entry .search-input-id-input {
-    padding: 10px;
-    margin-right: 10px;
-    font-size: 14px;
-    width: 40%;
-    border: 1px solid #cccccc;
-    border-radius: 4px;
-    box-sizing: border-box;
-}
-
 .domain-entry .remove-domain {
     background-color: #d32f2f;
     color: #ffffff;
@@ -355,10 +289,6 @@ body.dark-mode #addDomain:hover {
     max-width: 100px;
 }
 
-.domain-entry .remove-domain:hover {
-    background-color: #c62828;
-}
-
 #addDomain {
     background-color: #1a73e8;
     color: #ffffff;
@@ -367,10 +297,6 @@ body.dark-mode #addDomain:hover {
     cursor: pointer;
     padding: 10px 16px;
     margin-top: 10px;
-}
-
-#addDomain:hover {
-    background-color: #1669c1;
 }
 
 /* Adjust Dark Mode styles */
@@ -395,4 +321,52 @@ body.dark-mode #addDomain {
 
 body.dark-mode #addDomain:hover {
     background-color: #336fcb;
+}
+
+.section-heading {
+    margin-top: 40px;
+    font-size: 18px;
+    color: #444;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 6px;
+}
+
+.toggle-group {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.toggle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+}
+
+.toggle-label-col {
+    flex: 1;
+}
+
+.toggle-label {
+    font-weight: bold;
+    font-size: 14px;
+    color: #333;
+    margin-bottom: 4px;
+}
+
+.toggle-desc {
+    font-size: 13px;
+    color: #666;
+    margin: 0;
+}
+
+body.dark-mode .section-heading,
+body.dark-mode .toggle-label {
+    color: #ddd;
+}
+
+body.dark-mode .toggle-desc {
+    color: #aaa;
 }

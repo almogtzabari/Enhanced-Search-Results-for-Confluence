@@ -8,13 +8,6 @@
     <div class="header">
         <h1>Enhanced Confluence Search Results</h1>
     </div>
-    <div class="toggle-container">
-        <label class="dark-mode-label">Dark Mode</label>
-        <label class="switch">
-            <input type="checkbox" id="darkModeToggle">
-            <span class="slider round"></span>
-        </label>
-    </div>
     <div class="container">
         <h2>Extension Settings</h2>
         <div class="form-group">
@@ -24,10 +17,36 @@
             </div>
             <button id="addDomain">Add Domain</button>
         </div>
-        <button id="save" disabled>Save</button>
-        <div class="status-container">
-            <div id="status" class="status"></div>
-        </div>
+        <div>
+            <button id="save" disabled>Save</button>
+            <div class="status-container">
+                <div id="status" class="status"></div>
+            </div>
+
+            <h3 class="section-heading">More Options</h3>
+            <div class="toggle-group">
+                <div class="toggle-row">
+                    <div class="toggle-label-col">
+                        <label for="darkModeToggle" class="toggle-label">Dark Mode</label>
+                        <p class="toggle-desc">Enable dark theme for low-light environments.</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="darkModeToggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+
+                <div class="toggle-row">
+                    <div class="toggle-label-col">
+                        <label for="tooltipToggle" class="toggle-label">Show Tooltips in Tree View</label>
+                        <p class="toggle-desc">Display contributor and last modified date on hover.</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="tooltipToggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
     </div>
 
     <script src="options.js"></script>
