@@ -325,9 +325,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const spaceOptionsContainer = document.getElementById('space-options');
         spaceOptionsContainer.innerHTML = '';
 
-        const filteredSpaces = fullSpaceList.filter(space =>
-            space.name.toLowerCase().includes(filterValue.toLowerCase())
-        );
+        const filteredSpaces = fullSpaceList.filter(space => {
+            const nameMatch = space.name.toLowerCase().includes(filterValue.toLowerCase());
+            const keyMatch = space.key.toLowerCase().includes(filterValue.toLowerCase());
+            return nameMatch || keyMatch;
+        });
 
         filteredSpaces.forEach(space => {
             const option = document.createElement('div');
@@ -359,9 +361,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const contributorOptionsContainer = document.getElementById('contributor-options');
         contributorOptionsContainer.innerHTML = '';
 
-        const filteredContributors = fullContributorList.filter(contributor =>
-            contributor.name.toLowerCase().includes(filterValue.toLowerCase())
-        );
+        const filteredContributors = fullContributorList.filter(contributor => {
+            const nameMatch = contributor.name.toLowerCase().includes(filterValue.toLowerCase());
+            const keyMatch = contributor.key.toLowerCase().includes(filterValue.toLowerCase());
+            return nameMatch || keyMatch;
+        });
 
         filteredContributors.forEach(contributor => {
             const option = document.createElement('div');
