@@ -14,53 +14,77 @@
             <img id="page-title-image" src="../logo.png" alt="" />
             <h2 id="page-title">Enhanced Search Results for Confluence</h2>
             <div class="theme-toggle">
-                <button id="open-options" class="settings-icon-button" title="Settings"><img src="../icons/settings.png" height="30px"></button>
+                <button id="open-options" class="settings-icon-button" title="Settings">
+                    <img src="../icons/settings.png" height="30px">
+                </button>
             </div>
             <div class="controls">
                 <div class="top-controls">
                     <div class="row-1">
                         <div class="search-box">
                             <input type="text" id="new-search-input" placeholder="Enter new search query..." />
+                            <span class="clear-icon" id="main-search-clear">&times;</span>
                             <button id="new-search-button">Search</button>
                         </div>
-                    </div>
-                    <div class="row-2 filter-controls">
-                        <input type="text" id="text-filter" placeholder="Filter by text" />
-                        <div class="filter-select" id="space-filter-container">
-                            <input type="text" id="space-filter" placeholder="Filter Spaces" />
-                            <span class="clear-icon" id="space-clear">&times;</span>
-                            <div class="options" id="space-options"></div>
-                        </div>
-                        <div class="filter-select" id="contributor-filter-container">
-                            <input type="text" id="contributor-filter" placeholder="Filter Contributors" />
-                            <span class="clear-icon" id="contributor-clear">&times;</span>
-                            <div class="options" id="contributor-options"></div>
-                        </div>
-                        <div class="filter-select" id="date-filter-container">
-                            <select id="date-filter" class="filter-dropdown">
-                                <option value="any">Any time</option>
-                                <option value="1d">The past day</option>
-                                <option value="1w">The past week</option>
-                                <option value="1m">The past month</option>
-                                <option value="1y">The past year</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="row-3 view-buttons">
-                        <button id="tree-view-btn" class="active">Tree View</button>
-                        <button id="table-view-btn">Table View</button>
-                        <button id="toggle-all">Collapse All</button>
                     </div>
                 </div>
             </div>
         </header>
-        <div class="container">
-            <div id="tree-container" class="tree-container"></div>
-            <div id="table-container" class="table-container"></div>
-            <div id="loading-indicator" style="display: none;"><div class="loader"></div></div>
-        </div>
-        <button id="scroll-to-top">↑</button>
 
+        <div class="main-content">
+            <aside id="filter-sidebar" class="filter-sidebar">
+                <div class="view-section">
+                    <h4>Views</h4>
+                    <div class="view-buttons">
+                        <button id="tree-view-btn" class="active">Tree View</button>
+                        <button id="table-view-btn">Table View</button>
+                    </div>
+                </div>
+                <div class="filter-controls">
+                    <h4>Filters</h4>
+                    <div class="filter-select" id="space-filter-container">
+                        <input type="text" id="text-filter" placeholder="Filter by text" />
+                        <span class="clear-icon" id="filter-text-clear">&times;</span>
+                    </div>
+                    <div class="filter-select" id="space-filter-container">
+                        <input type="text" id="space-filter" placeholder="Filter Spaces" />
+                        <span class="clear-icon" id="space-clear">&times;</span>
+                        <div class="options" id="space-options"></div>
+                    </div>
+                    <div class="filter-select" id="contributor-filter-container">
+                        <input type="text" id="contributor-filter" placeholder="Filter Contributors" />
+                        <span class="clear-icon" id="contributor-clear">&times;</span>
+                        <div class="options" id="contributor-options"></div>
+                    </div>
+                    <div class="filter-select" id="date-filter-container">
+                        <select id="date-filter" class="filter-dropdown">
+                            <option value="any">Any time</option>
+                            <option value="1d">The past day</option>
+                            <option value="1w">The past week</option>
+                            <option value="1m">The past month</option>
+                            <option value="1y">The past year</option>
+                        </select>
+                    </div>
+                    <div class="filter-select" id="type-filter-container">
+                        <select id="type-filter" class="filter-dropdown">
+                            <option value="">📄 All Types</option>
+                            <option value="page">📘 Page</option>
+                            <option value="blogpost">📝 Blog post</option>
+                            <option value="attachment">📎 Attachment</option>
+                            <option value="comment">💬 Comment</option>
+                            <option value="space">🏢 Space</option>
+                        </select>
+                    </div>
+                </div>
+            </aside>
+            <div class="container">
+                <div id="tree-container" class="tree-container"></div>
+                <div id="table-container" class="table-container"></div>
+                <div id="loading-indicator" style="display: none;"><div class="loader"></div></div>
+            </div>
+        </div>
+
+        <button id="scroll-to-top">↑</button>
         <script src="popup-script.js"></script>
     </div>
 </body>
