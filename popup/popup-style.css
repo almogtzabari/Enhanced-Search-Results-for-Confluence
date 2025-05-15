@@ -76,7 +76,7 @@ body.dark-mode {
 .header {
     background: var(--header-background);
     color: var(--header-text-color);
-    padding: 20px;
+    padding: 6px 12px; /* reduce top/bottom space */
     text-align: center;
     position: fixed;
     top: 0;
@@ -112,9 +112,10 @@ body.dark-mode {
 
 .controls .top-controls {
     display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
+    flex-direction: column;
     align-items: center;
+    gap: 2px;
+    margin-top: 2px;
 }
 
 .search-box {
@@ -124,7 +125,7 @@ body.dark-mode {
 }
 
 .search-box input {
-    width: 300px;
+    width: 570px;
     padding: 10px;
     font-size: 14px;
     background-color: var(--input-background-color);
@@ -140,7 +141,7 @@ body.dark-mode {
 }
 
 .search-box button {
-    padding: 10px 16px;
+    padding: 10px;
     font-size: 14px;
     background-color: var(--button-background);
     color: #ffffff;
@@ -206,7 +207,7 @@ body.dark-mode {
     display: flex;
     justify-content: center;
     flex-wrap: wrap;
-    margin: 10px 0;
+    margin: 4px 0;
 }
 
 #text-filter {
@@ -299,7 +300,8 @@ body.dark-mode {
     max-width: 1000px;
     margin: 0 auto;
     padding: 20px;
-    padding-top: 320px; /* Adjust this value to match the header's total height */
+    padding-top: 300px;
+    box-sizing: border-box;
 }
 
 #loading-indicator {
@@ -739,4 +741,22 @@ td:nth-child(3) a {
     color: var(--header-text-color);
     opacity: 0.85;
     margin-top: 2px;
+}
+
+.top-controls .row-1,
+.top-controls .row-2,
+.top-controls .row-3 {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px 6px;
+    width: 100%;
+    max-width: 1000px;
+    margin-top: 0;
+    margin-bottom: 0px;
+}
+
+#page-title-image {
+    max-width: 100%;
+    height: 80px;
 }
