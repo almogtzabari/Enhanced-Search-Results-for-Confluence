@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
      */
     const SCROLL_OFFSET = 500;     // magic number previously used for infinite scrolling
     const RESULTS_PER_REQUEST = 50; // magic number for how many results per fetch
+    const DEBUG = false;
 
     // We’ll use 'let' if a variable’s value changes, and 'const' otherwise.
     let searchText = '';
@@ -17,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let searchResultIds = new Set();
     let allExpanded = true;
     let loading = false;
+    let isFetching = false; // Prevent overlapping fetch calls
     let allResultsLoaded = false;
     let start = 0;
     let totalSize = null;
@@ -191,7 +193,36 @@ document.addEventListener('DOMContentLoaded', () => {
         if (contributorFilterValue) {
             cqlParts.push(`creator="${contributorFilterValue}"`);
         }
-        return encodeURIComponent(cqlParts.join(' AND '));
+
+        const dateFilter = document.getElementById('date-filter');
+        const dateVal = dateFilter ? dateFilter.value : 'any';
+        const today = new Date();
+        let fromDate = null;
+
+        if (dateVal === '1d') {
+            fromDate = new Date(today.setDate(today.getDate() - 1));
+        } else if (dateVal === '1w') {
+            fromDate = new Date(today.setDate(today.getDate() - 7));
+        } else if (dateVal === '1m') {
+            fromDate = new Date(today.setMonth(today.getMonth() - 1));
+        } else if (dateVal === '1y') {
+            fromDate = new Date(today.setFullYear(today.getFullYear() - 1));
+        }
+
+        if (fromDate) {
+            const isoDate = fromDate.toISOString().split('T')[0];
+            cqlParts.push(`lastModified >= "${isoDate}"`);
+        }
+        const finalCQL = cqlParts.join(' AND ');
+        if (DEBUG) {
+            console.log('Applied filters:', {
+                space: spaceFilterValue,
+                contributor: contributorFilterValue,
+                date: dateVal,
+                query: escapedSearchText
+            });
+        }
+        return encodeURIComponent(finalCQL);
     }
 
     async function performNewSearch(query) {
@@ -216,6 +247,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function resetDataAndFetchResults() {
+        if (DEBUG) console.log('Resetting data and fetching fresh results');
+        // Prevent scroll-triggered loadMoreResults while resetting
+        window.removeEventListener('scroll', infiniteScrollHandler);
         // Reset variables
         nodeIdCounter = 0;
         nodeMap = {};
@@ -246,6 +280,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadMoreResults() {
+        if (loading || allResultsLoaded || isFetching) return;
+        isFetching = true;
+        if (DEBUG) console.log('[Search] Triggered loadMoreResults');
         if (loading || allResultsLoaded) return;
         loading = true;
         showLoadingIndicator(true);
@@ -272,6 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const results = searchData.results;
             if (results.length === 0) {
+                if (DEBUG) console.log('No results found after CQL search.');
                 allResultsLoaded = true;
                 if (allResults.length === 0) {
                     // No results at all
@@ -282,6 +320,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             start += results.length;
+            if (DEBUG) console.log(`Fetched ${results.length} results. Total so far: ${allResults.length}`);
 
             // Process each result
             for (const pageData of results) {
@@ -309,6 +348,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         showLoadingIndicator(false);
         loading = false;
+        isFetching = false;
+        window.addEventListener('scroll', infiniteScrollHandler);
     }
 
     async function updateFilterOptions() {
@@ -381,7 +422,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Add space icon if available, otherwise use Confluence's default icon
             const iconImg = document.createElement('img');
+            if (DEBUG) console.log(`[Space Icon] Rendering icon for space: ${space.name}, URL: ${space.iconUrl}`);
             iconImg.src = space.iconUrl;
+            iconImg.loading = 'lazy';
+            iconImg.loading = 'lazy';
             iconImg.alt = `${space.name} icon`;
             iconImg.classList.add('space-icon'); // Add a CSS class for styling
             option.appendChild(iconImg);
@@ -621,6 +665,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateTableHtml(results) {
         const container = document.getElementById('table-container');
+        if (DEBUG) console.log('[Table Rendering] Clearing table container content');
         container.innerHTML = ''; // Clear previous content
 
         const table = document.createElement('table');
@@ -702,7 +747,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const contributor = page.history?.createdBy;
             if (contributor) {
                 const avatarImg = document.createElement('img');
-                avatarImg.src = contributor.avatarUrl || `${baseUrl}/images/icons/profilepics/default.png`;
+                const avatarToUse = contributor.avatarUrl || `${baseUrl}/images/icons/profilepics/default.png`;
+                if (DEBUG) console.log(`[Contributor Icon] Rendering avatar for: ${contributor.displayName || 'Unknown'}, URL: ${avatarToUse}`);
+                avatarImg.src = avatarToUse;
+                avatarImg.loading = 'lazy';
+                avatarImg.loading = 'lazy';
                 avatarImg.alt = `${contributor.displayName}'s avatar`;
                 avatarImg.classList.add('contributor-avatar');
                 contributorCell.appendChild(avatarImg);
@@ -810,6 +859,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const spaceFilter = document.getElementById('space-filter');
         const contributorFilter = document.getElementById('contributor-filter');
+        const dateFilter = document.getElementById('date-filter');
+
+        dateFilter.addEventListener('change', () => {
+            resetDataAndFetchResults();
+        });
 
         spaceFilter.addEventListener('input', evt => {
             if (!isValidInput(evt.target.value)) {
