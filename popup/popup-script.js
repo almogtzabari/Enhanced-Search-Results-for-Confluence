@@ -124,6 +124,51 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function attachTooltipListeners() {
+        const tooltip = document.getElementById('tree-tooltip');
+        if (!tooltip) return;
+
+        document.querySelectorAll('.search-result').forEach(node => {
+            const enter = e => {
+                const title = node.dataset.title;
+                const contributor = node.dataset.contributor;
+                const modified = node.dataset.modified;
+                tooltip.innerHTML = `<strong>${title}</strong><br>By: ${contributor}<br>Last Modified: ${modified}`;
+                tooltip.style.display = 'block';
+            };
+            const move = e => {
+                tooltip.style.left = `${e.pageX + 10}px`;
+                tooltip.style.top = `${e.pageY + 10}px`;
+            };
+            const leave = () => {
+                tooltip.style.display = 'none';
+            };
+            node._tooltipEnter = enter;
+            node._tooltipMove = move;
+            node._tooltipLeave = leave;
+            node.addEventListener('mouseenter', enter);
+            node.addEventListener('mousemove', move);
+            node.addEventListener('mouseleave', leave);
+        });
+    }
+
+    function detachTooltipListeners() {
+        const tooltip = document.getElementById('tree-tooltip');
+        if (!tooltip) return;
+
+        document.querySelectorAll('.search-result').forEach(node => {
+            if (node._tooltipEnter) {
+                node.removeEventListener('mouseenter', node._tooltipEnter);
+                node.removeEventListener('mousemove', node._tooltipMove);
+                node.removeEventListener('mouseleave', node._tooltipLeave);
+                delete node._tooltipEnter;
+                delete node._tooltipMove;
+                delete node._tooltipLeave;
+            }
+        });
+        tooltip.style.display = 'none';
+    }
+
     /**
      * ========== CORE LOGIC FUNCTIONS ==========
      */
@@ -543,22 +588,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.sync.get(['showTooltips'], (data) => {
             if (data.showTooltips === false) return;
 
-            document.querySelectorAll('.search-result').forEach(node => {
-                node.addEventListener('mouseenter', e => {
-                    const title = node.dataset.title;
-                    const contributor = node.dataset.contributor;
-                    const modified = node.dataset.modified;
-                    tooltip.innerHTML = `<strong>${title}</strong><br>By: ${contributor}<br>Last Modified: ${modified}`;
-                    tooltip.style.display = 'block';
-                });
-                node.addEventListener('mousemove', e => {
-                    tooltip.style.left = `${e.pageX + 10}px`;
-                    tooltip.style.top = `${e.pageY + 10}px`;
-                });
-                node.addEventListener('mouseleave', () => {
-                    tooltip.style.display = 'none';
-                });
-            });
+            attachTooltipListeners();
         });
     }
 
@@ -990,39 +1020,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (changes.showTooltips) {
                 const showTooltips = changes.showTooltips.newValue;
-                const tooltip = document.getElementById('tree-tooltip');
-                if (!tooltip) return;
-                document.querySelectorAll('.search-result').forEach(node => {
-                    node.removeEventListener('mouseenter', node._tooltipEnter);
-                    node.removeEventListener('mousemove', node._tooltipMove);
-                    node.removeEventListener('mouseleave', node._tooltipLeave);
-                    delete node._tooltipEnter;
-                    delete node._tooltipMove;
-                    delete node._tooltipLeave;
-                });
                 if (showTooltips) {
-                    document.querySelectorAll('.search-result').forEach(node => {
-                        const enter = e => {
-                            const title = node.dataset.title;
-                            const contributor = node.dataset.contributor;
-                            const modified = node.dataset.modified;
-                            tooltip.innerHTML = `<strong>${title}</strong><br>By: ${contributor}<br>Last Modified: ${modified}`;
-                            tooltip.style.display = 'block';
-                        };
-                        const move = e => {
-                            tooltip.style.left = `${e.pageX + 10}px`;
-                            tooltip.style.top = `${e.pageY + 10}px`;
-                        };
-                        const leave = () => {
-                            tooltip.style.display = 'none';
-                        };
-                        node._tooltipEnter = enter;
-                        node._tooltipMove = move;
-                        node._tooltipLeave = leave;
-                        node.addEventListener('mouseenter', enter);
-                        node.addEventListener('mousemove', move);
-                        node.addEventListener('mouseleave', leave);
-                    });
+                    attachTooltipListeners();
+                } else {
+                    detachTooltipListeners();
                 }
             }
         }
