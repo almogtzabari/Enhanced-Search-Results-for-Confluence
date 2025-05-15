@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="logo.png" alt="Enhanced Confluence Search Logo" height="100">
+</p>
+
 # Enhanced Search Results for Confluence Extension
 
 Enhance your Confluence experience with improved search functionality! This browser extension enhances the way search results are displayed in Confluence, making it easier to navigate and find relevant information efficiently.

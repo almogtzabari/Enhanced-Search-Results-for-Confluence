@@ -729,7 +729,7 @@ td:nth-child(3) a {
 .settings-icon-button:hover,
 .settings-icon-button:focus,
 .settings-icon-button:focus-visible {
-    transform: scale(1.2);
+    transform: scale(1.4);
     color: inherit;
     outline: none !important;
     box-shadow: none !important;

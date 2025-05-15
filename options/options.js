@@ -1,6 +1,6 @@
 /**
  * options.js
- * Handles the options/settings page for the Enhanced Confluence Search Results extension.
+ * Handles the options/settings page for the Enhanced Search Results for Confluence extension.
  * Users can configure domain-specific search input IDs and toggle dark mode.
  */
 
