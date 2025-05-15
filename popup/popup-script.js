@@ -164,7 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update document title
         document.title = `Search results for '${escapeHtml(query)}' on ${domainName}`;
         // Update the page header title
-        document.getElementById('page-title').textContent = `Enhanced Confluence Search Results (${domainName})`;
+        document.getElementById('page-title').textContent = `(${domainName})`;
 
         searchText = query;
         resetDataAndFetchResults();

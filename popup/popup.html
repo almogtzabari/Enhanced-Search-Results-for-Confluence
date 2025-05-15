@@ -11,36 +11,37 @@
 <body>
     <div class="background-wrapper">
         <header class="header">
+            <img id="page-title-image" src="../logo.png" alt="" />
             <h2 id="page-title">Enhanced Search Results for Confluence</h2>
             <div class="theme-toggle">
                 <button id="open-options" class="settings-icon-button" title="Settings">⚙️</button>
                 <span class="settings-label">Settings</span>
             </div>
             <div class="controls">
-                <!-- Combined Search and View Buttons -->
                 <div class="top-controls">
-                    <div class="search-box">
-                        <input type="text" id="new-search-input" placeholder="Enter new search query..." />
-                        <button id="new-search-button">Search</button>
+                    <div class="row-1">
+                        <div class="search-box">
+                            <input type="text" id="new-search-input" placeholder="Enter new search query..." />
+                            <button id="new-search-button">Search</button>
+                        </div>
                     </div>
-                    <div class="view-buttons">
+                    <div class="row-2 filter-controls">
+                        <input type="text" id="text-filter" placeholder="Filter by text" />
+                        <div class="filter-select" id="space-filter-container">
+                            <input type="text" id="space-filter" placeholder="Filter Spaces" />
+                            <span class="clear-icon" id="space-clear">&times;</span>
+                            <div class="options" id="space-options"></div>
+                        </div>
+                        <div class="filter-select" id="contributor-filter-container">
+                            <input type="text" id="contributor-filter" placeholder="Filter Contributors" />
+                            <span class="clear-icon" id="contributor-clear">&times;</span>
+                            <div class="options" id="contributor-options"></div>
+                        </div>
+                    </div>
+                    <div class="row-3 view-buttons">
                         <button id="tree-view-btn" class="active">Tree View</button>
                         <button id="table-view-btn">Table View</button>
                         <button id="toggle-all">Collapse All</button>
-                    </div>
-                </div>
-                <!-- Filters in a Single Row -->
-                <div class="filter-controls">
-                    <input type="text" id="text-filter" placeholder="Filter by text" />
-                    <div class="filter-select" id="space-filter-container">
-                        <input type="text" id="space-filter" placeholder="Filter Spaces" />
-                        <span class="clear-icon" id="space-clear">&times;</span>
-                        <div class="options" id="space-options"></div>
-                    </div>
-                    <div class="filter-select" id="contributor-filter-container">
-                        <input type="text" id="contributor-filter" placeholder="Filter Contributors" />
-                        <span class="clear-icon" id="contributor-clear">&times;</span>
-                        <div class="options" id="contributor-options"></div>
                     </div>
                 </div>
             </div>

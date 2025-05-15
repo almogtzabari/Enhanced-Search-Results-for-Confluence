@@ -370,3 +370,8 @@ body.dark-mode .toggle-label {
 body.dark-mode .toggle-desc {
     color: #aaa;
 }
+
+#page-title-image {
+    max-width: 100%;
+    height: 80px;
+}
