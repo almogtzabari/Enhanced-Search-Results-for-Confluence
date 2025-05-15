@@ -999,7 +999,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Update page header
     const pageTitleElem = document.getElementById('page-title');
     if (pageTitleElem) {
-        pageTitleElem.textContent = `Enhanced Confluence Search Results (${domainName})`;
+        pageTitleElem.textContent = `Enhanced Search Results for Confluence (${domainName})`;
     }
 
     // Theme toggle checkbox
