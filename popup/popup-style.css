@@ -71,17 +71,20 @@ body.dark-mode {
     background-color: var(--background-color);
     color: var(--text-color);
     min-height: 100vh;
+    display: flex;
+    flex-direction: column;
 }
 
 .header {
     background: var(--header-background);
     color: var(--header-text-color);
-    padding: 6px 12px; /* reduce top/bottom space */
+    padding: 20px 12px 40px 12px;
     text-align: center;
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
+    height: 220px;
     z-index: 1000;
     box-sizing: border-box;
     box-shadow: 0 2px 4px var(--shadow-color);
@@ -119,9 +122,23 @@ body.dark-mode {
 }
 
 .search-box {
+    position: relative;
     display: flex;
     align-items: center;
     margin: 5px;
+}
+
+.search-box .clear-icon {
+    position: absolute;
+    right: 80px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    font-weight: bold;
+    color: #999;
+    font-size: 18px;
+    z-index: 10;
+    display: none;
 }
 
 .search-box input {
@@ -203,34 +220,10 @@ body.dark-mode {
     background-color: var(--toggle-button-hover);
 }
 
-.filter-controls {
-    display: flex;
-    justify-content: center;
-    flex-wrap: wrap;
-    margin: 4px 0;
-}
-
-#text-filter {
-    padding: 10px;
-    font-size: 14px;
-    margin: 5px;
-    width: 200px;
-    background-color: var(--input-background-color);
-    color: var(--text-color);
-    border: 1px solid var(--input-border-color);
-    border-radius: var(--border-radius);
-    outline: none;
-    transition: border-color 0.2s;
-}
-
-#text-filter:focus {
-    border-color: var(--button-background);
-}
-
 .filter-select {
     position: relative;
     display: inline-block;
-    width: 200px;
+    width: 400px;
     margin: 5px;
 }
 
@@ -298,9 +291,9 @@ body.dark-mode {
 
 .container {
     max-width: 1000px;
-    margin: 0 auto;
+    margin: 10px 200px;
     padding: 20px;
-    padding-top: 300px;
+    padding-top: 80px;
     box-sizing: border-box;
 }
 
@@ -427,6 +420,7 @@ li .children li.only-child::before {
 
 /* Table Styles */
 
+.tree-container,
 .table-container {
     display: none;
     overflow-x: auto;
@@ -784,4 +778,75 @@ td:nth-child(3) a {
 
 .filter-select select.filter-dropdown:focus {
     border-color: var(--button-background);
+}
+
+.main-content {
+    display: flex;
+    flex-direction: row;
+    margin-top: 160px;
+    padding-left: 310px; /* 250px width + 40px left offset + 20px spacing */
+    flex: 1;
+    overflow: hidden;
+}
+
+.filter-sidebar {
+    position: fixed;
+    top: 250px;
+    left: 30px;
+    width: 250px;
+    height: calc(85vh - 160px);
+    overflow-y: auto;
+    background-color: var(--header-background);
+    padding: 20px 16px;
+    z-index: 999;
+    box-shadow: 1px 0 4px rgba(0, 0, 0, 0.05);
+    border-radius: var(--border-radius);
+}
+
+@media screen and (max-width: 768px) {
+    .main-content {
+        flex-direction: column;
+        padding-left: 0;
+    }
+
+    .filter-sidebar {
+        position: relative;
+        top: auto;
+        left: auto;
+        width: 100%;
+        height: auto;
+        overflow: visible;
+        box-shadow: none;
+        padding: 10px;
+    }
+
+    .container {
+        padding-top: 20px;
+    }
+}
+
+.filter-sidebar h4 {
+    margin-top: 0;
+    font-size: 16px;
+    color: var(--text-color);
+    margin-bottom: 12px;
+}
+
+.filter-controls,
+.view-section {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin: 10px 0 20px 0px;
+}
+
+.filter-sidebar .view-buttons {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0;
+}
+
+.filter-sidebar .view-buttons button {
+    width: 100%;
 }

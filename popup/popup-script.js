@@ -176,7 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
      */
 
     function buildCQL() {
-        const cqlParts = ['type=page'];
+        const cqlParts = [];
         // Escape backslash **first**, then double quotes
         const escapedSearchText = searchText.replace(/(["\\])/g, '\\$1');
         // Construct text query
@@ -196,6 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const dateFilter = document.getElementById('date-filter');
         const dateVal = dateFilter ? dateFilter.value : 'any';
+        const typeVal = typeFilter ? typeFilter.value : '';
         const today = new Date();
         let fromDate = null;
 
@@ -213,6 +214,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const isoDate = fromDate.toISOString().split('T')[0];
             cqlParts.push(`lastModified >= "${isoDate}"`);
         }
+
+        if (typeVal) {
+            cqlParts.push(`type="${typeVal}"`);
+        } else {
+            cqlParts.push(`type="page"`); // default fallback
+        }
+
         const finalCQL = cqlParts.join(' AND ');
         if (DEBUG) {
             console.log('Applied filters:', {
@@ -484,6 +492,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 input.value = option.textContent;
                 input.dataset.key = option.dataset.key;
                 container.style.display = 'none';
+
+                const clearIcon = document.getElementById(
+                    inputId === 'space-filter' ? 'space-clear' :
+                    inputId === 'contributor-filter' ? 'contributor-clear' :
+                    null
+                );
+                if (clearIcon) toggleClearIcon(input, clearIcon);
+
                 resetDataAndFetchResults();
             });
         });
@@ -816,6 +832,11 @@ document.addEventListener('DOMContentLoaded', () => {
      * ========== EVENT HANDLERS ==========
      */
 
+    // Helper to show/hide clear icons
+    function toggleClearIcon(inputElem, clearIcon) {
+        clearIcon.style.display = inputElem.value ? 'inline' : 'none';
+    }
+
     function addEventListeners() {
         // 1) Tree arrows (expand/collapse)
         const arrows = document.querySelectorAll('.arrow');
@@ -839,11 +860,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // 2) Toggle all
-        const toggleButton = document.getElementById('toggle-all');
-        toggleButton.removeEventListener('click', toggleAllHandler); // remove old before re-adding
-        toggleButton.addEventListener('click', toggleAllHandler);
-
         // 3) Tree/Table view buttons
         const treeViewBtn = document.getElementById('tree-view-btn');
         const tableViewBtn = document.getElementById('table-view-btn');
@@ -860,8 +876,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const spaceFilter = document.getElementById('space-filter');
         const contributorFilter = document.getElementById('contributor-filter');
         const dateFilter = document.getElementById('date-filter');
+        const typeFilter = document.getElementById('type-filter');
 
         dateFilter.addEventListener('change', () => {
+            resetDataAndFetchResults();
+        });
+        
+        typeFilter.addEventListener('change', () => {
             resetDataAndFetchResults();
         });
 
@@ -899,12 +920,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Clear icons
         const spaceClear = document.getElementById('space-clear');
-        spaceClear.removeEventListener('click', clearSpaceFilter);
-        spaceClear.addEventListener('click', clearSpaceFilter);
+        if (spaceClear && spaceFilter) {
+            spaceFilter.addEventListener('input', () => {
+                toggleClearIcon(spaceFilter, spaceClear);
+            });
+            toggleClearIcon(spaceFilter, spaceClear);
+
+            spaceClear.removeEventListener('click', clearSpaceFilter);
+            spaceClear.addEventListener('click', clearSpaceFilter);
+        }
 
         const contributorClear = document.getElementById('contributor-clear');
-        contributorClear.removeEventListener('click', clearContributorFilter);
-        contributorClear.addEventListener('click', clearContributorFilter);
+        if (contributorClear && contributorFilter) {
+            contributorFilter.addEventListener('input', () => {
+                toggleClearIcon(contributorFilter, contributorClear);
+            });
+            toggleClearIcon(contributorFilter, contributorClear);
+
+            contributorClear.removeEventListener('click', clearContributorFilter);
+            contributorClear.addEventListener('click', clearContributorFilter);
+        }
 
         // Close filter options on clicking outside
         document.addEventListener('click', evt => {
@@ -915,6 +950,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('contributor-options').style.display = 'none';
             }
         });
+
+        // Text filter clear icon
+        const textFilterClear = document.getElementById('filter-text-clear');
+        if (textFilter && textFilterClear) {
+            textFilter.addEventListener('input', () => {
+                toggleClearIcon(textFilter, textFilterClear);
+            });
+            textFilterClear.addEventListener('click', (evt) => {
+                evt.stopPropagation();
+                textFilter.value = '';
+                toggleClearIcon(textFilter, textFilterClear);
+                filterResults();
+                textFilter.focus();
+            });
+            toggleClearIcon(textFilter, textFilterClear);
+        }
 
         // 5) Table Header Sorting
         const tableHeaders = document.querySelectorAll('#table-container th');
@@ -964,11 +1015,35 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function switchToTreeView() {
-        document.getElementById('tree-container').style.display = 'block';
-        document.getElementById('table-container').style.display = 'none';
-        document.getElementById('tree-view-btn').classList.add('active');
-        document.getElementById('table-view-btn').classList.remove('active');
-        document.getElementById('toggle-all').style.display = 'inline-block';
+        const treeBtn = document.getElementById('tree-view-btn');
+        const isTreeActive = treeBtn.classList.contains('active');
+    
+        if (isTreeActive) {
+            const childrenDivs = document.querySelectorAll('.children');
+            const arrows = document.querySelectorAll('.arrow');
+    
+            if (allExpanded) {
+                childrenDivs.forEach(div => div.style.display = 'none');
+                arrows.forEach(arrow => {
+                    arrow.classList.remove('expanded');
+                    arrow.classList.add('collapsed');
+                });
+                allExpanded = false;
+            } else {
+                childrenDivs.forEach(div => div.style.display = 'block');
+                arrows.forEach(arrow => {
+                    arrow.classList.remove('collapsed');
+                    arrow.classList.add('expanded');
+                });
+                allExpanded = true;
+            }
+        } else {
+            document.getElementById('tree-container').style.display = 'block';
+            document.getElementById('table-container').style.display = 'none';
+            treeBtn.classList.add('active');
+            document.getElementById('table-view-btn').classList.remove('active');
+            allExpanded = true; // expanded by default when switching to tree
+        }
     }
 
     function switchToTableView() {
@@ -976,14 +1051,15 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('table-container').style.display = 'block';
         document.getElementById('tree-view-btn').classList.remove('active');
         document.getElementById('table-view-btn').classList.add('active');
-        document.getElementById('toggle-all').style.display = 'none';
     }
 
     function clearSpaceFilter(evt) {
         evt.stopPropagation();
         const spaceFilter = document.getElementById('space-filter');
+        const spaceClear = document.getElementById('space-clear');
         spaceFilter.value = '';
         spaceFilter.dataset.key = '';
+        toggleClearIcon(spaceFilter, spaceClear);
         displayFilteredSpaceOptions('');
         resetDataAndFetchResults();
     }
@@ -991,8 +1067,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function clearContributorFilter(evt) {
         evt.stopPropagation();
         const contributorFilter = document.getElementById('contributor-filter');
+        const contributorClear = document.getElementById('contributor-clear');
         contributorFilter.value = '';
         contributorFilter.dataset.key = '';
+        toggleClearIcon(contributorFilter, contributorClear);
         displayFilteredContributorOptions('');
         resetDataAndFetchResults();
     }
@@ -1036,6 +1114,8 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * ========== INITIALIZATION (RUN ON DOM READY) ==========
      */
+    const typeFilter = document.getElementById('type-filter');
+
     // Parse query params
     const params = getQueryParams();
     searchText = params.searchText || '';
@@ -1086,16 +1166,31 @@ document.addEventListener('DOMContentLoaded', () => {
     // New search elements
     const newSearchInput = document.getElementById('new-search-input');
     const newSearchButton = document.getElementById('new-search-button');
-    if (newSearchInput && newSearchButton) {
+    const mainSearchClear = document.getElementById('main-search-clear');
+
+    if (newSearchInput && newSearchButton && mainSearchClear) {
         newSearchInput.value = searchText;
+        toggleClearIcon(newSearchInput, mainSearchClear);
+
+        newSearchInput.addEventListener('input', () => {
+            toggleClearIcon(newSearchInput, mainSearchClear);
+        });
+
         newSearchInput.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
                 event.preventDefault();
                 performNewSearch(newSearchInput.value.trim());
             }
         });
+
         newSearchButton.addEventListener('click', () => {
             performNewSearch(newSearchInput.value.trim());
+        });
+
+        mainSearchClear.addEventListener('click', () => {
+            newSearchInput.value = '';
+            toggleClearIcon(newSearchInput, mainSearchClear);
+            newSearchInput.focus();
         });
     }
 
