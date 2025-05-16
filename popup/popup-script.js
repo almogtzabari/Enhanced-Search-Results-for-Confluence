@@ -1102,12 +1102,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const scrollToTopButton = document.getElementById('scroll-to-top');
     scrollToTopButton.addEventListener('click', () => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        const scrollableContainer = document.querySelector('.container');
+        if (scrollableContainer) {
+            scrollableContainer.scrollTo({ top: 0, behavior: 'smooth' });
+        }
     });
-    // Show or hide Scroll to Top button
-    window.addEventListener('scroll', () => {
-        scrollToTopButton.style.display = (window.scrollY > 200) ? 'block' : 'none';
-    });
+        // Show or hide Scroll to Top button
+        const scrollableContainer = document.querySelector('.container');
+        if (scrollableContainer) {
+            scrollableContainer.addEventListener('scroll', () => {
+                scrollToTopButton.style.display = (scrollableContainer.scrollTop > 200) ? 'block' : 'none';
+            });
+        }
 
     /**
      * ========== THEME TOGGLE ==========
