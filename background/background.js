@@ -1,3 +1,9 @@
+const DEBUG = localStorage.getItem('DEBUG') === 'true';
+const log = {
+    debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
+    error: (...args) => console.error('[ERROR]', ...args)
+};
+
 // Detect Firefox
 const isFirefox = typeof browser !== 'undefined' && typeof InstallTrigger !== 'undefined';
 
@@ -26,18 +32,19 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                     file: 'content/content.js'
                 }, () => {
                     if (chrome.runtime.lastError) {
-                        console.error('Injection failed:', chrome.runtime.lastError);
+                        log.error('Injection failed:', chrome.runtime.lastError);
                     }
                 });
             } else if (chrome.permissions && chrome.permissions.contains) {
                 chrome.permissions.contains({ origins: [origin] }, (hasPermission) => {
+                    log.debug(`Permission check for ${origin}:`, hasPermission);
                     if (hasPermission) {
                         chrome.scripting.executeScript({
                             target: { tabId },
                             files: ['content/content.js']
                         });
                     } else {
-                        console.log('No permission for domain:', matchingSetting.domain);
+                        log.debug('No permission for domain:', matchingSetting.domain);
                     }
                 });
             }

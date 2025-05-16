@@ -4,6 +4,14 @@
  * Users can configure domain-specific search input IDs and toggle dark mode.
  */
 
+const DEBUG = localStorage.getItem('DEBUG') === 'true';
+const log = {
+    debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
+    info: (...args) => console.info('[INFO]', ...args),
+    warn: (...args) => console.warn('[WARN]', ...args),
+    error: (...args) => console.error('[ERROR]', ...args)
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     const domainSettingsContainer = document.getElementById('domainSettings');
     const addDomainButton = document.getElementById('addDomain');
@@ -50,14 +58,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const isDark = darkModeToggle.checked;
         document.body.classList.toggle('dark-mode', isDark);
         chrome.storage.sync.set({ darkMode: isDark }, () => {
-            console.log('Dark mode setting saved:', isDark);
+            log.debug('Dark mode setting saved:', isDark);
         });
     });
 
     tooltipToggle.addEventListener('change', () => {
         const show = tooltipToggle.checked;
         chrome.storage.sync.set({ showTooltips: show }, () => {
-            console.log('Tooltip setting saved:', show);
+            log.debug('Tooltip setting saved:', show);
         });
     });
 
@@ -78,6 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 domainSettings.push({ domain, searchInputId });
                 domains.push(domain);
             } else {
+                log.warn('Invalid domain or input ID detected. Ignoring entry.');
                 showStatus('Invalid input. Please check your domain and search input ID.', 'error');
                 return;
             }
@@ -93,6 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isFirefox) {
             // Firefox: assume permission declared in manifest
             chrome.storage.sync.set({ domainSettings }, () => {
+                log.info('Saved domain settings:', domainSettings);
                 showStatus('Settings saved (permissions assumed granted in Firefox).', 'success');
                 saveButton.disabled = true;
             });
@@ -101,6 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
             chrome.permissions.request({ origins }, (granted) => {
                 if (granted) {
                     chrome.storage.sync.set({ domainSettings }, () => {
+                        log.info('Saved domain settings:', domainSettings);
                         showStatus('Settings saved and permissions granted!', 'success');
                         saveButton.disabled = true;
                     });
@@ -109,6 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         console.error(chrome.runtime.lastError);
                         showStatus(`Permissions denied: ${chrome.runtime.lastError.message}`, 'error');
                     } else {
+                        log.warn('User denied permissions for domains:', origins);
                         showStatus('Permissions denied.', 'error');
                     }
                 }
