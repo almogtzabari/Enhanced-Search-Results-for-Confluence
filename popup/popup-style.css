@@ -13,6 +13,11 @@ body {
     font-size: 14px;
 }
 
+html, body {
+    height: 100%;
+    overflow: hidden;
+}
+
 /* Light Theme Variables */
 :root {
     --background-color: #f0f2f5;
@@ -70,9 +75,11 @@ body.dark-mode {
 .background-wrapper {
     background-color: var(--background-color);
     color: var(--text-color);
-    min-height: 100vh;
+    height: 100%;
     display: flex;
     flex-direction: column;
+    padding-top: 110px;
+    overflow: hidden;
 }
 
 .header {
@@ -84,7 +91,7 @@ body.dark-mode {
     top: 0;
     left: 0;
     right: 0;
-    height: 220px;
+    height: 210px;
     z-index: 1000;
     box-sizing: border-box;
     box-shadow: 0 2px 4px var(--shadow-color);
@@ -201,6 +208,8 @@ body.dark-mode {
 
 .view-buttons button:hover {
     background-color: var(--button-hover-background);
+    transform: scale(1.1);
+    transition: transform 0.2s ease-in-out, background-color 0.2s;
 }
 
 #toggle-all {
@@ -290,12 +299,15 @@ body.dark-mode {
 }
 
 .container {
-    max-width: 1000px;
+    width: 1000px;
     margin: 10px auto;
+    flex-shrink: 0;
     padding: 20px;
-    padding-top: 80px;
+    padding-top: 0px;
     box-sizing: border-box;
     position: relative;
+    max-height: calc(100vh - 220px); /* Header height (210px) + margin */
+    overflow-y: auto;
 }
 
 #loading-indicator {
@@ -303,7 +315,9 @@ body.dark-mode {
     justify-content: center;
     align-items: center;
     width: 100%;
-    padding: 20px 0;
+    height: 200px;
+    padding: 0;
+    margin-top: 20px;
     color: #666;
 }
 
@@ -789,18 +803,24 @@ td:nth-child(3) a {
 }
 
 .main-content {
+    flex-grow: 1;
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    margin-top: 160px;
-    gap: 40px;
+    margin-top: 140px;
+    gap: 30px;
     padding: 0 20px;
     position: relative;
+    max-width: 1300px;
+    min-width: 900px;
+    margin-left: auto;
+    margin-right: auto;
+    overflow: auto;
 }
 
 .filter-sidebar {
     position: sticky;
-    top: 240px; /* just below the fixed header */
+    top: 0px; /* just below the fixed header */
     align-self:normal;
     will-change:inherit;
     transition: none !important;
@@ -810,7 +830,8 @@ td:nth-child(3) a {
     padding: 20px 16px;
     box-shadow: 1px 0 4px rgba(0, 0, 0, 0.05);
     border-radius: var(--border-radius);
-    max-height: calc(100vh - 260px);
+    max-height: calc(100vh - 630px);
+    min-height: 450px;
     overflow-y: auto;
 }
 
@@ -837,7 +858,7 @@ td:nth-child(3) a {
 }
 
 .filter-sidebar h4 {
-    margin-top: 0;
+    margin-top: 10px;
     font-size: 16px;
     color: var(--text-color);
     margin-bottom: 12px;
@@ -852,12 +873,39 @@ td:nth-child(3) a {
 }
 
 .filter-sidebar .view-buttons {
-    justify-content: flex-start;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin: 0;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 8px;
 }
 
 .filter-sidebar .view-buttons button {
-    width: 100%;
+    flex: 1;
+    min-width: 80px;
+    padding: 10px 16px;
+    height: 40px;
+    box-sizing: border-box;
+}
+
+/* Truncate long tree entries */
+.tree-node {
+    display: inline-block;
+    max-width: 85%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+}
+
+/* Hide scrollbar but allow scrolling */
+body::-webkit-scrollbar,
+.main-content::-webkit-scrollbar {
+    width: 0px;
+    height: 0px;
+}
+
+body,
+.main-content {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE 10+ */
 }

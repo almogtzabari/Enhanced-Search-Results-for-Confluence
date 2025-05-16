@@ -2,7 +2,9 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * ========== CONSTANTS & GLOBALS ==========
      */
-    const SCROLL_OFFSET = 500;     // magic number previously used for infinite scrolling
+    // Load more only when scrolled to exact bottom
+    const SCROLL_THRESHOLD_REACHED = (el) =>
+        el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
     const RESULTS_PER_REQUEST = 50; // magic number for how many results per fetch
     const DEBUG = false;
 
@@ -12,11 +14,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let domainName = '';
 
     // Tree/Filtering/Sorting state
-    let nodeIdCounter = 0;
     let nodeMap = {};
     let roots = [];
     let searchResultIds = new Set();
     let allExpanded = true;
+    let collapsedNodes = new Set(); // Track collapsed node IDs
     let loading = false;
     let isFetching = false; // Prevent overlapping fetch calls
     let allResultsLoaded = false;
@@ -266,6 +268,7 @@ document.addEventListener('DOMContentLoaded', () => {
         allExpanded = true;
         loading = false;
         allResultsLoaded = false;
+        isFetching = false;
         start = 0;
         totalSize = null;
         allResults = [];
@@ -574,6 +577,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateTreeHtml(results) {
+        // Preserve collapsed state before rebuilding
+        const currentCollapsed = document.querySelectorAll('.arrow.collapsed');
+        collapsedNodes.clear();
+        currentCollapsed.forEach(arrow => {
+            const li = arrow.closest('li');
+            if (li?.id) collapsedNodes.add(li.id);
+        });
+
         nodeMap = {};
         roots = [];
 
@@ -657,9 +668,10 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const node of nodes) {
             const nodeClass = node.isSearchResult ? 'search-result' : 'ancestor';
             const hasChildren = node.children.length > 0;
-            const currentNodeId = `node-${nodeIdCounter++}`;
+            const currentNodeId = `node-${node.id}`;
+            const isCollapsed = collapsedNodes.has(currentNodeId);
             const arrow = hasChildren
-                ? '<span class="arrow expanded"></span>'
+                ? `<span class="arrow ${isCollapsed ? 'collapsed' : 'expanded'}"></span>`
                 : '<span class="arrow empty"></span>';
 
             const tooltipAttrs = node.isSearchResult
@@ -667,9 +679,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 : '';
 
             html += `<li id="${currentNodeId}" class="${nodeClass}"${tooltipAttrs}>`;
-            html += `${arrow} <a href="${node.url}" target="_blank">${node.title}</a>`;
+            html += `${arrow} <a href="${node.url}" class="tree-node" target="_blank">${node.title || ''}</a>`;
             if (hasChildren) {
-                html += '<div class="children" style="display: block;">';
+                const displayStyle = collapsedNodes.has(currentNodeId) ? 'none' : 'block';
+                html += `<div class="children" style="display: ${displayStyle};">`;
                 html += generateTreeHtml(node.children);
                 html += '</div>';
             }
@@ -881,7 +894,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dateFilter.addEventListener('change', () => {
             resetDataAndFetchResults();
         });
-        
+
         typeFilter.addEventListener('change', () => {
             resetDataAndFetchResults();
         });
@@ -1017,11 +1030,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function switchToTreeView() {
         const treeBtn = document.getElementById('tree-view-btn');
         const isTreeActive = treeBtn.classList.contains('active');
-    
+
         if (isTreeActive) {
             const childrenDivs = document.querySelectorAll('.children');
             const arrows = document.querySelectorAll('.arrow');
-    
+
             if (allExpanded) {
                 childrenDivs.forEach(div => div.style.display = 'none');
                 arrows.forEach(arrow => {
@@ -1080,11 +1093,12 @@ document.addEventListener('DOMContentLoaded', () => {
      */
 
     function infiniteScrollHandler() {
-        if ((window.innerHeight + window.scrollY) >= (document.body.offsetHeight - SCROLL_OFFSET)) {
-            loadMoreResults();
-        }
+        const container = document.querySelector('.container');
+        if (!container || !SCROLL_THRESHOLD_REACHED(container)) return;
+        loadMoreResults();
     }
-    window.addEventListener('scroll', infiniteScrollHandler);
+    document.querySelector('.container')?.addEventListener('scroll', infiniteScrollHandler);
+    document.querySelector('.main-content')?.addEventListener('scroll', infiniteScrollHandler);
 
     const scrollToTopButton = document.getElementById('scroll-to-top');
     scrollToTopButton.addEventListener('click', () => {
