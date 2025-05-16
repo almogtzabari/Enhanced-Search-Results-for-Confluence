@@ -33,32 +33,25 @@
 
         <div class="main-content">
             <aside id="filter-sidebar" class="filter-sidebar">
-                <div class="view-section">
-                    <h4>Views</h4>
-                    <div class="view-buttons">
-                        <button id="tree-view-btn" class="active">Tree View</button>
-                        <button id="table-view-btn">Table View</button>
-                    </div>
-                </div>
                 <div class="filter-controls">
                     <h4>Filters</h4>
                     <div class="filter-select" id="space-filter-container">
-                        <input type="text" id="text-filter" placeholder="Filter by text" />
+                        <input type="text" id="text-filter" placeholder="🔠  Filter by text" />
                         <span class="clear-icon" id="filter-text-clear">&times;</span>
                     </div>
                     <div class="filter-select" id="space-filter-container">
-                        <input type="text" id="space-filter" placeholder="Filter Spaces" />
+                        <input type="text" id="space-filter" placeholder="🚀  Filter Spaces" />
                         <span class="clear-icon" id="space-clear">&times;</span>
                         <div class="options" id="space-options"></div>
                     </div>
                     <div class="filter-select" id="contributor-filter-container">
-                        <input type="text" id="contributor-filter" placeholder="Filter Contributors" />
+                        <input type="text" id="contributor-filter" placeholder="👤  Filter Contributors" />
                         <span class="clear-icon" id="contributor-clear">&times;</span>
                         <div class="options" id="contributor-options"></div>
                     </div>
                     <div class="filter-select" id="date-filter-container">
                         <select id="date-filter" class="filter-dropdown">
-                            <option value="any">Any time</option>
+                            <option value="any">🕒&nbsp;&nbsp;Any time</option>
                             <option value="1d">The past day</option>
                             <option value="1w">The past week</option>
                             <option value="1m">The past month</option>
@@ -67,13 +60,20 @@
                     </div>
                     <div class="filter-select" id="type-filter-container">
                         <select id="type-filter" class="filter-dropdown">
-                            <option value="">📄 All Types</option>
-                            <option value="page">📘 Page</option>
-                            <option value="blogpost">📝 Blog post</option>
-                            <option value="attachment">📎 Attachment</option>
-                            <option value="comment">💬 Comment</option>
-                            <option value="space">🏢 Space</option>
+                            <option value="">📄&nbsp;&nbsp;All Types</option>
+                            <option value="page">📘&nbsp;&nbsp;Page</option>
+                            <option value="blogpost">📝&nbsp;&nbsp;Blog post</option>
+                            <option value="attachment">📎&nbsp;&nbsp;Attachment</option>
+                            <option value="comment">💬&nbsp;&nbsp;Comment</option>
+                            <option value="space">🚀&nbsp;&nbsp;Space</option>
                         </select>
+                    </div>
+                </div>
+                <div class="view-section">
+                    <h4>Views</h4>
+                    <div class="view-buttons">
+                        <button id="tree-view-btn" class="active">Tree</button>
+                        <button id="table-view-btn">Table</button>
                     </div>
                 </div>
             </aside>
