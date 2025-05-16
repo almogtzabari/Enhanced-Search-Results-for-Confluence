@@ -291,15 +291,19 @@ body.dark-mode {
 
 .container {
     max-width: 1000px;
-    margin: 10px 200px;
+    margin: 10px auto;
     padding: 20px;
     padding-top: 80px;
     box-sizing: border-box;
+    position: relative;
 }
 
 #loading-indicator {
-    text-align: center;
-    padding: 10px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    padding: 20px 0;
     color: #666;
 }
 
@@ -424,6 +428,10 @@ li .children li.only-child::before {
 .table-container {
     display: none;
     overflow-x: auto;
+    max-width: 1000px;
+    min-width: 900px;
+    width: 100%;
+    margin-left: 0;
 }
 
 table {
@@ -782,25 +790,28 @@ td:nth-child(3) a {
 
 .main-content {
     display: flex;
-    flex-direction: row;
+    justify-content: center;
+    align-items: flex-start;
     margin-top: 160px;
-    padding-left: 310px; /* 250px width + 40px left offset + 20px spacing */
-    flex: 1;
-    overflow: hidden;
+    gap: 40px;
+    padding: 0 20px;
+    position: relative;
 }
 
 .filter-sidebar {
-    position: fixed;
-    top: 250px;
-    left: 30px;
+    position: sticky;
+    top: 240px; /* just below the fixed header */
+    align-self:normal;
+    will-change:inherit;
+    transition: none !important;
     width: 250px;
-    height: calc(85vh - 160px);
-    overflow-y: auto;
+    min-width: 170px;
     background-color: var(--header-background);
     padding: 20px 16px;
-    z-index: 999;
     box-shadow: 1px 0 4px rgba(0, 0, 0, 0.05);
     border-radius: var(--border-radius);
+    max-height: calc(100vh - 260px);
+    overflow-y: auto;
 }
 
 @media screen and (max-width: 768px) {
