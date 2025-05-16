@@ -387,7 +387,7 @@ a:hover {
 }
 
 .search-result > a::before {
-    content: "🔍"; /* Unicode magnifying glass */
+    /* content: ""; Unicode magnifying glass */
     margin-right: 5px;
     vertical-align: middle;
 }

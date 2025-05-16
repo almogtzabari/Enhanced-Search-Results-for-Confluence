@@ -137,7 +137,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 const title = node.dataset.title;
                 const contributor = node.dataset.contributor;
                 const modified = node.dataset.modified;
-                tooltip.innerHTML = `<strong>${title}</strong><br>By: ${contributor}<br>Last Modified: ${modified}`;
+                const nodeType = node.dataset.type || '';
+                let typeLabel = '';
+                switch (nodeType) {
+                    case 'page': typeLabel = 'Page'; break;
+                    case 'blogpost': typeLabel = 'Blog Post'; break;
+                    case 'comment': typeLabel = 'Comment'; break;
+                    case 'attachment': typeLabel = 'Attachment'; break;
+                    default: typeLabel = '';
+                }
+                tooltip.innerHTML = `<strong>${title}</strong><br>Type: ${typeLabel}<br>By: ${contributor}<br>Last Modified: ${modified}`;
                 tooltip.style.display = 'block';
             };
             const move = e => {
@@ -217,10 +226,9 @@ document.addEventListener('DOMContentLoaded', () => {
             cqlParts.push(`lastModified >= "${isoDate}"`);
         }
 
-        if (typeVal) {
+        // Only apply type filter if a specific type is selected (omit for "All Types")
+        if (typeVal && ['page', 'blogpost', 'attachment', 'comment'].includes(typeVal)) {
             cqlParts.push(`type="${typeVal}"`);
-        } else {
-            cqlParts.push(`type="page"`); // default fallback
         }
 
         const finalCQL = cqlParts.join(' AND ');
@@ -614,7 +622,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     isSearchResult: true,
                     expanded: true,
                     contributor: pageData.history?.createdBy?.displayName || 'Unknown',
-                    modified: pageData.version?.when ? formatDate(pageData.version.when) : 'N/A'
+                    modified: pageData.version?.when ? formatDate(pageData.version.when) : 'N/A',
+                    type: pageData.type || 'page'
                 };
             }
         }
@@ -675,11 +684,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 : '<span class="arrow empty"></span>';
 
             const tooltipAttrs = node.isSearchResult
-                ? ` data-title="${escapeHtml(node.title)}" data-contributor="${escapeHtml(node.contributor)}" data-modified="${escapeHtml(node.modified)}"`
+                ? ` data-title="${escapeHtml(node.title)}" data-contributor="${escapeHtml(node.contributor)}" data-modified="${escapeHtml(node.modified)}" data-type="${node.type}"`
                 : '';
 
             html += `<li id="${currentNodeId}" class="${nodeClass}"${tooltipAttrs}>`;
-            html += `${arrow} <a href="${node.url}" class="tree-node" target="_blank">${node.title || ''}</a>`;
+            let icon = '';
+            switch (node.type) {
+                case 'page': icon = '📘'; break;
+                case 'blogpost': icon = '📝'; break;
+                case 'comment': icon = '💬'; break;
+                case 'attachment': icon = '📎'; break;
+            }
+            html += `${arrow} <a href="${node.url}" class="tree-node" target="_blank">${icon}&nbsp;&nbsp;${node.title || ''}</a>`;
             if (hasChildren) {
                 const displayStyle = collapsedNodes.has(currentNodeId) ? 'none' : 'block';
                 html += `<div class="children" style="display: ${displayStyle};">`;
@@ -736,8 +752,15 @@ document.addEventListener('DOMContentLoaded', () => {
             nameLink.target = '_blank';
             const titleSpan = document.createElement('span');
             titleSpan.classList.add('ellipsis-text');
+            const typeIcons = {
+                page: '📘',
+                blogpost: '📝',
+                attachment: '📎',
+                comment: '💬'
+            };
+            const icon = typeIcons[page.type] || '';
             const fullTitle = page.title || 'Untitled';
-            titleSpan.textContent = fullTitle;
+            titleSpan.innerHTML = `${icon}&nbsp;&nbsp;${escapeHtml(fullTitle)}`;
             titleSpan.title = fullTitle;
             nameLink.appendChild(titleSpan);
             nameCell.appendChild(nameLink);
