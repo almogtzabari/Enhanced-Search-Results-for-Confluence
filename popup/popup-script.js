@@ -6,7 +6,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const SCROLL_THRESHOLD_REACHED = (el) =>
         el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
     const RESULTS_PER_REQUEST = 50; // magic number for how many results per fetch
-    const DEBUG = false;
+    const DEBUG = localStorage.getItem('DEBUG') === 'true';
+
+    const log = {
+        debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
+        info: (...args) => console.info('[INFO]', ...args),
+        warn: (...args) => console.warn('[WARN]', ...args),
+        error: (...args) => console.error('[ERROR]', ...args)
+    };
 
     // We’ll use 'let' if a variable’s value changes, and 'const' otherwise.
     let searchText = '';
@@ -232,14 +239,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const finalCQL = cqlParts.join(' AND ');
-        if (DEBUG) {
-            console.log('Applied filters:', {
-                space: spaceFilterValue,
-                contributor: contributorFilterValue,
-                date: dateVal,
-                query: escapedSearchText
-            });
-        }
+        log.debug('Applied filters:', {
+            space: spaceFilterValue,
+            contributor: contributorFilterValue,
+            date: dateVal,
+            query: escapedSearchText
+        });
         return encodeURIComponent(finalCQL);
     }
 
@@ -260,12 +265,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update the page header title
         document.getElementById('page-title').textContent = `(${domainName})`;
 
+        log.info(`[Search] Starting new search for: "${query}"`);
         searchText = query;
         resetDataAndFetchResults();
     }
 
     function resetDataAndFetchResults() {
-        if (DEBUG) console.log('Resetting data and fetching fresh results');
+        log.debug('Resetting data and fetching fresh results');
         // Prevent scroll-triggered loadMoreResults while resetting
         window.removeEventListener('scroll', infiniteScrollHandler);
         // Reset variables
@@ -301,8 +307,8 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadMoreResults() {
         if (loading || allResultsLoaded || isFetching) return;
         isFetching = true;
-        if (DEBUG) console.log('[Search] Triggered loadMoreResults');
-        if (loading || allResultsLoaded) return;
+        log.debug('[Search] Triggered loadMoreResults');
+        log.debug('No results found after CQL search.');
         loading = true;
         showLoadingIndicator(true);
 
@@ -328,7 +334,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const results = searchData.results;
             if (results.length === 0) {
-                if (DEBUG) console.log('No results found after CQL search.');
+                log.debug('No results found after CQL search.');
                 allResultsLoaded = true;
                 if (allResults.length === 0) {
                     // No results at all
@@ -339,7 +345,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             start += results.length;
-            if (DEBUG) console.log(`Fetched ${results.length} results. Total so far: ${allResults.length}`);
+            log.debug(`Fetched ${results.length} results. Total so far: ${allResults.length}`);
 
             // Process each result
             for (const pageData of results) {
@@ -362,9 +368,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 allResultsLoaded = true;
             }
         } catch (err) {
-            console.error(err);
+            log.error('[Search] Failed to fetch search results:', err);
             alert(`An error occurred: ${err.message}`);
         }
+        log.info(`[Search] Finished loading batch. Total loaded: ${allResults.length}`);
         showLoadingIndicator(false);
         loading = false;
         isFetching = false;
@@ -441,7 +448,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Add space icon if available, otherwise use Confluence's default icon
             const iconImg = document.createElement('img');
-            if (DEBUG) console.log(`[Space Icon] Rendering icon for space: ${space.name}, URL: ${space.iconUrl}`);
+            log.debug(`[Space Icon] ${space.name}`, space.iconUrl);
             iconImg.src = space.iconUrl;
             iconImg.loading = 'lazy';
             iconImg.loading = 'lazy';
@@ -655,6 +662,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const treeContainer = document.getElementById('tree-container');
+        log.debug(`Rendering tree with ${roots.length} top-level nodes`);
         treeContainer.innerHTML = generateTreeHtml(roots);
 
         let tooltip = document.getElementById('tree-tooltip');
@@ -666,8 +674,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         chrome.storage.sync.get(['showTooltips'], (data) => {
-            if (data.showTooltips === false) return;
-
+            const enabled = data.showTooltips !== false;
+            log.debug('Tooltip feature enabled:', enabled);
+            if (!enabled) return;
+        
             attachTooltipListeners();
         });
     }
@@ -710,7 +720,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateTableHtml(results) {
         const container = document.getElementById('table-container');
-        if (DEBUG) console.log('[Table Rendering] Clearing table container content');
+        log.debug('[Table] Clearing container content');
         container.innerHTML = ''; // Clear previous content
 
         const table = document.createElement('table');
@@ -800,7 +810,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (contributor) {
                 const avatarImg = document.createElement('img');
                 const avatarToUse = contributor.avatarUrl || `${baseUrl}/images/icons/profilepics/default.png`;
-                if (DEBUG) console.log(`[Contributor Icon] Rendering avatar for: ${contributor.displayName || 'Unknown'}, URL: ${avatarToUse}`);
+                log.debug(`[Contributor Icon] ${contributor.displayName || 'Unknown'}`, avatarToUse);
                 avatarImg.src = avatarToUse;
                 avatarImg.loading = 'lazy';
                 avatarImg.loading = 'lazy';
@@ -907,7 +917,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // 4) Filters (text, space, contributor)
         const textFilter = document.getElementById('text-filter');
         textFilter.removeEventListener('input', filterResults);
-        textFilter.addEventListener('input', filterResults);
+        textFilter.addEventListener('input', (evt) => {
+            log.debug('[Filter] Text input changed:', evt.target.value);
+            filterResults();
+        });
 
         const spaceFilter = document.getElementById('space-filter');
         const contributorFilter = document.getElementById('contributor-filter');
@@ -915,14 +928,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const typeFilter = document.getElementById('type-filter');
 
         dateFilter.addEventListener('change', () => {
+            log.debug('[Filter] Date changed:', dateFilter.value);
             resetDataAndFetchResults();
         });
 
         typeFilter.addEventListener('change', () => {
+            log.debug('[Filter] Type changed:', typeFilter.value);
             resetDataAndFetchResults();
         });
 
         spaceFilter.addEventListener('input', evt => {
+            log.debug('[Filter] Space input changed:', evt.target.value);
             if (!isValidInput(evt.target.value)) {
                 alert('Invalid input. Please use only alphanumeric characters, spaces, and -_.@');
                 evt.target.value = '';
@@ -934,6 +950,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         contributorFilter.addEventListener('input', evt => {
+            log.debug('[Filter] Contributor input changed:', evt.target.value);
             if (!isValidInput(evt.target.value)) {
                 alert('Invalid input. Please use only alphanumeric characters, spaces, and -_.@');
                 evt.target.value = '';
@@ -994,6 +1011,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 toggleClearIcon(textFilter, textFilterClear);
             });
             textFilterClear.addEventListener('click', (evt) => {
+                log.debug('[Filter] Text filter cleared');
                 evt.stopPropagation();
                 textFilter.value = '';
                 toggleClearIcon(textFilter, textFilterClear);
@@ -1090,6 +1108,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function clearSpaceFilter(evt) {
+        log.debug('[Filter] Space filter cleared');
         evt.stopPropagation();
         const spaceFilter = document.getElementById('space-filter');
         const spaceClear = document.getElementById('space-clear');
@@ -1101,6 +1120,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function clearContributorFilter(evt) {
+        log.debug('[Filter] Contributor filter cleared');
         evt.stopPropagation();
         const contributorFilter = document.getElementById('contributor-filter');
         const contributorClear = document.getElementById('contributor-clear');
@@ -1162,7 +1182,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Parse query params
     const params = getQueryParams();
     searchText = params.searchText || '';
-    baseUrl    = sanitiseBaseUrl(params.baseUrl || '');
+    if (!searchText) {
+        log.warn('No searchText parameter received in popup URL');
+    }
+    baseUrl = sanitiseBaseUrl(params.baseUrl || '');
 
     // Derive domain name from baseUrl
     try {
