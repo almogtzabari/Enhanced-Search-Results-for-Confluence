@@ -28,8 +28,6 @@ html, body {
     --header-text-color: #2e2e2e;
     --button-background: #007bff;
     --button-hover-background: #0056b3;
-    --toggle-button-background: #28a745;
-    --toggle-button-hover: #218838;
     --table-header-background: #e9ecef;
     --table-row-even-background: #ffffff;
     --table-row-odd-background: #f8f9fa;
@@ -212,23 +210,6 @@ body.dark-mode {
     transition: transform 0.2s ease-in-out, background-color 0.2s;
 }
 
-#toggle-all {
-    padding: 10px 16px;
-    font-size: 14px;
-    background-color: var(--toggle-button-background);
-    color: #ffffff;
-    border: none;
-    border-radius: var(--border-radius);
-    cursor: pointer;
-    margin-left: 10px;
-    outline: none;
-    transition: background-color 0.2s;
-}
-
-#toggle-all:hover {
-    background-color: var(--toggle-button-hover);
-}
-
 .filter-select {
     position: relative;
     display: inline-block;
@@ -387,7 +368,6 @@ a:hover {
 }
 
 .search-result > a::before {
-    /* content: ""; Unicode magnifying glass */
     margin-right: 5px;
     vertical-align: middle;
 }
@@ -563,57 +543,6 @@ button:active {
     transform: translateY(1px);
 }
 
-/* Switch Styles */
-
-.switch {
-    position: relative;
-    display: inline-block;
-    width: 50px;
-    height: 24px;
-}
-
-.switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-.slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: #ccc;
-    transition: .4s;
-    border-radius: 24px;
-}
-
-.slider:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: white;
-    transition: .4s;
-    border-radius: 50%;
-}
-
-.switch input:checked + .slider {
-    background-color: #2196F3;
-}
-
-.switch input:focus + .slider {
-    box-shadow: 0 0 1px #2196F3;
-}
-
-.switch input:checked + .slider:before {
-    transform: translateX(26px);
-}
-
 /* Responsive Design */
 
 @media screen and (max-width: 768px) {
@@ -752,16 +681,7 @@ td:nth-child(3) a {
     background: none !important;
 }
 
-.settings-label {
-    font-size: 12px;
-    color: var(--header-text-color);
-    opacity: 0.85;
-    margin-top: 2px;
-}
-
-.top-controls .row-1,
-.top-controls .row-2,
-.top-controls .row-3 {
+.top-controls .row-1 {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;

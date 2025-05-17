@@ -251,32 +251,8 @@ body.dark-mode input:checked + .slider:before {
     box-sizing: border-box;
 }
 
-/* Adjust Dark Mode styles */
-body.dark-mode .domain-entry .domain-input,
-body.dark-mode .domain-entry .search-input-id-input {
-    background-color: #2b2b2b;
-    border: 1px solid #555555;
-    color: #ffffff;
-}
-
-body.dark-mode .domain-entry .remove-domain {
-    background-color: #e57373;
-}
-
-body.dark-mode .domain-entry .remove-domain:hover {
-    background-color: #ef5350;
-}
-
 #addDomain:hover {
     background-color: #1669c1;
-}
-
-body.dark-mode #addDomain {
-    background-color: #3a86ff;
-}
-
-body.dark-mode #addDomain:hover {
-    background-color: #336fcb;
 }
 
 /* Add styles for the domain settings */
