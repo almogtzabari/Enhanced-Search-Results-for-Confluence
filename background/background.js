@@ -4,6 +4,8 @@ const log = {
     error: (...args) => console.error('[ERROR]', ...args)
 };
 
+const grantedDomains = new Set();
+
 // Detect Firefox
 const isFirefox = typeof browser !== 'undefined' && typeof InstallTrigger !== 'undefined';
 
@@ -36,17 +38,25 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
                     }
                 });
             } else if (chrome.permissions && chrome.permissions.contains) {
-                chrome.permissions.contains({ origins: [origin] }, (hasPermission) => {
-                    log.debug(`Permission check for ${origin}:`, hasPermission);
-                    if (hasPermission) {
-                        chrome.scripting.executeScript({
-                            target: { tabId },
-                            files: ['content/content.js']
-                        });
-                    } else {
-                        log.debug('No permission for domain:', matchingSetting.domain);
-                    }
-                });
+                if (grantedDomains.has(origin)) {
+                    chrome.scripting.executeScript({
+                        target: { tabId },
+                        files: ['content/content.js']
+                    });
+                } else {
+                    chrome.permissions.contains({ origins: [origin] }, (hasPermission) => {
+                        log.debug(`Permission check for ${origin}:`, hasPermission);
+                        if (hasPermission) {
+                            grantedDomains.add(origin);
+                            chrome.scripting.executeScript({
+                                target: { tabId },
+                                files: ['content/content.js']
+                            });
+                        } else {
+                            log.debug('No permission for domain:', matchingSetting.domain);
+                        }
+                    });
+                }
             }
         }
     });

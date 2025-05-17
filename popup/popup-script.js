@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const SCROLL_THRESHOLD_REACHED = (el) =>
         el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
     const RESULTS_PER_REQUEST = 50; // magic number for how many results per fetch
-    const DEBUG = true;
+    const DEBUG = false;
 
     const log = {
         debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
@@ -48,6 +48,15 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * ========== UTILITY FUNCTIONS ==========
      */
+
+    // Debounce utility
+    function debounce(fn, delay) {
+        let timeout;
+        return (...args) => {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => fn(...args), delay);
+        };
+    }
 
     // Get URL parameters
     function getQueryParams() {
@@ -367,7 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Re-filter and sort
             filteredResults = allResults.slice();
-            filterResults();
+            filterResults(true); // force recalculation
 
             if (start >= totalSize) {
                 allResultsLoaded = true;
@@ -386,13 +395,15 @@ document.addEventListener('DOMContentLoaded', () => {
     async function updateFilterOptions() {
         spaceList = [];
         contributorList = [];
+        const seenSpaceKeys = new Set();
+        const seenContributorKeys = new Set();
 
         allResults.forEach(pageData => {
-            // Spaces
             if (pageData.space && pageData.space.key && pageData.space.name) {
                 const spaceKey = pageData.space.key;
-                const iconUrl = pageData.space.icon?.path ? `${baseUrl}${pageData.space.icon.path}` : `${baseUrl}/images/logo/default-space-logo.svg`;
-                if (!spaceList.some(s => s.key === spaceKey)) {
+                if (!seenSpaceKeys.has(spaceKey)) {
+                    seenSpaceKeys.add(spaceKey);
+                    const iconUrl = pageData.space.icon?.path ? `${baseUrl}${pageData.space.icon.path}` : `${baseUrl}/images/logo/default-space-logo.svg`;
                     spaceList.push({
                         key: spaceKey,
                         name: pageData.space.name,
@@ -400,26 +411,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         iconUrl
                     });
                 }
-                pageData.space.iconUrl = iconUrl;
+                pageData.space.iconUrl = pageData.space.iconUrl || `${baseUrl}${pageData.space.icon?.path || '/images/logo/default-space-logo.svg'}`;
             }
-            // Contributors (creator)
+
             if (pageData.history && pageData.history.createdBy) {
                 const contributor = pageData.history.createdBy;
-                const contributorKey = contributor.username || contributor.userKey || contributor.accountId;
-                if (contributorKey) {
-                    let avatarPath = contributor.profilePicture?.path;
-                    if (!avatarPath) {
-                        avatarPath = '/images/icons/profilepics/default.png'; // Confluence fallback
-                    }
-                    const avatarUrl = `${baseUrl}${avatarPath}`;
-                    if (!contributorList.some(c => c.key === contributorKey)) {
-                        contributorList.push({
-                            key: contributorKey,
-                            name: contributor.displayName,
-                            avatarUrl
-                        });
-                    }
-                    pageData.history.createdBy.avatarUrl = avatarUrl;
+                const key = contributor.username || contributor.userKey || contributor.accountId;
+                if (key && !seenContributorKeys.has(key)) {
+                    seenContributorKeys.add(key);
+                    let avatarPath = contributor.profilePicture?.path || '/images/icons/profilepics/default.png';
+                    contributorList.push({
+                        key,
+                        name: contributor.displayName,
+                        avatarUrl: `${baseUrl}${avatarPath}`
+                    });
+                    contributor.avatarUrl = `${baseUrl}${avatarPath}`;
                 }
             }
         });
@@ -528,16 +534,41 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function filterResults() {
+    let lastTextFilter = '';
+    let lastSpaceKey = '';
+    let lastContributorKey = '';
+
+    function filterResults(force = false) {
         const textFilterValue = document.getElementById('text-filter').value.toLowerCase();
+        const spaceKey = document.getElementById('space-filter').dataset.key || '';
+        const contributorKey = document.getElementById('contributor-filter').dataset.key || '';
+
+        // Short-circuit if no change
+        if (
+            !force &&
+            textFilterValue === lastTextFilter &&
+            spaceKey === lastSpaceKey &&
+            contributorKey === lastContributorKey
+        ) {
+            return;
+        }
+
+        lastTextFilter = textFilterValue;
+        lastSpaceKey = spaceKey;
+        lastContributorKey = contributorKey;
 
         filteredResults = allResults.filter(pageData => {
-            if (!textFilterValue) return true;
-            const title = pageData.title.toLowerCase();
-            return title.includes(textFilterValue);
+            const matchesText = !textFilterValue || pageData.title.toLowerCase().includes(textFilterValue);
+            const matchesSpace = !spaceKey || pageData.space?.key === spaceKey;
+            const matchesContributor = !contributorKey || (
+                pageData.history?.createdBy &&
+                (pageData.history.createdBy.username === contributorKey ||
+                pageData.history.createdBy.userKey === contributorKey ||
+                pageData.history.createdBy.accountId === contributorKey)
+            );
+            return matchesText && matchesSpace && matchesContributor;
         });
 
-        // Apply sorting if any
         if (currentSortColumn) {
             sortResults(currentSortColumn, currentSortOrder);
         }
@@ -547,7 +578,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             updateTableHtml(filteredResults);
             updateTreeHtml(filteredResults);
-            addEventListeners(); // re-attach to new DOM
+            addEventListeners();
         }
     }
 
@@ -678,11 +709,13 @@ document.addEventListener('DOMContentLoaded', () => {
             document.body.appendChild(tooltip);
         }
 
+        const tooltipSettings = { showTooltips: true }; // default
+
         chrome.storage.sync.get(['showTooltips'], (data) => {
-            const enabled = data.showTooltips !== false;
-            log.debug('Tooltip feature enabled:', enabled);
+            tooltipSettings.showTooltips = data.showTooltips !== false;
+            log.debug('Tooltip feature enabled:', tooltipSettings.showTooltips);
             detachTooltipListeners();
-            if (enabled) {
+            if (tooltipSettings.showTooltips) {
                 attachTooltipListeners();
             }
         });
@@ -927,9 +960,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // 4) Filters (text, space, contributor)
         const textFilter = document.getElementById('text-filter');
         textFilter.removeEventListener('input', filterResults);
+        const debouncedFilterResults = debounce(filterResults, 250);
         textFilter.addEventListener('input', (evt) => {
             log.debug('[Filter] Text input changed:', evt.target.value);
-            filterResults();
+            debouncedFilterResults();
         });
 
         const spaceFilter = document.getElementById('space-filter');
@@ -1229,8 +1263,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 isDarkMode = isDark;
             }
             if (changes.showTooltips) {
-                const showTooltips = changes.showTooltips.newValue;
-                if (showTooltips) {
+                tooltipSettings.showTooltips = changes.showTooltips.newValue !== false;
+                if (tooltipSettings.showTooltips) {
                     attachTooltipListeners();
                 } else {
                     detachTooltipListeners();
