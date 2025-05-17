@@ -5,8 +5,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load more only when scrolled to exact bottom
     const SCROLL_THRESHOLD_REACHED = (el) =>
         el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-    let RESULTS_PER_REQUEST = 50; // default value, overridden from storage
-    const DEBUG = true;
+    let RESULTS_PER_REQUEST = 75; // default value, overridden from storage
+    const DEBUG = false;
 
     const log = {
         debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
