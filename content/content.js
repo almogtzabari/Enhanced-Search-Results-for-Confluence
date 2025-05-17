@@ -42,6 +42,7 @@
                             executeSearch();
                         }
                     });
+                    observer.disconnect(); // Stop observing once input is initialized
                 }
             });
 
