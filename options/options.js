@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.sync.get(['domainSettings', 'darkMode', 'showTooltips', 'resultsPerRequest'], (data) => {
         const domainSettings = data.domainSettings || [];
 
-        if (data.resultsPerRequest && ['50', '75', '100'].includes(String(data.resultsPerRequest))) {
+        if (data.resultsPerRequest && ['50', '75', '100', '125', '150', '200'].includes(String(data.resultsPerRequest))) {
             resultsPerRequestSelect.value = String(data.resultsPerRequest);
         }
 
