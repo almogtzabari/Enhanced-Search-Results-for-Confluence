@@ -42,8 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSortColumn = '';
     let currentSortOrder = 'asc'; // 'asc' or 'desc'
 
-    // Dark mode
-    let isDarkMode = false;
+    let tooltipSettings = { showTooltips: true };
 
     /**
      * ========== UTILITY FUNCTIONS ==========
@@ -295,7 +294,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Prevent scroll-triggered loadMoreResults while resetting
         window.removeEventListener('scroll', infiniteScrollHandler);
         // Reset variables
-        nodeIdCounter = 0;
         nodeMap = {};
         roots = [];
         searchResultIds = new Set();
@@ -711,8 +709,6 @@ document.addEventListener('DOMContentLoaded', () => {
             document.body.appendChild(tooltip);
         }
 
-        const tooltipSettings = { showTooltips: true }; // default
-
         chrome.storage.sync.get(['showTooltips'], (data) => {
             tooltipSettings.showTooltips = data.showTooltips !== false;
             log.debug('Tooltip feature enabled:', tooltipSettings.showTooltips);
@@ -1083,36 +1079,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function toggleAllHandler() {
-        const childrenDivs = document.querySelectorAll('.children');
-        const arrows = document.querySelectorAll('.arrow');
-        const toggleButton = document.getElementById('toggle-all');
-
-        if (allExpanded) {
-            // Collapse all
-            childrenDivs.forEach(div => {
-                div.style.display = 'none';
-            });
-            arrows.forEach(arrow => {
-                arrow.classList.remove('expanded');
-                arrow.classList.add('collapsed');
-            });
-            toggleButton.textContent = 'Expand All';
-            allExpanded = false;
-        } else {
-            // Expand all
-            childrenDivs.forEach(div => {
-                div.style.display = 'block';
-            });
-            arrows.forEach(arrow => {
-                arrow.classList.remove('collapsed');
-                arrow.classList.add('expanded');
-            });
-            toggleButton.textContent = 'Collapse All';
-            allExpanded = true;
-        }
-    }
-
     function switchToTreeView() {
         const treeBtn = document.getElementById('tree-view-btn');
         const isTreeActive = treeBtn.classList.contains('active');
@@ -1204,22 +1170,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
     /**
-     * ========== THEME TOGGLE ==========
-     */
-
-    function toggleTheme(isChecked) {
-        const body = document.body;
-        isDarkMode = isChecked;
-        if (isDarkMode) {
-            body.classList.add('dark-mode');
-        } else {
-            body.classList.remove('dark-mode');
-        }
-        // Save preference in sync storage
-        chrome.storage.sync.set({ darkMode: isDarkMode });
-    }
-
-    /**
      * ========== INITIALIZATION (RUN ON DOM READY) ==========
      */
     const typeFilter = document.getElementById('type-filter');
@@ -1257,7 +1207,6 @@ document.addEventListener('DOMContentLoaded', () => {
             log.debug('Using default RESULTS_PER_REQUEST:', RESULTS_PER_REQUEST);
         }
         document.body.classList.toggle('dark-mode', isDark);
-        isDarkMode = isDark;
 
         // 🟢 This guarantees fetch starts only after settings are loaded
         if (searchText) {
@@ -1269,9 +1218,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area === 'sync') {
             if (changes.darkMode) {
-                const isDark = changes.darkMode.newValue;
-                document.body.classList.toggle('dark-mode', isDark);
-                isDarkMode = isDark;
+                document.body.classList.toggle('dark-mode', changes.darkMode.newValue);
             }
             if (changes.showTooltips) {
                 tooltipSettings.showTooltips = changes.showTooltips.newValue !== false;
