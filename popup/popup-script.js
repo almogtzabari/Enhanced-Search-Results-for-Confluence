@@ -145,14 +145,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     let tooltipListenersAttached = false;
+    const tooltipBoundNodes = new WeakMap(); // Tracks nodes already bound with their handlers
 
     function attachTooltipListeners() {
-        if (tooltipListenersAttached) return;
-        tooltipListenersAttached = true;
         const tooltip = document.getElementById('tree-tooltip');
         if (!tooltip) return;
 
         document.querySelectorAll('.search-result').forEach(node => {
+            if (tooltipBoundNodes.has(node)) return;
+
             const enter = e => {
                 const title = node.dataset.title;
                 const contributor = node.dataset.contributor;
@@ -169,37 +170,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 tooltip.innerHTML = `<strong>${title}</strong><br>Type: ${typeLabel}<br>By: ${contributor}<br>Last Modified: ${modified}`;
                 tooltip.style.display = 'block';
             };
+
             const move = e => {
                 tooltip.style.left = `${e.pageX + 10}px`;
                 tooltip.style.top = `${e.pageY + 10}px`;
             };
+
             const leave = () => {
                 tooltip.style.display = 'none';
             };
-            node._tooltipEnter = enter;
-            node._tooltipMove = move;
-            node._tooltipLeave = leave;
+
             node.addEventListener('mouseenter', enter);
             node.addEventListener('mousemove', move);
             node.addEventListener('mouseleave', leave);
+
+            tooltipBoundNodes.set(node, { enter, move, leave });
         });
+
+        tooltipListenersAttached = true;
     }
 
     function detachTooltipListeners() {
-        tooltipListenersAttached = false;
         const tooltip = document.getElementById('tree-tooltip');
         if (!tooltip) return;
 
+        tooltipListenersAttached = false;
+
         document.querySelectorAll('.search-result').forEach(node => {
-            if (node._tooltipEnter) {
-                node.removeEventListener('mouseenter', node._tooltipEnter);
-                node.removeEventListener('mousemove', node._tooltipMove);
-                node.removeEventListener('mouseleave', node._tooltipLeave);
-                delete node._tooltipEnter;
-                delete node._tooltipMove;
-                delete node._tooltipLeave;
+            const handlers = tooltipBoundNodes.get(node);
+            if (handlers) {
+                node.removeEventListener('mouseenter', handlers.enter);
+                node.removeEventListener('mousemove', handlers.move);
+                node.removeEventListener('mouseleave', handlers.leave);
+                tooltipBoundNodes.delete(node);
             }
         });
+
         tooltip.style.display = 'none';
     }
 
@@ -393,12 +399,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function updateFilterOptions() {
-        spaceList = [];
-        contributorList = [];
-        const seenSpaceKeys = new Set();
-        const seenContributorKeys = new Set();
+        const seenSpaceKeys = new Set(spaceList.map(s => s.key));
+        const seenContributorKeys = new Set(contributorList.map(c => c.key));
 
-        allResults.forEach(pageData => {
+        allResults.slice(start - RESULTS_PER_REQUEST, start).forEach(pageData => {
             if (pageData.space && pageData.space.key && pageData.space.name) {
                 const spaceKey = pageData.space.key;
                 if (!seenSpaceKeys.has(spaceKey)) {
@@ -430,7 +434,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Store full lists (for filtering as user types)
         fullSpaceList = [...spaceList];
         fullContributorList = [...contributorList];
 
@@ -459,7 +462,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Add space icon if available, otherwise use Confluence's default icon
             const iconImg = document.createElement('img');
-            log.debug(`[Space Icon] ${space.name}`, space.iconUrl);
             iconImg.src = space.iconUrl;
             iconImg.loading = 'lazy';
             iconImg.loading = 'lazy';
@@ -849,7 +851,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (contributor) {
                 const avatarImg = document.createElement('img');
                 const avatarToUse = contributor.avatarUrl || `${baseUrl}/images/icons/profilepics/default.png`;
-                log.debug(`[Contributor Icon] ${contributor.displayName || 'Unknown'}`, avatarToUse);
                 avatarImg.src = avatarToUse;
                 avatarImg.loading = 'lazy';
                 avatarImg.loading = 'lazy';
@@ -1257,7 +1258,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         document.body.classList.toggle('dark-mode', isDark);
         isDarkMode = isDark;
-    
+
         // 🟢 This guarantees fetch starts only after settings are loaded
         if (searchText) {
             performNewSearch(searchText);
