@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const SCROLL_THRESHOLD_REACHED = (el) =>
         el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
     const RESULTS_PER_REQUEST = 50; // magic number for how many results per fetch
-    const DEBUG = localStorage.getItem('DEBUG') === 'true';
+    const DEBUG = true;
 
     const log = {
         debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
@@ -135,7 +135,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    let tooltipListenersAttached = false;
+
     function attachTooltipListeners() {
+        if (tooltipListenersAttached) return;
+        tooltipListenersAttached = true;
         const tooltip = document.getElementById('tree-tooltip');
         if (!tooltip) return;
 
@@ -173,6 +177,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function detachTooltipListeners() {
+        tooltipListenersAttached = false;
         const tooltip = document.getElementById('tree-tooltip');
         if (!tooltip) return;
 
@@ -676,9 +681,10 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.sync.get(['showTooltips'], (data) => {
             const enabled = data.showTooltips !== false;
             log.debug('Tooltip feature enabled:', enabled);
-            if (!enabled) return;
-        
-            attachTooltipListeners();
+            detachTooltipListeners();
+            if (enabled) {
+                attachTooltipListeners();
+            }
         });
     }
 
@@ -883,7 +889,11 @@ document.addEventListener('DOMContentLoaded', () => {
         clearIcon.style.display = inputElem.value ? 'inline' : 'none';
     }
 
+    let eventListenersInitialized = false;
+
     function addEventListeners() {
+        if (eventListenersInitialized) return;
+        eventListenersInitialized = true;
         // 1) Tree arrows (expand/collapse)
         const arrows = document.querySelectorAll('.arrow');
         arrows.forEach(arrow => {

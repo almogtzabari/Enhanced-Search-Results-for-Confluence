@@ -4,7 +4,7 @@
  * Users can configure domain-specific search input IDs and toggle dark mode.
  */
 
-const DEBUG = localStorage.getItem('DEBUG') === 'true';
+const DEBUG = false;
 const log = {
     debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
     info: (...args) => console.info('[INFO]', ...args),
