@@ -21,8 +21,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const tooltipToggle = document.getElementById('tooltipToggle');
 
     // === Load and Apply Saved Settings ===
-    chrome.storage.sync.get(['domainSettings', 'darkMode', 'showTooltips'], (data) => {
+    const resultsPerRequestSelect = document.getElementById('resultsPerRequest');
+    chrome.storage.sync.get(['domainSettings', 'darkMode', 'showTooltips', 'resultsPerRequest'], (data) => {
         const domainSettings = data.domainSettings || [];
+
+        if (data.resultsPerRequest && ['50', '75', '100'].includes(String(data.resultsPerRequest))) {
+            resultsPerRequestSelect.value = String(data.resultsPerRequest);
+        }
 
         if (domainSettings.length > 0) {
             domainSettings.forEach(entry => addDomainEntry(entry.domain, entry.searchInputId));
@@ -70,6 +75,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // === Event: Save Settings ===
+    resultsPerRequestSelect.addEventListener('change', () => {
+        const value = parseInt(resultsPerRequestSelect.value, 10);
+        chrome.storage.sync.set({ resultsPerRequest: value }, () => {
+            log.debug('Saved resultsPerRequest:', value);
+        });
+    });
     saveButton.addEventListener('click', () => {
         const domainEntries = domainSettingsContainer.querySelectorAll('.domain-entry');
         const domainSettings = [];
@@ -93,7 +104,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (domainSettings.length === 0) {
-            showStatus('Please enter at least one valid domain.', 'error');
+            chrome.storage.sync.set({ domainSettings: [] }, () => {
+                showStatus('No domains configured. Extension will not auto-inject.', 'success');
+                saveButton.disabled = true;
+            });
             return;
         }
 
@@ -182,6 +196,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const regex = /^(?!:\/\/)([a-zA-Z0-9-_]+\.)*[a-zA-Z0-9][a-zA-Z0-9-_]+\.[a-zA-Z]{2,11}?$/;
         return regex.test(domain);
     }
+
+    // === Toggle Advanced Settings Section ===
+    const advToggle = document.getElementById('advancedSettingsToggle');
+    const advContent = document.getElementById('advancedSettingsContent');
+    advToggle.addEventListener('click', () => {
+        const isVisible = advContent.style.display === 'block';
+        advContent.style.display = isVisible ? 'none' : 'block';
+        advToggle.textContent = `Advanced Settings ${isVisible ? '▸' : '▾'}`;
+    });
 
     // === Helper: Input ID Validation ===
     function isValidInputId(inputId) {
