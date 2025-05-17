@@ -1,4 +1,4 @@
-const DEBUG = localStorage.getItem('DEBUG') === 'true';
+const DEBUG = false;
 const log = {
     debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
     error: (...args) => console.error('[ERROR]', ...args)
