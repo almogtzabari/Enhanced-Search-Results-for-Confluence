@@ -5,8 +5,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Load more only when scrolled to exact bottom
     const SCROLL_THRESHOLD_REACHED = (el) =>
         el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-    const RESULTS_PER_REQUEST = 50; // magic number for how many results per fetch
-    const DEBUG = false;
+    let RESULTS_PER_REQUEST = 50; // default value, overridden from storage
+    const DEBUG = true;
 
     const log = {
         debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
@@ -1246,12 +1246,22 @@ document.addEventListener('DOMContentLoaded', () => {
         pageTitleElem.textContent = `Enhanced Search Results for Confluence (${domainName})`;
     }
 
-    // Theme toggle checkbox
-    // Load dark mode preference from storage and apply it
-    chrome.storage.sync.get(['darkMode'], (data) => {
+    // Load user preferences
+    chrome.storage.sync.get(['darkMode', 'resultsPerRequest'], (data) => {
         const isDark = Boolean(data.darkMode);
+        if (data.resultsPerRequest && Number.isInteger(data.resultsPerRequest)) {
+            RESULTS_PER_REQUEST = data.resultsPerRequest;
+            log.debug('RESULTS_PER_REQUEST set from storage:', RESULTS_PER_REQUEST);
+        } else {
+            log.debug('Using default RESULTS_PER_REQUEST:', RESULTS_PER_REQUEST);
+        }
         document.body.classList.toggle('dark-mode', isDark);
         isDarkMode = isDark;
+    
+        // 🟢 This guarantees fetch starts only after settings are loaded
+        if (searchText) {
+            performNewSearch(searchText);
+        }
     });
 
     // React to darkMode setting changes from other parts of the extension
