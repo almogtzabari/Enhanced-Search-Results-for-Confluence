@@ -845,12 +845,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const nameLink = document.createElement('a');
             nameLink.href = buildConfluenceUrl(page._links.webui);
             nameLink.target = '_blank';
-            const titleSpan = document.createElement('span');
-            titleSpan.classList.add('ellipsis-text');
             const fullTitle = page.title || 'Untitled';
-            titleSpan.textContent = fullTitle;
-            titleSpan.title = fullTitle;
-            nameLink.appendChild(titleSpan);
+            nameLink.classList.add('multiline-ellipsis');
+            nameLink.textContent = fullTitle;
+            nameLink.title = fullTitle;
             nameCell.appendChild(nameLink);
             row.appendChild(nameCell);
 
@@ -872,7 +870,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 spaceLink.href = buildConfluenceUrl(page.space._links?.webui);
                 spaceLink.target = '_blank';
                 const spaceSpan = document.createElement('span');
-                spaceSpan.classList.add('ellipsis-text');
+                spaceLink.classList.add('multiline-ellipsis');
                 spaceSpan.textContent = page.space.name;
                 spaceSpan.title = page.space.name;
                 spaceLink.appendChild(spaceSpan);
@@ -907,7 +905,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 nameLink.href = contributorUrl;
                 nameLink.target = '_blank';
                 const nameSpan = document.createElement('span');
-                nameSpan.classList.add('ellipsis-text');
+                nameLink.classList.add('multiline-ellipsis');
                 let contributorName = contributor.displayName || '';
                 if (contributorName.startsWith('Unknown User')) {
                     contributorName = contributor.username || contributor.userKey || contributor.accountId || 'Unknown';
