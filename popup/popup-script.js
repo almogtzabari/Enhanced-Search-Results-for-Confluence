@@ -44,6 +44,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let tooltipSettings = { showTooltips: true };
 
+    const typeIcons = {
+        page: '📘',
+        blogpost: '📝',
+        attachment: '📎',
+        comment: '💬'
+    };
+
+    const typeLabels = {
+        page: 'Page',
+        blogpost: 'Blog Post',
+        attachment: 'Attachment',
+        comment: 'Comment'
+    };
+
     /**
      * ========== UTILITY FUNCTIONS ==========
      */
@@ -586,11 +600,21 @@ document.addEventListener('DOMContentLoaded', () => {
         filteredResults.sort((a, b) => {
             let valA, valB;
             switch (column) {
-                case 'Page Name':
+                case 'Type':
+                    const labelMap = {
+                        page: 'Page',
+                        blogpost: 'Blog Post',
+                        comment: 'Comment',
+                        attachment: 'Attachment'
+                    };
+                    valA = labelMap[a.type] || a.type || '';
+                    valB = labelMap[b.type] || b.type || '';
+                    break;
+                case 'Name':
                     valA = a.title.toLowerCase();
                     valB = b.title.toLowerCase();
                     break;
-                case 'Page Space':
+                case 'Space':
                     valA = a.space ? a.space.name.toLowerCase() : '';
                     valB = b.space ? b.space.name.toLowerCase() : '';
                     break;
@@ -763,25 +787,37 @@ document.addEventListener('DOMContentLoaded', () => {
         const table = document.createElement('table');
         const colGroup = document.createElement('colgroup');
         const col1 = document.createElement('col');
-        col1.style.width = '40%';
+        col1.style.width = '6%';  // Type
         const col2 = document.createElement('col');
-        col2.style.width = '25%';
+        col2.style.width = '32%'; // Name
         const col3 = document.createElement('col');
-        col3.style.width = '20%';
+        col3.style.width = '20%'; // Space
         const col4 = document.createElement('col');
-        col4.style.width = '12%';
+        col4.style.width = '18%'; // Contributor
         const col5 = document.createElement('col');
-        col5.style.width = '12%';
-        [col1, col2, col3, col4, col5].forEach(col => colGroup.appendChild(col));
+        col5.style.width = '11%'; // Date Created
+        const col6 = document.createElement('col');
+        col6.style.width = '11%'; // Last Modified
+        [col1, col2, col3, col4, col5, col6].forEach(col => colGroup.appendChild(col));
         table.appendChild(colGroup);
         const thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
 
-        const headers = ['Page Name', 'Page Space', 'Contributor', 'Date Created', 'Last Modified'];
+        const headers = ['Type', 'Name', 'Space', 'Contributor', 'Date Created', 'Last Modified'];
         headers.forEach(headerText => {
             const th = document.createElement('th');
             th.textContent = headerText;
             th.setAttribute('data-column', headerText);
+            th.style.cursor = 'pointer';
+            th.addEventListener('click', () => {
+                if (currentSortColumn === headerText) {
+                    currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
+                } else {
+                    currentSortColumn = headerText;
+                    currentSortOrder = 'asc';
+                }
+                filterResults(true);
+            });
             headerRow.appendChild(th);
         });
         thead.appendChild(headerRow);
@@ -792,6 +828,18 @@ document.addEventListener('DOMContentLoaded', () => {
         results.forEach(page => {
             const row = document.createElement('tr');
 
+            // Type
+            const typeCell = document.createElement('td');
+            const type = page.type || 'page';
+            const typeIcon = typeIcons[type] || '';
+            const label = typeLabels[type] || type;
+
+            const typeSpan = document.createElement('span');
+            typeSpan.textContent = typeIcon;
+            typeSpan.title = label;
+            typeCell.appendChild(typeSpan);
+            row.appendChild(typeCell);
+
             // Page Name
             const nameCell = document.createElement('td');
             const nameLink = document.createElement('a');
@@ -799,15 +847,8 @@ document.addEventListener('DOMContentLoaded', () => {
             nameLink.target = '_blank';
             const titleSpan = document.createElement('span');
             titleSpan.classList.add('ellipsis-text');
-            const typeIcons = {
-                page: '📘',
-                blogpost: '📝',
-                attachment: '📎',
-                comment: '💬'
-            };
-            const icon = typeIcons[page.type] || '';
             const fullTitle = page.title || 'Untitled';
-            titleSpan.innerHTML = `${icon}&nbsp;&nbsp;${escapeHtml(fullTitle)}`;
+            titleSpan.textContent = fullTitle;
             titleSpan.title = fullTitle;
             nameLink.appendChild(titleSpan);
             nameCell.appendChild(nameLink);

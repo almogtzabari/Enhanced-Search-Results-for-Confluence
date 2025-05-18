@@ -632,8 +632,8 @@ td:nth-child(3) a {
     height: 30px;
 }
 
-.space-cell .ellipsis-text,
-.contributor-cell .ellipsis-text {
+.space-cell a,
+.contributor-cell a {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
