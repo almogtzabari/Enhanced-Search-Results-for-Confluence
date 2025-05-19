@@ -58,6 +58,15 @@ document.addEventListener('DOMContentLoaded', () => {
         comment: 'Comment'
     };
 
+    const DEFAULT_COL_WIDTHS = [
+        60,  // Type
+        320, // Name
+        200, // Space
+        160, // Contributor
+        100, // Date Created
+        100  // Last Modified
+    ];
+
     /**
      * ========== UTILITY FUNCTIONS ==========
      */
@@ -786,30 +795,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const table = document.createElement('table');
         const colGroup = document.createElement('colgroup');
-        const col1 = document.createElement('col');
-        col1.style.width = '6%';  // Type
-        const col2 = document.createElement('col');
-        col2.style.width = '32%'; // Name
-        const col3 = document.createElement('col');
-        col3.style.width = '20%'; // Space
-        const col4 = document.createElement('col');
-        col4.style.width = '18%'; // Contributor
-        const col5 = document.createElement('col');
-        col5.style.width = '11%'; // Date Created
-        const col6 = document.createElement('col');
-        col6.style.width = '11%'; // Last Modified
+        const [col1, col2, col3, col4, col5, col6] =
+            Array.from({ length: 6 }, () => document.createElement('col'));
         [col1, col2, col3, col4, col5, col6].forEach(col => colGroup.appendChild(col));
         table.appendChild(colGroup);
+
+        /* ── restore user-resized widths (if any) ─────────────────────────── */
+        if (Array.isArray(window.colWidths) && window.colWidths.length) {
+            window.colWidths.forEach((w, idx) => {
+                if (colGroup.children[idx]) colGroup.children[idx].style.width = w + 'px';
+            });
+            const total = window.colWidths.reduce((a, b) => a + b, 0);
+            table.style.width = total + 'px';         // side-scroll works instantly
+        } else {
+            /* first render → apply sensible default widths and persist them */
+            // share the defaults so the resizer can reset to them
+            window.defaultColWidths = DEFAULT_COL_WIDTHS;
+            window.colWidths        = DEFAULT_COL_WIDTHS.slice();
+            DEFAULT_COL_WIDTHS.forEach((w, idx) => {
+                if (colGroup.children[idx]) colGroup.children[idx].style.width = w + 'px';
+            });
+            table.style.width = DEFAULT_COL_WIDTHS.reduce((a, b) => a + b, 0) + 'px';
+        }
         const thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
 
         const headers = ['Type', 'Name', 'Space', 'Contributor', 'Date Created', 'Last Modified'];
-        headers.forEach(headerText => {
+        const colElements = [col1, col2, col3, col4, col5, col6];   // keep order in sync!
+
+        headers.forEach((headerText, idx) => {
             const th = document.createElement('th');
             th.textContent = headerText;
             th.setAttribute('data-column', headerText);
             th.style.cursor = 'pointer';
-            th.addEventListener('click', () => {
+
+            // Sort unless the user grabbed the resizer
+            th.addEventListener('click', (e) => {
+                if (e.target.classList.contains('th-resizer')) return;
                 if (currentSortColumn === headerText) {
                     currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
                 } else {
@@ -818,6 +840,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 filterResults(true);
             });
+
+            /* ---------- resizer handle ---------- */
+            const resizer = document.createElement('span');
+            resizer.className = 'th-resizer';
+            th.appendChild(resizer);
+            attachColResizer(resizer, colElements[idx]);
+            /* ------------------------------------ */
+
             headerRow.appendChild(th);
         });
         thead.appendChild(headerRow);
@@ -936,6 +966,85 @@ document.addEventListener('DOMContentLoaded', () => {
 
         table.appendChild(tbody);
         container.appendChild(table);
+    }
+
+    function attachColResizer(resizerEl, colEl, minWidth = 60) {
+        if (!window.colWidths) window.colWidths = [];
+
+        const tableEl = colEl.closest('table');
+        const colIndex = () =>
+            Array.from(colEl.parentElement.children).indexOf(colEl);
+
+        /* helper – persist widths & keep table overflowable */
+        /* keep the other columns at their stored width so they don’t get squashed */
+        const syncTableWidth = () => {
+            tableEl.querySelectorAll('col').forEach((c, i) => {
+                c.style.width = `${window.colWidths[i]}px`;
+            });
+            tableEl.style.width =
+                window.colWidths.reduce((a, b) => a + b, 0) + 'px';
+        };
+
+        /* ── drag to resize ─────────────────────────────────── */
+        let startX, startW;
+        resizerEl.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            startX = e.clientX;
+            startW = parseFloat(colEl.style.width) || colEl.getBoundingClientRect().width;
+
+            /* snapshot current widths so the other columns stay put while dragging */
+            window.colWidths = Array.from(tableEl.querySelectorAll('col')).map(c =>
+                Math.max(
+                    parseFloat(c.style.width) || c.getBoundingClientRect().width,
+                    minWidth
+                )
+            );
+            const columnIdx = colIndex();
+
+            const move = ev => {
+                const w = Math.max(startW + ev.clientX - startX, minWidth);
+                window.colWidths[columnIdx] = w;      // change only the dragged column
+                syncTableWidth();
+            };
+            const up = () => {
+                document.body.style.cursor = '';
+                window.removeEventListener('pointermove', move);
+                window.removeEventListener('pointerup', up);
+            };
+            document.body.style.cursor = 'col-resize';
+            window.addEventListener('pointermove', move);
+            window.addEventListener('pointerup', up);
+        });
+
+        /* ── double-click behaviour ───────────────────────────────
+            • plain dbl-click  → reset to DEFAULT_COL_WIDTHS[idx]
+            • Alt + dbl-click → auto-fit to widest cell (old feature)
+        ---------------------------------------------------------------- */
+        resizerEl.addEventListener('dblclick', e => {
+            e.preventDefault(); e.stopPropagation();
+            const idx = colIndex();
+
+            if (e.altKey) {                     // keep the old auto-fit
+                let max = 0;
+
+                const th = tableEl.querySelectorAll('thead tr th')[idx];
+                if (th) max = th.scrollWidth;
+
+                tableEl.querySelectorAll('tbody tr').forEach(row => {
+                    const cell = row.children[idx];
+                    if (cell) max = Math.max(max, cell.scrollWidth);
+                });
+
+                const padding = 24;
+                window.colWidths[idx] = Math.max(max + padding, minWidth);
+            } else {                            // restore default width
+                const def = (window.defaultColWidths || DEFAULT_COL_WIDTHS)[idx] || minWidth;
+                window.colWidths[idx] = def;
+            }
+
+            colEl.style.width = window.colWidths[idx] + 'px';
+            syncTableWidth();
+        });
     }
 
     function showNoResultsMessage() {

@@ -418,10 +418,39 @@ li .children li.only-child::before {
 
 /* Table Styles */
 
+/* === Column Resizer Handle ========================= */
+th {                     /* header must be relative for the handle */
+    position: relative;
+}
+
+/* === Column Resizer Handle ========================= */
+th { position: relative; }          /* for absolute-positioned handle */
+
+/* Column-resizer — light theme baseline */
+.th-resizer{
+    position:absolute;
+    right:-6px;                    /* hangs out a bit more */
+    top:0;
+    width:16px;                    /* wider → easier to hit */
+    height:100%;
+    cursor:col-resize;
+    user-select:none;
+    pointer-events:auto;
+    z-index:5;
+    /* faint background so the zone is discoverable */
+    background:rgba(0,0,0,0.02);
+}
+
+/* Dark-mode override — give the grab-zone a subtle light tint */
+body.dark-mode .th-resizer{
+    background:rgba(255,255,255,0.02);
+}
+
 .tree-container,
 .table-container {
     display: none;
-    overflow-x: auto;
+    overflow-x: auto;               /* <── enables sideways scroll */
+    -webkit-overflow-scrolling: touch; /* smoother on touchpads */
     max-width: 1000px;
     min-width: 900px;
     width: 100%;
@@ -429,19 +458,22 @@ li .children li.only-child::before {
 }
 
 table {
-    width: 100%;
+    width: auto;           /* grows as columns grow */
+    min-width: 100%;       /* never smaller than the container */
     border-collapse: collapse;
     margin-bottom: 20px;
     box-shadow: 0 2px 4px var(--shadow-color);
     border-radius: var(--border-radius);
     overflow: hidden;
-    table-layout: fixed;
+    table-layout: fixed;   /* 🔒 keep widths set via <col>, even after new rows */
 }
 
 th, td {
     padding: 12px 15px;
     text-align: left;
     color: var(--text-color);
+    /* let the column shrink freely when table-layout:fixed is used */
+    min-width: 0;
 }
 
 th {
