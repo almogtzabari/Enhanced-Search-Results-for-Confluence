@@ -39,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Variables for sorting
     let currentSortColumn = '';
-    let currentSortOrder = 'asc'; // 'asc' or 'desc'
+    let currentSortOrder = ''; // 'asc', 'desc', or ''
 
     let tooltipSettings = { showTooltips: true };
 
@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const DEFAULT_COL_WIDTHS = [
-        60,  // Type
+        80,  // Type
         320, // Name
         200, // Space
         160, // Contributor
@@ -586,7 +586,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return matchesText && matchesSpace && matchesContributor;
         });
 
-        if (currentSortColumn) {
+        if (currentSortColumn && currentSortOrder) {
             sortResults(currentSortColumn, currentSortOrder);
         }
 
@@ -594,6 +594,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showNoResultsMessage();
         } else {
             updateTableHtml(filteredResults);
+            updateSortIcons();
             updateTreeHtml(filteredResults);
             addEventListeners();
         }
@@ -783,6 +784,21 @@ document.addEventListener('DOMContentLoaded', () => {
         return html;
     }
 
+    function updateSortIcons() {
+        document.querySelectorAll('#table-container th').forEach(th => {
+            const icon = th.querySelector('.sort-icon');
+            const col = th.getAttribute('data-column');
+            if (!icon) return;
+
+            if (currentSortColumn === col) {
+                icon.textContent = currentSortOrder === 'asc' ? '↑' :
+                                currentSortOrder === 'desc' ? '↓' : '';
+            } else {
+                icon.textContent = '';
+            }
+        });
+    }
+
     function updateTableHtml(results) {
         const container = document.getElementById('table-container');
         log.debug('[Table] Clearing container content');
@@ -820,19 +836,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
         headers.forEach((headerText, idx) => {
             const th = document.createElement('th');
-            th.textContent = headerText;
+            const label = document.createElement('span');
+            label.textContent = headerText;
+            th.appendChild(label);
+
+            const sortIcon = document.createElement('span');
+            sortIcon.className = 'sort-icon';
+            sortIcon.textContent = ''; // Ensure it starts empty
+            sortIcon.style.marginLeft = '4px';
+            th.appendChild(sortIcon);
             th.setAttribute('data-column', headerText);
             th.style.cursor = 'pointer';
 
             // Sort unless the user grabbed the resizer
             th.addEventListener('click', (e) => {
                 if (e.target.classList.contains('th-resizer')) return;
-                if (currentSortColumn === headerText) {
-                    currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
+                const column = e.currentTarget.getAttribute('data-column');
+
+                if (currentSortColumn === column) {
+                    if (currentSortOrder === 'asc') {
+                        currentSortOrder = 'desc';
+                    } else if (currentSortOrder === 'desc') {
+                        currentSortOrder = '';
+                        currentSortColumn = '';
+                    } else {
+                        currentSortOrder = 'asc';
+                    }
                 } else {
-                    currentSortColumn = headerText;
+                    currentSortColumn = column;
                     currentSortOrder = 'asc';
                 }
+
+                updateSortIcons();
                 filterResults(true);
             });
 
@@ -847,6 +882,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         thead.appendChild(headerRow);
         table.appendChild(thead);
+        updateSortIcons();
 
         const tbody = document.createElement('tbody');
 
@@ -861,6 +897,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const typeSpan = document.createElement('span');
             typeSpan.textContent = typeIcon;
+            typeSpan.style.fontSize = '2.0em';
             typeSpan.title = label;
             typeCell.appendChild(typeSpan);
             row.appendChild(typeCell);
@@ -1062,6 +1099,11 @@ document.addEventListener('DOMContentLoaded', () => {
         clearIcon.style.display = inputElem.value ? 'inline' : 'none';
     }
 
+    function onTypeFilterChange() {
+        log.debug('[Filter] Type changed:', typeFilter.value);
+        resetDataAndFetchResults();
+    }
+
     function addEventListeners() {
         // 1) Tree arrows (expand/collapse)
         document.getElementById('tree-container').addEventListener('click', event => {
@@ -1110,10 +1152,8 @@ document.addEventListener('DOMContentLoaded', () => {
             resetDataAndFetchResults();
         });
 
-        typeFilter.addEventListener('change', () => {
-            log.debug('[Filter] Type changed:', typeFilter.value);
-            resetDataAndFetchResults();
-        });
+        typeFilter.removeEventListener('change', onTypeFilterChange);
+        typeFilter.addEventListener('change', onTypeFilterChange);
 
         spaceFilter.addEventListener('input', evt => {
             log.debug('[Filter] Space input changed:', evt.target.value);
@@ -1198,22 +1238,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             toggleClearIcon(textFilter, textFilterClear);
         }
-
-        // 5) Table Header Sorting
-        const tableHeaders = document.querySelectorAll('#table-container th');
-        tableHeaders.forEach(header => {
-            header.style.cursor = 'pointer';
-            header.addEventListener('click', () => {
-                const column = header.getAttribute('data-column');
-                if (currentSortColumn === column) {
-                    currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
-                } else {
-                    currentSortColumn = column;
-                    currentSortOrder = 'asc';
-                }
-                filterResults();
-            });
-        });
     }
 
     function switchToTreeView() {
