@@ -609,7 +609,7 @@ document.addEventListener('DOMContentLoaded', () => {
         filteredResults.sort((a, b) => {
             let valA, valB;
             switch (column) {
-                case 'Type':
+                case 'Type': {
                     const labelMap = {
                         page: 'Page',
                         blogpost: 'Blog Post',
@@ -619,6 +619,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     valA = labelMap[a.type] || a.type || '';
                     valB = labelMap[b.type] || b.type || '';
                     break;
+                }
                 case 'Name':
                     valA = a.title.toLowerCase();
                     valB = b.title.toLowerCase();
