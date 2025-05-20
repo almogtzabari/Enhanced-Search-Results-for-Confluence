@@ -280,7 +280,7 @@ body.dark-mode {
 }
 
 .container {
-    width: 1000px;
+    width: 1020px;
     margin: 0px auto;
     flex-shrink: 0;
     padding: 20px;
@@ -431,7 +431,7 @@ th { position: relative; }          /* for absolute-positioned handle */
     position: absolute;
     top: 0;
     right: -4px;
-    width: 8px;
+    width: 12px;
     height: 100%;
     cursor: col-resize;
     user-select: none;
@@ -474,7 +474,7 @@ body.dark-mode .th-resizer:hover::before {
     overflow-x: auto;               /* <── enables sideways scroll */
     -webkit-overflow-scrolling: touch; /* smoother on touchpads */
     max-width: 1000px;
-    min-width: 900px;
+    min-width: 920px;
     width: 100%;
     margin-left: 0;
 }
@@ -906,4 +906,14 @@ td:nth-child(2) a.multiline-ellipsis {
     text-overflow: ellipsis;
     max-height: 3em;
     line-height: 1.5em;
+}
+
+.sort-icon {
+    display: inline-block;
+    min-width: 1ch;
+    font-size: 14px;
+    font-family: Arial, sans-serif;
+    color: inherit;
+    margin-left: 6px;
+    vertical-align: middle;
 }
