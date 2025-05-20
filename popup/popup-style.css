@@ -427,23 +427,45 @@ th {                     /* header must be relative for the handle */
 th { position: relative; }          /* for absolute-positioned handle */
 
 /* Column-resizer — light theme baseline */
-.th-resizer{
-    position:absolute;
-    right:-6px;                    /* hangs out a bit more */
-    top:0;
-    width:16px;                    /* wider → easier to hit */
-    height:100%;
-    cursor:col-resize;
-    user-select:none;
-    pointer-events:auto;
-    z-index:5;
-    /* faint background so the zone is discoverable */
-    background:rgba(0,0,0,0.02);
+.th-resizer {
+    position: absolute;
+    top: 0;
+    right: -4px;
+    width: 8px;
+    height: 100%;
+    cursor: col-resize;
+    user-select: none;
+    pointer-events: auto;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.th-resizer::before {
+    content: '';
+    width: 2px;
+    height: 60%;
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 1px;
+    transition: background-color 0.2s ease-in-out;
+}
+
+.th-resizer:hover::before {
+    background-color: rgba(0, 123, 255, 0.6);
+}
+
+.th-resizer:hover {
+    background: linear-gradient(to right, transparent 0%, rgba(0, 123, 255, 0.6) 50%, transparent 100%);
 }
 
 /* Dark-mode override — give the grab-zone a subtle light tint */
-body.dark-mode .th-resizer{
-    background:rgba(255,255,255,0.02);
+body.dark-mode .th-resizer::before {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+body.dark-mode .th-resizer:hover::before {
+    background-color: rgba(102, 191, 255, 0.8);
 }
 
 .tree-container,
