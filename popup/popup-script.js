@@ -1068,30 +1068,24 @@ document.addEventListener('DOMContentLoaded', () => {
         clearIcon.style.display = inputElem.value ? 'inline' : 'none';
     }
 
-    let eventListenersInitialized = false;
-
     function addEventListeners() {
-        if (eventListenersInitialized) return;
-        eventListenersInitialized = true;
         // 1) Tree arrows (expand/collapse)
-        const arrows = document.querySelectorAll('.arrow');
-        arrows.forEach(arrow => {
-            if (!arrow.dataset.listenerAdded) {
-                arrow.addEventListener('click', event => {
-                    const li = event.target.parentElement;
-                    const childrenDiv = li.querySelector('.children');
-                    if (!childrenDiv) return;
-                    if (childrenDiv.style.display === 'none') {
-                        childrenDiv.style.display = 'block';
-                        arrow.classList.remove('collapsed');
-                        arrow.classList.add('expanded');
-                    } else {
-                        childrenDiv.style.display = 'none';
-                        arrow.classList.remove('expanded');
-                        arrow.classList.add('collapsed');
-                    }
-                });
-                arrow.dataset.listenerAdded = true;
+        document.getElementById('tree-container').addEventListener('click', event => {
+            const arrow = event.target.closest('.arrow');
+            if (!arrow) return;
+
+            const li = arrow.closest('li');
+            const childrenDiv = li?.querySelector('.children');
+            if (!childrenDiv) return;
+
+            if (childrenDiv.style.display === 'none') {
+                childrenDiv.style.display = 'block';
+                arrow.classList.remove('collapsed');
+                arrow.classList.add('expanded');
+            } else {
+                childrenDiv.style.display = 'none';
+                arrow.classList.remove('expanded');
+                arrow.classList.add('collapsed');
             }
         });
 
