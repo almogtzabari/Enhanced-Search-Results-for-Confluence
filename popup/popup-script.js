@@ -15,7 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
         error: (...args) => console.error('[ERROR]', ...args)
     };
 
-    // We’ll use 'let' if a variable’s value changes, and 'const' otherwise.
     let searchText = '';
     let baseUrl = '';
     let domainName = '';
@@ -207,15 +206,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             tooltipBoundNodes.set(node, { enter, move, leave });
         });
-
-        tooltipListenersAttached = true;
     }
 
     function detachTooltipListeners() {
         const tooltip = document.getElementById('tree-tooltip');
         if (!tooltip) return;
-
-        tooltipListenersAttached = false;
 
         document.querySelectorAll('.search-result').forEach(node => {
             const handlers = tooltipBoundNodes.get(node);
