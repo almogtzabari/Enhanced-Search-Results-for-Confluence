@@ -1,6 +1,7 @@
 module.exports = {
     env: {
         browser: true, // Enables browser global variables like `window` and `document`.
+        node: true,    // Enables Node.js global variables like `module` and `require`.
         es2021: true,  // Enables ECMAScript 2021 syntax.
     },
     globals: {

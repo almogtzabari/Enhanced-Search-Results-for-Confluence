@@ -166,7 +166,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    let tooltipListenersAttached = false;
     const tooltipBoundNodes = new WeakMap(); // Tracks nodes already bound with their handlers
 
     function attachTooltipListeners() {
@@ -176,22 +175,22 @@ document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.search-result').forEach(node => {
             if (tooltipBoundNodes.has(node)) return;
 
-            const enter = e => {
-                const title = node.dataset.title;
-                const contributor = node.dataset.contributor;
-                const modified = node.dataset.modified;
-                const nodeType = node.dataset.type || '';
-                let typeLabel = '';
-                switch (nodeType) {
-                    case 'page': typeLabel = 'Page'; break;
-                    case 'blogpost': typeLabel = 'Blog Post'; break;
-                    case 'comment': typeLabel = 'Comment'; break;
-                    case 'attachment': typeLabel = 'Attachment'; break;
-                    default: typeLabel = '';
-                }
-                tooltip.innerHTML = `<strong>${title}</strong><br>Type: ${typeLabel}<br>By: ${contributor}<br>Last Modified: ${modified}`;
-                tooltip.style.display = 'block';
-            };
+            const enter = () => {
+            const title = node.dataset.title;
+            const contributor = node.dataset.contributor;
+            const modified = node.dataset.modified;
+            const nodeType = node.dataset.type || '';
+            let typeLabel = '';
+            switch (nodeType) {
+                case 'page': typeLabel = 'Page'; break;
+                case 'blogpost': typeLabel = 'Blog Post'; break;
+                case 'comment': typeLabel = 'Comment'; break;
+                case 'attachment': typeLabel = 'Attachment'; break;
+                default: typeLabel = '';
+            }
+            tooltip.innerHTML = `<strong>${title}</strong><br>Type: ${typeLabel}<br>By: ${contributor}<br>Last Modified: ${modified}`;
+            tooltip.style.display = 'block';
+        };
 
             const move = e => {
                 tooltip.style.left = `${e.pageX + 10}px`;
