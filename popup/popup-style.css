@@ -471,8 +471,7 @@ body.dark-mode .th-resizer:hover::before {
 .tree-container,
 .table-container {
     display: none;
-    overflow-x: auto;               /* <── enables sideways scroll */
-    -webkit-overflow-scrolling: touch; /* smoother on touchpads */
+    /* no scrolling here */
     max-width: 1000px;
     min-width: 920px;
     width: 100%;
