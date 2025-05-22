@@ -1339,7 +1339,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const params = getQueryParams();
     searchText = params.searchText || '';
     if (!searchText) {
-        log.warn('No searchText parameter received in popup URL');
+        log.warn('No searchText parameter received in results URL');
     }
     baseUrl = sanitiseBaseUrl(params.baseUrl || '');
 

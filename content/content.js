@@ -17,14 +17,14 @@
             }
         });
 
-        // Opens a popup with search results or an empty input for user queries
+        // Opens a new tab with search results or an empty input for user queries
         function executeSearch(initial = '') {
             let text = initial;
             const input = document.getElementById(searchInputId);
             if (!text && input) text = input.value.trim();
 
             const baseUrl = window.location.origin;
-            const url = `${chrome.runtime.getURL('popup/popup.html')}?searchText=${encodeURIComponent(
+            const url = `${chrome.runtime.getURL('results/results.html')}?searchText=${encodeURIComponent(
                 text,
             )}&baseUrl=${encodeURIComponent(baseUrl)}`;
             chrome.runtime.sendMessage({ action: 'openTab', url });
