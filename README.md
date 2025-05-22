@@ -49,8 +49,8 @@ Enhance your Confluence experience with improved search functionality! This brow
 
 The extension is available on the Chrome Web Store and Firefox Add-ons site:
 
-- <img src="images/chrome.png" width="20" alt="Chrome" align="absmiddle"> **[Chrome Web Store](...)**
-- <img src="images/firefox.png" width="20" alt="Firefox" align="absmiddle"> **[Firefox Add-ons](...)**
+- <img src="images/chrome.png" width="20" alt="Chrome" align="absmiddle"> **[Chrome Web Store](https://chromewebstore.google.com/detail/enhanced-search-results-f/mmaihfkphcnjjheipeljfjbfkimfhcch)**
+- <img src="images/firefox.png" width="20" alt="Firefox" align="absmiddle"> **[Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/enhanced-confluence-search/)**
 
 ## Usage
 
