@@ -85,6 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let contributorList = [];
     let fullSpaceList = [];
     let fullContributorList = [];
+    const conversationHistories = new Map(); // contentId -> messages[]
 
     // Variables for sorting
     let currentSortColumn = '';
@@ -121,6 +122,31 @@ document.addEventListener('DOMContentLoaded', () => {
     /**
      * ========== UTILITY FUNCTIONS ==========
      */
+
+    function detectDirection(text) {
+        const rtlChars = /[\u0590-\u05FF\u0600-\u06FF]/; // Hebrew + Arabic
+        return rtlChars.test(text) ? 'rtl' : 'ltr';
+    }
+
+    function sanitizeHtmlContent(html) {
+        // Remove script, style, iframe tags and their content
+        html = html.replace(/<script[\s\S]*?<\/script>/gi, '');
+        html = html.replace(/<style[\s\S]*?<\/style>/gi, '');
+        html = html.replace(/<iframe[\s\S]*?<\/iframe>/gi, '');
+
+        // Remove comments
+        html = html.replace(/<!--[\s\S]*?-->/g, '');
+
+        // Remove base64 image sources
+        html = html.replace(/<img[^>]+src=["']data:image\/[^"']+["'][^>]*>/gi, '');
+
+        // Trim excess whitespace
+        html = html.replace(/\s{2,}/g, ' ');
+        html = html.trim();
+
+        return html;
+    }
+
 
     // Debounce utility
     function debounce(fn, delay) {
@@ -1586,19 +1612,22 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!btn) return;
 
         const contentId = btn.dataset.id;
+        const allButtons = document.querySelectorAll(`.summarize-button[data-id="${contentId}"]`);
         const pageData = allResults.find(r => r.id === contentId);
         if (!pageData) {
             console.warn('Content not found for summarization');
             return;
         }
 
+        let bodyHtml = await fetchConfluenceBodyById(contentId);
+        bodyHtml = sanitizeHtmlContent(bodyHtml);
+
         try {
             const stored = await getStoredSummary(contentId, baseUrl);
             if (stored && stored.summaryHtml) {
                 log.debug(`[DB] Loaded summary from IndexedDB for contentId: ${contentId}`);
                 summaryCache.set(contentId, stored.summaryHtml);
-                showSummaryModal(stored.summaryHtml);
-                const allButtons = document.querySelectorAll(`.summarize-button[data-id="${contentId}"]`);
+                showSummaryModal(stored.summaryHtml, pageData, bodyHtml);
                 allButtons.forEach(b => {
                     b.textContent = '✅ See Summary';
                     b.classList.remove('loading');
@@ -1607,135 +1636,133 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const allButtons = document.querySelectorAll(`.summarize-button[data-id="${contentId}"]`);
             allButtons.forEach(b => {
                 b.textContent = 'Summarizing...';
                 b.classList.add('loading');
                 b.disabled = true;
             });
 
-            const bodyHtml = await fetchConfluenceBodyById(contentId);
+            chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], (syncData) => {
+                chrome.storage.local.get(['customUserPrompt'], async (localData) => {
+                    const apiKey = syncData.openaiApiKey;
+                    if (!apiKey) {
+                        alert('OpenAI API key not set. Please enter it in the extension options.');
+                        return;
+                    }
 
-            chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], async (data) => {
-                const apiKey = data.openaiApiKey;
-                if (!apiKey) {
-                    alert('OpenAI API key not set. Please enter it in the extension options.');
-                    return;
-                }
+                    const stored = await getStoredSummary(contentId, baseUrl);
+                    if (stored && stored.summaryHtml) {
+                        log.debug(`[DB] Loaded summary from IndexedDB for contentId: ${contentId}`);
+                        summaryCache.set(contentId, stored.summaryHtml);
+                        showSummaryModal(stored.summaryHtml);
+                        allButtons.forEach(b => {
+                            b.textContent = '✅ See Summary';
+                            b.classList.remove('loading');
+                            b.disabled = false;
+                        });
+                        return;
+                    }
 
-                const stored = await getStoredSummary(contentId, baseUrl);
-                if (stored && stored.summaryHtml) {
-                    log.debug(`[DB] Loaded summary from IndexedDB for contentId: ${contentId}`);
-                    summaryCache.set(contentId, stored.summaryHtml);
-                    showSummaryModal(stored.summaryHtml);
+                    const systemPrompt = `
+                        You are a technical summarizer. Your task is to generate a concise, relevance-focused HTML summary of Confluence content. This will help users assess whether a document is worth opening.
+
+                        You are given:
+                        - Title
+                        - Raw HTML body (Confluence storage format)
+                        - Type: "page", "blogpost", "comment", or "attachment"
+                        - Space name (if available)
+                        - Parent title (if comment)
+                        - Optional user prompt (important!)
+
+                        Output only valid, clean HTML (no Markdown or code blocks). Unless overridden, use this format:
+
+                        1. <h1> with: "🧠 AI Summary: [Title]"
+                        2. Paragraph summarizing content, with context:
+                        - Page: "This page, from the <b>[space]</b> space, covers..."
+                        - Blog post: "...published in..."
+                        - Comment: "...posted on the page titled..."
+                        - Attachment: "...uploaded to..."
+                        3. "Here are the main points:" followed by a <ul><li> list
+                        4. Keep tone concise, neutral, and useful. Avoid repeating title. Omit internal field names or Confluence-specific terms.
+
+                        --- Content Details ---
+                        Title: ${pageData.title}
+                        Type: ${pageData.type}
+                        Space: ${pageData.space?.name || 'N/A'}
+                        Parent Title: ${pageData.parentTitle || 'N/A'}
+                        Content (HTML): ${bodyHtml}
+                    `;
+
+                    const userPrompt = typeof localData.customUserPrompt === 'string'
+                        ? localData.customUserPrompt.trim()
+                        : '';
+
+                    const apiEndpoint = syncData.customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions';
+                    const aiModel = 'gpt-4o';
+
+                    log.debug('[Summary] Model:', aiModel);
+                    log.debug('[Summary] User prompt length:', userPrompt.length);
+                    log.debug('[Summary] System prompt length:', systemPrompt.length);
+
+                    const combinedLength = systemPrompt.length + userPrompt.length;
+                    if (combinedLength > 500000) {
+                        alert('The content is too large to summarize with the AI model (token limit exceeded). Try summarizing a shorter page.');
+                        allButtons.forEach(b => {
+                            b.textContent = '🧠 Summarize with AI';
+                            b.classList.remove('loading');
+                            b.disabled = false;
+                        });
+                        return;
+                    }
+
+                    log.debug('[Summary] Sending OpenAI request to:', apiEndpoint);
+
+                    const response = await fetch(apiEndpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${apiKey}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            model: aiModel,
+                            messages: [
+                                { role: 'system', content: systemPrompt },
+                                { role: 'user', content: userPrompt }
+                            ]
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error('[Summary] OpenAI API error response:', errorText);
+                        btn.textContent = '🧠 Summarize with AI';
+                        btn.classList.remove('loading');
+                        btn.disabled = false;
+                        throw new Error(`OpenAI API error: ${response.statusText}`);
+                    }
+
+                    const result = await response.json();
+                    log.debug('[Summary] Received response from OpenAI.');
+                    log.debug('[Summary] Response structure:', {
+                        usage: result.usage,
+                        model: result.model,
+                        choicesLength: result.choices?.length
+                    });
+                    const summary = result.choices[0].message.content;
+                    summaryCache.set(contentId, summary);
+                    await storeSummary({
+                        contentId,
+                        baseUrl,
+                        title: pageData.title,
+                        summaryHtml: summary,
+                        bodyHtml: bodyHtml
+                    });
+                    showSummaryModal(summary, pageData, bodyHtml);
                     allButtons.forEach(b => {
                         b.textContent = '✅ See Summary';
                         b.classList.remove('loading');
                         b.disabled = false;
                     });
-                    return;
-                }
-
-                const systemPrompt = `
-                    You are a professional technical summarizer. Your task is to generate a concise, relevance-focused HTML summary of internal Confluence content. This summary will be displayed in an enterprise browser extension to help users quickly determine whether the content is relevant to their search or task — without needing to open it.
-
-                    You will be provided:
-                    - The content title
-                    - The raw HTML body (in Confluence storage format)
-                    - The content type: one of "page", "blogpost", "comment", or "attachment"
-                    - The space the content belongs to (if applicable)
-                    - If the content is a comment, the title of the parent page or blog post it was written on
-                    - Optional user instructions (e.g. formatting or emphasis)
-
-                    Unless the user specifies otherwise, follow this default format:
-
-                    1. Return a clean, valid HTML snippet only. Do not include Markdown formatting, triple backticks (\`\`\`), or language labels like "html". Your output must begin directly with the HTML tags, not within a code block.
-                    2. Start with an <h1> element in this format: "🧠 AI Summary: [Content Title]".
-                    3. Add a paragraph summarizing what the content is about and its purpose. Adjust the phrasing based on content type:
-                    - For a **page**: "This page, from the <b>[space name]</b> space, covers..."
-                    - For a **blog post**: "This blog post, published in the <b>[space name]</b> space, discusses..."
-                    - For a **comment**: "This comment, posted in the <b>[space name]</b> space on the page titled '[Parent Title]', addresses..."
-                    - For an **attachment**: "This attachment, uploaded to the <b>[space name]</b> space, contains..."
-                    - If the space name is not available, omit that part.
-                    - If the parent title is not available (for comments), omit that phrase.
-                    4. Follow with a second paragraph beginning with: "Here are the main points:"
-                    5. Include an unordered list (<ul><li>) of the key topics, features, or areas discussed — focus on what the content is about and how it may be relevant.
-                    6. Maintain a professional, concise, and neutral tone. Avoid repeating the title in the body paragraph.
-                    7. Do not include references to Confluence, internal field names, or markup.
-
-                    Your goal is to help the user quickly decide whether this content is worth exploring based on its subject and context.
-
-                    --- Content Details ---
-                    Title: ${pageData.title}
-                    Type: ${pageData.type}
-                    Space: ${pageData.space?.name || 'N/A'}
-                    Parent Title: ${pageData.parentTitle || 'N/A'}
-                    Content (HTML): ${bodyHtml}
-                `;
-
-                let userPrompt = ``;
-
-                // Check for user-defined override
-                const storedPrompt = data.customUserPrompt?.trim();
-                if (storedPrompt) {
-                    userPrompt = storedPrompt
-                        .replace(/\{\{title\}\}/g, pageData.title)
-                        .replace(/\{\{body\}\}/g, bodyHtml);
-                }
-
-                const apiEndpoint = data.customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions';
-                const aiModel = 'gpt-4o';
-
-                log.debug('[Summary] Sending OpenAI request to:', apiEndpoint);
-                log.debug('[Summary] Model:', aiModel);
-                log.debug('[Summary] User prompt length:', userPrompt.length);
-                log.debug('[Summary] System prompt length:', systemPrompt.length);
-
-                const response = await fetch(apiEndpoint, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        model: aiModel,
-                        messages: [
-                            { role: 'system', content: systemPrompt },
-                            { role: 'user', content: userPrompt }
-                        ]
-                    })
-                });
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error('[Summary] OpenAI API error response:', errorText);
-                    btn.textContent = originalBtnText;
-                    btn.classList.remove('loading');
-                    btn.disabled = false;
-                    throw new Error(`OpenAI API error: ${response.statusText}`);
-                }
-
-                const result = await response.json();
-                log.debug('[Summary] Received response from OpenAI.');
-                log.debug('[Summary] Response structure:', {
-                    usage: result.usage,
-                    model: result.model,
-                    choicesLength: result.choices?.length
-                });
-                const summary = result.choices[0].message.content;
-                summaryCache.set(contentId, summary);
-                await storeSummary({
-                    contentId,
-                    baseUrl,
-                    title: pageData.title,
-                    summaryHtml: summary,
-                    bodyHtml: bodyHtml
-                });
-                showSummaryModal(summary);
-                allButtons.forEach(b => {
-                    b.textContent = '✅ See Summary';
-                    b.classList.remove('loading');
-                    b.disabled = false;
                 });
             });
         } catch (e) {
@@ -1749,12 +1776,113 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    function showSummaryModal(summaryText) {
+
+    function showSummaryModal(summaryText, pageData, bodyHtml) {
         const modal = document.getElementById('summary-modal');
         const modalBody = document.getElementById('modal-body');
         const closeBtn = document.getElementById('modal-close');
 
-        modalBody.innerHTML = summaryText;
+        // Split into paragraphs and list items, detect direction, and wrap
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = summaryText;
+
+        tempDiv.querySelectorAll('p, li').forEach(el => {
+            const dir = detectDirection(el.textContent);
+            el.setAttribute('dir', dir);
+        });
+
+        const summaryDiv = document.createElement('div');
+        summaryDiv.id = 'summary-content';
+        summaryDiv.innerHTML = tempDiv.innerHTML;
+
+        const qaThread = document.createElement('div');
+        qaThread.id = 'qa-thread';
+
+        const qaInputArea = document.createElement('div');
+        qaInputArea.id = 'qa-input-area';
+        qaInputArea.innerHTML = `
+            <textarea id="qa-input" placeholder="Ask a follow-up question..."></textarea>
+            <button id="qa-submit">Ask</button>
+            <div id="qa-loading" style="display: none;">Answering...</div>
+        `;
+
+        modalBody.innerHTML = '';
+        modalBody.appendChild(summaryDiv);
+        modalBody.appendChild(qaThread);
+        modalBody.appendChild(qaInputArea);
+
+        const qaInput = document.getElementById('qa-input');
+        const qaSubmit = document.getElementById('qa-submit');
+        const qaLoading = document.getElementById('qa-loading');
+
+        const contentId = pageData.id;
+        const systemPrompt = `
+        You are a technical summarizer helping users understand a Confluence page.
+        Use concise, helpful HTML to answer questions based on the provided content.
+        `;
+
+        const conversation = [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Summarize this page:\n\nTitle: ${pageData.title}\nType: ${pageData.type}\nSpace: ${pageData.space?.name || 'N/A'}\nParent Title: ${pageData.parentTitle || 'N/A'}\nContent: ${bodyHtml}` },
+            { role: 'assistant', content: summaryText }
+        ];
+        conversationHistories.set(contentId, conversation);
+
+        qaSubmit.onclick = async () => {
+            const question = qaInput.value.trim();
+            if (!question) return;
+
+            const messages = conversationHistories.get(contentId);
+            messages.push({ role: 'user', content: question });
+
+            const userMsg = document.createElement('div');
+            userMsg.className = 'qa-entry user';
+            userMsg.textContent = question;
+            qaThread.appendChild(userMsg);
+
+            qaSubmit.disabled = true;
+            qaLoading.style.display = 'block';
+
+            chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], async (data) => {
+                const apiKey = data.openaiApiKey;
+                const endpoint = data.customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions';
+
+                try {
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${apiKey}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            model: 'gpt-4o',
+                            messages
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`OpenAI error: ${response.statusText}`);
+                    }
+
+                    const result = await response.json();
+                    const answer = result.choices?.[0]?.message?.content || '[No response]';
+                    messages.push({ role: 'assistant', content: answer });
+
+                    const reply = document.createElement('div');
+                    reply.className = 'qa-entry assistant';
+                    reply.innerHTML = answer;
+                    qaThread.appendChild(reply);
+                    qaInput.value = '';
+                } catch (err) {
+                    console.error('[QA] Error:', err);
+                    alert('Failed to get answer from OpenAI.');
+                } finally {
+                    qaSubmit.disabled = false;
+                    qaLoading.style.display = 'none';
+                }
+            });
+        };
+
         modal.style.display = 'flex';
 
         // Close on 'x'

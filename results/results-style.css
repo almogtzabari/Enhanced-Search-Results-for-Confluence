@@ -1039,3 +1039,91 @@ body:not(.dark-mode) .modal-body li:hover,
 body:not(.dark-mode) .modal-body p:hover {
     background-color: #c2c2c2; /* or a slightly darker #e1e1e1 for better contrast */
 }
+
+#modal-body li[dir="rtl"],
+#modal-body p[dir="rtl"] {
+    text-align: right;
+}
+
+#modal-body li[dir="ltr"],
+#modal-body p[dir="ltr"] {
+    text-align: left;
+}
+
+#modal-body li[dir="rtl"] {
+    direction: rtl;
+    text-align: right;
+    list-style-type: none;
+    position: relative;
+    padding-right: 16px; /* add spacing for the bullet */
+}
+
+#modal-body li[dir="rtl"]::before {
+    content: '•';
+    position: absolute;
+    right: 0;
+    top: 0.3em;
+}
+
+#qa-thread {
+    margin-top: 20px;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.qa-entry {
+    margin-bottom: 10px;
+}
+
+.qa-entry.user {
+    font-weight: bold;
+    color: var(--link-color);
+}
+
+.qa-entry.assistant {
+    background-color: rgba(0, 123, 255, 0.05);
+    padding: 6px 10px;
+    border-radius: 6px;
+}
+
+#qa-input-area {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 20px;
+    border-top: 1px solid var(--input-border-color);
+    padding-top: 12px;
+}
+
+#qa-input {
+    width: 100%;
+    min-height: 60px;
+    padding: 8px;
+    font-size: 14px;
+    border: 1px solid var(--input-border-color);
+    border-radius: 6px;
+    resize: vertical;
+    background-color: var(--input-background-color);
+    color: var(--text-color);
+}
+
+#qa-submit {
+    align-self: flex-end;
+    padding: 8px 16px;
+    font-size: 14px;
+    background-color: var(--button-background);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+#qa-submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+#qa-loading {
+    font-style: italic;
+    color: #888;
+}
