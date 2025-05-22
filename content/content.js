@@ -24,10 +24,12 @@
             if (!text && input) text = input.value.trim();
 
             const baseUrl = window.location.origin;
-            const url = `${chrome.runtime.getURL('results/results.html')}?searchText=${encodeURIComponent(
-                text,
-            )}&baseUrl=${encodeURIComponent(baseUrl)}`;
-            chrome.runtime.sendMessage({ action: 'openTab', url });
+            chrome.runtime.sendMessage({
+                action: 'openSearchTab',
+                searchText: text,
+                baseUrl: baseUrl
+            });
+
         }
 
         // Monitors the DOM for the search input and adds the Enhanced Search button

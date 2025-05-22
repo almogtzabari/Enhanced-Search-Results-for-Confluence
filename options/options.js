@@ -13,6 +13,34 @@ const log = {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
+    const clearSummariesButton = document.getElementById('clearSummaries');
+
+    clearSummariesButton.addEventListener('click', () => {
+        if (confirm('Are you sure you want to delete all cached AI summaries? This cannot be undone.')) {
+            const request = indexedDB.open('ConfluenceSummariesDB', 1);
+
+            request.onsuccess = () => {
+                const db = request.result;
+                const tx = db.transaction('summaries', 'readwrite');
+                const store = tx.objectStore('summaries');
+                const clearRequest = store.clear();
+
+                clearRequest.onsuccess = () => {
+                    showStatus('Cached summaries cleared.', 'success');
+                };
+                clearRequest.onerror = () => {
+                    console.error('[ERROR] Failed to clear summaries:', clearRequest.error);
+                    showStatus('Failed to clear cached summaries.', 'error');
+                };
+            };
+
+            request.onerror = () => {
+                console.error('[ERROR] Failed to open database:', request.error);
+                showStatus('Could not access summary cache.', 'error');
+            };
+        }
+    });
+
     const domainSettingsContainer = document.getElementById('domainSettings');
     const addDomainButton = document.getElementById('addDomain');
     const saveButton = document.getElementById('save');
@@ -22,68 +50,89 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // === Load and Apply Saved Settings ===
     const resultsPerRequestSelect = document.getElementById('resultsPerRequest');
-    chrome.storage.sync.get(['domainSettings', 'darkMode', 'showTooltips', 'enableSummaries', 'resultsPerRequest', 'openaiApiKey', 'customApiEndpoint'], (data) => {
-        const domainSettings = data.domainSettings || [];
+    chrome.storage.sync.get(['domainSettings', 'darkMode', 'showTooltips', 'enableSummaries', 'resultsPerRequest', 'openaiApiKey', 'customApiEndpoint'], (syncData) => {
+        chrome.storage.local.get(['customUserPrompt'], (localData) => {
+            const data = { ...syncData, ...localData };
 
-        if (data.resultsPerRequest && ['50', '75', '100', '125', '150', '200'].includes(String(data.resultsPerRequest))) {
-            resultsPerRequestSelect.value = String(data.resultsPerRequest);
-        }
+            const domainSettings = data.domainSettings || [];
 
-        if (domainSettings.length > 0) {
-            domainSettings.forEach(entry => addDomainEntry(entry.domain, entry.searchInputId));
-        } else {
-            // Show at least one blank entry if no settings saved
-            addDomainEntry('', '');
-        }
+            if (data.resultsPerRequest && ['50', '75', '100', '125', '150', '200'].includes(String(data.resultsPerRequest))) {
+                resultsPerRequestSelect.value = String(data.resultsPerRequest);
+            }
 
-        darkModeToggle.checked = Boolean(data.darkMode);
-        const tooltipEnabled = data.showTooltips !== false;
-        tooltipToggle.checked = tooltipEnabled;
+            if (domainSettings.length > 0) {
+                domainSettings.forEach(entry => addDomainEntry(entry.domain, entry.searchInputId));
+            } else {
+                // Show at least one blank entry if no settings saved
+                addDomainEntry('', '');
+            }
 
-        const enableSummariesToggle = document.getElementById('enableSummariesToggle');
-        enableSummariesToggle.checked = data.enableSummaries === true;
-        enableSummariesToggle.addEventListener('change', () => {
-            const enabled = enableSummariesToggle.checked;
-            chrome.storage.sync.set({ enableSummaries: enabled }, () => {
-                log.debug('Enable summaries setting saved:', enabled);
-            });
-        });
-        if (!('showTooltips' in data)) {
-            chrome.storage.sync.set({ showTooltips: true });
-        }
+            darkModeToggle.checked = Boolean(data.darkMode);
+            const tooltipEnabled = data.showTooltips !== false;
+            tooltipToggle.checked = tooltipEnabled;
 
-        const customApiEndpointInput = document.getElementById('customApiEndpoint');
-        if (customApiEndpointInput) {
-            customApiEndpointInput.value = data.customApiEndpoint || '';
-            customApiEndpointInput.addEventListener('input', () => {
-                chrome.storage.sync.set({ customApiEndpoint: customApiEndpointInput.value.trim() }, () => {
-                    log.debug('Saved custom API endpoint');
+            const enableSummariesToggle = document.getElementById('enableSummariesToggle');
+            enableSummariesToggle.checked = data.enableSummaries === true;
+            enableSummariesToggle.addEventListener('change', () => {
+                const enabled = enableSummariesToggle.checked;
+                chrome.storage.sync.set({ enableSummaries: enabled }, () => {
+                    log.debug('Enable summaries setting saved:', enabled);
                 });
             });
-        }
+            if (!('showTooltips' in data)) {
+                chrome.storage.sync.set({ showTooltips: true });
+            }
 
-        if (darkModeToggle.checked) {
-            document.body.classList.add('dark-mode');
-        }
-
-        const openaiApiKeyInput = document.getElementById('openaiApiKey');
-        if (openaiApiKeyInput) {
-            openaiApiKeyInput.value = data.openaiApiKey || '';
-            const customUserPromptInput = document.getElementById('customUserPrompt');
-            if (customUserPromptInput) {
-                customUserPromptInput.value = data.customUserPrompt || '';
-                customUserPromptInput.addEventListener('input', () => {
-                    chrome.storage.sync.set({ customUserPrompt: customUserPromptInput.value.trim() }, () => {
-                        log.debug('Saved custom user prompt');
+            const customApiEndpointInput = document.getElementById('customApiEndpoint');
+            if (customApiEndpointInput) {
+                customApiEndpointInput.value = data.customApiEndpoint || '';
+                customApiEndpointInput.addEventListener('input', () => {
+                    chrome.storage.sync.set({ customApiEndpoint: customApiEndpointInput.value.trim() }, () => {
+                        log.debug('Saved custom API endpoint');
                     });
                 });
             }
-            openaiApiKeyInput.addEventListener('input', () => {
-                chrome.storage.sync.set({ openaiApiKey: openaiApiKeyInput.value.trim() }, () => {
-                    log.debug('Saved OpenAI API key');
+
+            if (darkModeToggle.checked) {
+                document.body.classList.add('dark-mode');
+            }
+
+            const openaiApiKeyInput = document.getElementById('openaiApiKey');
+            if (openaiApiKeyInput) {
+                openaiApiKeyInput.value = data.openaiApiKey || '';
+                openaiApiKeyInput.addEventListener('input', () => {
+                    chrome.storage.sync.set({ openaiApiKey: openaiApiKeyInput.value.trim() }, () => {
+                        log.debug('Saved OpenAI API key');
+                    });
                 });
-            });
-        }
+            }
+
+            const customUserPromptInput = document.getElementById('customUserPrompt');
+            if (customUserPromptInput) {
+                if (!customUserPromptInput.value) {
+                    customUserPromptInput.value = data.customUserPrompt || '';
+                }
+
+                const savePrompt = (() => {
+                    let timeout;
+                    return () => {
+                        clearTimeout(timeout);
+                        timeout = setTimeout(() => {
+                            const trimmed = customUserPromptInput.value.trim();
+                            chrome.storage.local.set({ customUserPrompt: trimmed }, () => {
+                                if (chrome.runtime.lastError) {
+                                    console.error('[ERROR] Failed to save prompt:', chrome.runtime.lastError.message);
+                                } else {
+                                    console.log('[DEBUG] Saved custom user prompt');
+                                }
+                            });
+                        }, 300);
+                    };
+                })();
+
+                customUserPromptInput.addEventListener('input', savePrompt);
+            }
+        });
     });
 
     // === Event: Add Domain Entry ===

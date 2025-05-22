@@ -13,8 +13,12 @@ const isFirefox = typeof browser !== 'undefined' && typeof InstallTrigger !== 'u
 chrome.runtime.onMessage.addListener(function (request) {
     if (request.action === 'openTab') {
         chrome.tabs.create({ url: request.url });
+    } else if (request.action === 'openSearchTab') {
+        const url = `${chrome.runtime.getURL('results/results.html')}?searchText=${encodeURIComponent(request.searchText)}&baseUrl=${encodeURIComponent(request.baseUrl)}`;
+        chrome.tabs.create({ url });
     }
 });
+
 
 // Listen for tab updates to inject content scripts dynamically
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
