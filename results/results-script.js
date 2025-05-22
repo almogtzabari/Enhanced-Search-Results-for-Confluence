@@ -1104,6 +1104,11 @@ document.addEventListener('DOMContentLoaded', () => {
         resetDataAndFetchResults();
     }
 
+    function onDateFilterChange() {
+        log.debug('[Filter] Date changed:', dateFilter.value);
+        resetDataAndFetchResults();
+    }
+
     function addEventListeners() {
         // 1) Tree arrows (expand/collapse)
         document.getElementById('tree-container').addEventListener('click', event => {
@@ -1144,13 +1149,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const spaceFilter = document.getElementById('space-filter');
         const contributorFilter = document.getElementById('contributor-filter');
-        const dateFilter = document.getElementById('date-filter');
-        const typeFilter = document.getElementById('type-filter');
 
-        dateFilter.addEventListener('change', () => {
-            log.debug('[Filter] Date changed:', dateFilter.value);
-            resetDataAndFetchResults();
-        });
+        dateFilter.removeEventListener('change', onDateFilterChange);
+        dateFilter.addEventListener('change', onDateFilterChange);
 
         typeFilter.removeEventListener('change', onTypeFilterChange);
         typeFilter.addEventListener('change', onTypeFilterChange);
@@ -1334,6 +1335,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * ========== INITIALIZATION (RUN ON DOM READY) ==========
      */
     const typeFilter = document.getElementById('type-filter');
+    const dateFilter = document.getElementById('date-filter');
 
     // Parse query params
     const params = getQueryParams();
