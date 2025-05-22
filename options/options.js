@@ -22,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // === Load and Apply Saved Settings ===
     const resultsPerRequestSelect = document.getElementById('resultsPerRequest');
-    chrome.storage.sync.get(['domainSettings', 'darkMode', 'showTooltips', 'resultsPerRequest'], (data) => {
+    chrome.storage.sync.get(['domainSettings', 'darkMode', 'showTooltips', 'enableSummaries', 'resultsPerRequest', 'openaiApiKey', 'customApiEndpoint'], (data) => {
         const domainSettings = data.domainSettings || [];
 
         if (data.resultsPerRequest && ['50', '75', '100', '125', '150', '200'].includes(String(data.resultsPerRequest))) {
@@ -39,16 +39,50 @@ document.addEventListener('DOMContentLoaded', () => {
         darkModeToggle.checked = Boolean(data.darkMode);
         const tooltipEnabled = data.showTooltips !== false;
         tooltipToggle.checked = tooltipEnabled;
+
+        const enableSummariesToggle = document.getElementById('enableSummariesToggle');
+        enableSummariesToggle.checked = data.enableSummaries === true;
+        enableSummariesToggle.addEventListener('change', () => {
+            const enabled = enableSummariesToggle.checked;
+            chrome.storage.sync.set({ enableSummaries: enabled }, () => {
+                log.debug('Enable summaries setting saved:', enabled);
+            });
+        });
         if (!('showTooltips' in data)) {
             chrome.storage.sync.set({ showTooltips: true });
+        }
+
+        const customApiEndpointInput = document.getElementById('customApiEndpoint');
+        if (customApiEndpointInput) {
+            customApiEndpointInput.value = data.customApiEndpoint || '';
+            customApiEndpointInput.addEventListener('input', () => {
+                chrome.storage.sync.set({ customApiEndpoint: customApiEndpointInput.value.trim() }, () => {
+                    log.debug('Saved custom API endpoint');
+                });
+            });
         }
 
         if (darkModeToggle.checked) {
             document.body.classList.add('dark-mode');
         }
 
-        if (domainSettings.length > 0) {
-            saveButton.disabled = false;
+        const openaiApiKeyInput = document.getElementById('openaiApiKey');
+        if (openaiApiKeyInput) {
+            openaiApiKeyInput.value = data.openaiApiKey || '';
+            const customUserPromptInput = document.getElementById('customUserPrompt');
+            if (customUserPromptInput) {
+                customUserPromptInput.value = data.customUserPrompt || '';
+                customUserPromptInput.addEventListener('input', () => {
+                    chrome.storage.sync.set({ customUserPrompt: customUserPromptInput.value.trim() }, () => {
+                        log.debug('Saved custom user prompt');
+                    });
+                });
+            }
+            openaiApiKeyInput.addEventListener('input', () => {
+                chrome.storage.sync.set({ openaiApiKey: openaiApiKeyInput.value.trim() }, () => {
+                    log.debug('Saved OpenAI API key');
+                });
+            });
         }
     });
 

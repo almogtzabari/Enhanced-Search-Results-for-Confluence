@@ -1,4 +1,53 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // ========== INDEXEDDB UTILITIES ==========
+    const DB_NAME = 'ConfluenceSummariesDB';
+    const DB_VERSION = 1;
+    const STORE_NAME = 'summaries';
+
+    function openDb() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve(request.result);
+            request.onupgradeneeded = () => {
+                const db = request.result;
+                if (!db.objectStoreNames.contains(STORE_NAME)) {
+                    db.createObjectStore(STORE_NAME, { keyPath: ['contentId', 'baseUrl'] });
+                }
+            };
+        });
+    }
+
+    async function getStoredSummary(contentId, baseUrl) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            const request = store.get([contentId, baseUrl]);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async function storeSummary({ contentId, baseUrl, title, summaryHtml, bodyHtml }) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            const entry = {
+                contentId,
+                baseUrl,
+                title,
+                summaryHtml,
+                bodyHtml,
+                timestamp: Date.now()
+            };
+            const request = store.put(entry);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+
     /**
      * ========== CONSTANTS & GLOBALS ==========
      */
@@ -6,7 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const SCROLL_THRESHOLD_REACHED = (el) =>
         el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
     let RESULTS_PER_REQUEST = 75; // default value, overridden from storage
-    const DEBUG = false;
+    const DEBUG = true;
 
     const log = {
         debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
@@ -42,6 +91,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentSortOrder = ''; // 'asc', 'desc', or ''
 
     let tooltipSettings = { showTooltips: true };
+
+    const confluenceBodyCache = new Map();
+    const summaryCache = new Map();
 
     const typeIcons = {
         page: '📘',
@@ -390,6 +442,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 searchResultIds.add(pageId);
                 allResults.push(pageData); // Add to all results
+
+                // Attempt to preload summary from IndexedDB
+                getStoredSummary(pageId, baseUrl).then(entry => {
+                    if (entry?.summaryHtml) {
+                        summaryCache.set(pageId, entry.summaryHtml);
+                        updateTreeHtml(filteredResults);
+                        updateTableHtml(filteredResults);
+                        addEventListeners();
+                    }
+                }).catch(err => {
+                    log.debug('No stored summary for', pageId);
+                });
             }
 
             // Update filter options (spaces/contributors)
@@ -772,6 +836,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 case 'attachment': icon = '📎'; break;
             }
             html += `${arrow} <a href="${node.url}" class="tree-node" target="_blank">${icon}&nbsp;&nbsp;${node.title || ''}</a>`;
+            if (node.isSearchResult && window.ENABLE_SUMMARIES) {
+                const cached = summaryCache.has(node.id);
+                const btnText = cached ? '✅ See Summary' : '🧠 Summarize with AI';
+                html += `<div><button class="summarize-button" data-id="${node.id}">${btnText}</button></div>`;
+            }
             if (hasChildren) {
                 const displayStyle = collapsedNodes.has(currentNodeId) ? 'none' : 'block';
                 html += `<div class="children" style="display: ${displayStyle};">`;
@@ -902,7 +971,7 @@ document.addEventListener('DOMContentLoaded', () => {
             typeCell.appendChild(typeSpan);
             row.appendChild(typeCell);
 
-            // Page Name
+            // Page Name with summary button
             const nameCell = document.createElement('td');
             const nameLink = document.createElement('a');
             nameLink.href = buildConfluenceUrl(page._links.webui);
@@ -911,7 +980,24 @@ document.addEventListener('DOMContentLoaded', () => {
             nameLink.classList.add('multiline-ellipsis');
             nameLink.textContent = fullTitle;
             nameLink.title = fullTitle;
-            nameCell.appendChild(nameLink);
+
+            const summaryBtn = document.createElement('button');
+            summaryBtn.className = 'summarize-button';
+            summaryBtn.dataset.id = page.id;
+            summaryBtn.textContent = summaryCache.has(page.id) ? '✅ See Summary' : '🧠 Summarize with AI';
+
+            if (!window.ENABLE_SUMMARIES) {
+                summaryBtn.style.display = 'none';
+            }
+
+            const wrapper = document.createElement('div');
+            wrapper.style.display = 'flex';
+            wrapper.style.flexDirection = 'column';
+            wrapper.style.alignItems = 'flex-start';
+            wrapper.appendChild(nameLink);
+            wrapper.appendChild(summaryBtn);
+
+            nameCell.appendChild(wrapper);
             row.appendChild(nameCell);
 
             // Page Space
@@ -943,17 +1029,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Contributor
             const contributorCell = document.createElement('td');
-            contributorCell.classList.add('contributor-cell');
             const contributor = page.history?.createdBy;
             if (contributor) {
+                const container = document.createElement('div');
+                container.classList.add('contributor-cell');
+
                 const avatarImg = document.createElement('img');
                 const avatarToUse = contributor.avatarUrl || `${baseUrl}/images/icons/profilepics/default.png`;
                 avatarImg.src = avatarToUse;
                 avatarImg.loading = 'lazy';
-                avatarImg.loading = 'lazy';
                 avatarImg.alt = `${contributor.displayName}'s avatar`;
                 avatarImg.classList.add('contributor-avatar');
-                contributorCell.appendChild(avatarImg);
+                container.appendChild(avatarImg);
 
                 const nameLink = document.createElement('a');
                 let contributorUrl = '#';
@@ -966,8 +1053,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 nameLink.href = contributorUrl;
                 nameLink.target = '_blank';
-                const nameSpan = document.createElement('span');
                 nameLink.classList.add('multiline-ellipsis');
+
+                const nameSpan = document.createElement('span');
                 let contributorName = contributor.displayName || '';
                 if (contributorName.startsWith('Unknown User')) {
                     contributorName = contributor.username || contributor.userKey || contributor.accountId || 'Unknown';
@@ -975,7 +1063,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 nameSpan.textContent = contributorName;
                 nameSpan.title = contributorName;
                 nameLink.appendChild(nameSpan);
-                contributorCell.appendChild(nameLink);
+
+                container.appendChild(nameLink);
+                contributorCell.appendChild(container);
             } else {
                 contributorCell.textContent = 'Unknown';
             }
@@ -1361,7 +1451,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Load user preferences
-    chrome.storage.sync.get(['darkMode', 'resultsPerRequest'], (data) => {
+    chrome.storage.sync.get(['darkMode', 'resultsPerRequest', 'enableSummaries', 'openaiApiKey'], (data) => {
         const isDark = Boolean(data.darkMode);
         if (data.resultsPerRequest && Number.isInteger(data.resultsPerRequest)) {
             RESULTS_PER_REQUEST = data.resultsPerRequest;
@@ -1369,9 +1459,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             log.debug('Using default RESULTS_PER_REQUEST:', RESULTS_PER_REQUEST);
         }
+
         document.body.classList.toggle('dark-mode', isDark);
 
-        // 🟢 This guarantees fetch starts only after settings are loaded
+        window.ENABLE_SUMMARIES = data.enableSummaries === true && !!data.openaiApiKey;
+
         if (searchText) {
             performNewSearch(searchText);
         }
@@ -1390,6 +1482,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     detachTooltipListeners();
                 }
+            }
+
+            if ('enableSummaries' in changes || 'openaiApiKey' in changes) {
+                chrome.storage.sync.get(['enableSummaries', 'openaiApiKey'], (data) => {
+                    const enabled = data.enableSummaries === true && !!data.openaiApiKey;
+                    window.ENABLE_SUMMARIES = enabled;
+
+                    // Re-render to apply summary button visibility
+                    updateTableHtml(filteredResults);
+                    updateTreeHtml(filteredResults);
+                    addEventListeners();
+                });
             }
         }
     });
@@ -1446,4 +1550,228 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Attach global event listeners
     addEventListeners();
+
+    async function fetchConfluenceBodyById(contentId) {
+        if (confluenceBodyCache.has(contentId)) {
+            log.debug(`[Cache] Returning cached body for contentId: ${contentId}`);
+            return confluenceBodyCache.get(contentId);
+        }
+
+        const apiUrl = `${baseUrl}/rest/api/content/${contentId}?expand=body.storage`;
+        try {
+            const response = await fetch(apiUrl, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' },
+                credentials: 'include'
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch body: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            const bodyHtml = data.body?.storage?.value || '(No content)';
+            confluenceBodyCache.set(contentId, bodyHtml);
+            log.debug(`[Cache] Fetched and cached body for contentId: ${contentId}`);
+            return bodyHtml;
+        } catch (error) {
+            console.error('[DEBUG] Error in fetchConfluenceBodyById:', error);
+            throw error;
+        }
+    }
+
+    // Handle summarize button clicks (tree and table view)
+    document.body.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.summarize-button');
+        if (!btn) return;
+
+        const contentId = btn.dataset.id;
+        const pageData = allResults.find(r => r.id === contentId);
+        if (!pageData) {
+            console.warn('Content not found for summarization');
+            return;
+        }
+
+        try {
+            const stored = await getStoredSummary(contentId, baseUrl);
+            if (stored && stored.summaryHtml) {
+                log.debug(`[DB] Loaded summary from IndexedDB for contentId: ${contentId}`);
+                summaryCache.set(contentId, stored.summaryHtml);
+                showSummaryModal(stored.summaryHtml);
+                const allButtons = document.querySelectorAll(`.summarize-button[data-id="${contentId}"]`);
+                allButtons.forEach(b => {
+                    b.textContent = '✅ See Summary';
+                    b.classList.remove('loading');
+                    b.disabled = false;
+                });
+                return;
+            }
+
+            const allButtons = document.querySelectorAll(`.summarize-button[data-id="${contentId}"]`);
+            allButtons.forEach(b => {
+                b.textContent = 'Summarizing...';
+                b.classList.add('loading');
+                b.disabled = true;
+            });
+
+            const bodyHtml = await fetchConfluenceBodyById(contentId);
+
+            chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], async (data) => {
+                const apiKey = data.openaiApiKey;
+                if (!apiKey) {
+                    alert('OpenAI API key not set. Please enter it in the extension options.');
+                    return;
+                }
+
+                const stored = await getStoredSummary(contentId, baseUrl);
+                if (stored && stored.summaryHtml) {
+                    log.debug(`[DB] Loaded summary from IndexedDB for contentId: ${contentId}`);
+                    summaryCache.set(contentId, stored.summaryHtml);
+                    showSummaryModal(stored.summaryHtml);
+                    allButtons.forEach(b => {
+                        b.textContent = '✅ See Summary';
+                        b.classList.remove('loading');
+                        b.disabled = false;
+                    });
+                    return;
+                }
+
+                const systemPrompt = `
+                    You are a professional technical summarizer. Your task is to generate a concise, relevance-focused HTML summary of internal Confluence content. This summary will be displayed in an enterprise browser extension to help users quickly determine whether the content is relevant to their search or task — without needing to open it.
+
+                    You will be provided:
+                    - The content title
+                    - The raw HTML body (in Confluence storage format)
+                    - The content type: one of "page", "blogpost", "comment", or "attachment"
+                    - The space the content belongs to (if applicable)
+                    - If the content is a comment, the title of the parent page or blog post it was written on
+                    - Optional user instructions (e.g. formatting or emphasis)
+
+                    Unless the user specifies otherwise, follow this default format:
+
+                    1. Return a clean, valid HTML snippet only. Do not include Markdown formatting, triple backticks (\`\`\`), or language labels like "html". Your output must begin directly with the HTML tags, not within a code block.
+                    2. Start with an <h1> element in this format: "🧠 AI Summary: [Content Title]".
+                    3. Add a paragraph summarizing what the content is about and its purpose. Adjust the phrasing based on content type:
+                    - For a **page**: "This page, from the <b>[space name]</b> space, covers..."
+                    - For a **blog post**: "This blog post, published in the <b>[space name]</b> space, discusses..."
+                    - For a **comment**: "This comment, posted in the <b>[space name]</b> space on the page titled '[Parent Title]', addresses..."
+                    - For an **attachment**: "This attachment, uploaded to the <b>[space name]</b> space, contains..."
+                    - If the space name is not available, omit that part.
+                    - If the parent title is not available (for comments), omit that phrase.
+                    4. Follow with a second paragraph beginning with: "Here are the main points:"
+                    5. Include an unordered list (<ul><li>) of the key topics, features, or areas discussed — focus on what the content is about and how it may be relevant.
+                    6. Maintain a professional, concise, and neutral tone. Avoid repeating the title in the body paragraph.
+                    7. Do not include references to Confluence, internal field names, or markup.
+
+                    Your goal is to help the user quickly decide whether this content is worth exploring based on its subject and context.
+
+                    --- Content Details ---
+                    Title: ${pageData.title}
+                    Type: ${pageData.type}
+                    Space: ${pageData.space?.name || 'N/A'}
+                    Parent Title: ${pageData.parentTitle || 'N/A'}
+                    Content (HTML): ${bodyHtml}
+                `;
+
+                let userPrompt = ``;
+
+                // Check for user-defined override
+                const storedPrompt = data.customUserPrompt?.trim();
+                if (storedPrompt) {
+                    userPrompt = storedPrompt
+                        .replace(/\{\{title\}\}/g, pageData.title)
+                        .replace(/\{\{body\}\}/g, bodyHtml);
+                }
+
+                const apiEndpoint = data.customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions';
+                const aiModel = 'gpt-4o';
+
+                log.debug('[Summary] Sending OpenAI request to:', apiEndpoint);
+                log.debug('[Summary] Model:', aiModel);
+                log.debug('[Summary] User prompt length:', userPrompt.length);
+                log.debug('[Summary] System prompt length:', systemPrompt.length);
+
+                const response = await fetch(apiEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: aiModel,
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: userPrompt }
+                        ]
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('[Summary] OpenAI API error response:', errorText);
+                    btn.textContent = originalBtnText;
+                    btn.classList.remove('loading');
+                    btn.disabled = false;
+                    throw new Error(`OpenAI API error: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                log.debug('[Summary] Received response from OpenAI.');
+                log.debug('[Summary] Response structure:', {
+                    usage: result.usage,
+                    model: result.model,
+                    choicesLength: result.choices?.length
+                });
+                const summary = result.choices[0].message.content;
+                summaryCache.set(contentId, summary);
+                await storeSummary({
+                    contentId,
+                    baseUrl,
+                    title: pageData.title,
+                    summaryHtml: summary,
+                    bodyHtml: bodyHtml
+                });
+                showSummaryModal(summary);
+                allButtons.forEach(b => {
+                    b.textContent = '✅ See Summary';
+                    b.classList.remove('loading');
+                    b.disabled = false;
+                });
+            });
+        } catch (e) {
+            console.error('[Summary] Failed to summarize content:', e);
+            alert('Failed to summarize content. See console for details.');
+            allButtons.forEach(b => {
+                b.textContent = '🧠 Summarize with AI';
+                b.classList.remove('loading');
+                b.disabled = false;
+            });
+        }
+    });
+
+    function showSummaryModal(summaryText) {
+        const modal = document.getElementById('summary-modal');
+        const modalBody = document.getElementById('modal-body');
+        const closeBtn = document.getElementById('modal-close');
+
+        modalBody.innerHTML = summaryText;
+        modal.style.display = 'flex';
+
+        // Close on 'x'
+        closeBtn.onclick = () => modal.style.display = 'none';
+
+        // Close on click outside
+        window.onclick = (e) => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+            }
+        };
+
+        // Close on ESC
+        document.onkeydown = (e) => {
+            if (e.key === 'Escape') {
+                modal.style.display = 'none';
+            }
+        };
+    }
 });
