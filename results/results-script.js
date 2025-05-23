@@ -151,9 +151,137 @@ document.addEventListener('DOMContentLoaded', () => {
         100  // Last Modified
     ];
 
+    const summarySystemPrompt = `
+        You are a technical summarizer. Your task is to generate a concise, relevance-focused HTML summary of Confluence content. This will help users assess whether a document is worth opening.
+
+        You are given:
+        - Title
+        - Raw HTML body (Confluence storage format)
+        - Type: "page", "blogpost", "comment", or "attachment"
+        - Space name (if available)
+        - Parent title (if comment)
+        - Optional user prompt (important!)
+
+        Output only valid, clean HTML (no Markdown or code blocks, and no \`\`\`html). Use this format:
+
+        1. <h3> What is this [content type] about?</h3> followed by a paragraph summarizing content, with context:
+        - Page: "This page, from the <b>[space]</b> space, covers..."
+        - Blog post: "...published in..."
+        - Comment: "...posted on the page titled..."
+        - Attachment: "...uploaded to..."
+        2. <h3> Main points</h3> followed by a <ul><li> list
+        3. Keep tone concise, neutral, and useful. Avoid repeating title. Omit internal field names or Confluence-specific terms.
+    `;
+
+    const qaSystemPrompt = `
+        You are a helpful AI assistant answering follow-up questions about a Confluence document and its summary.
+        Respond clearly, accurately, and in plain text. Avoid reiterating the full summary format.
+        Answer as a helpful peer who understands the document’s purpose and key details.
+        Output only valid, clean HTML (no Markdown or code blocks, and no \`\`\`html)
+    `;
+
+
     /**
      * ========== UTILITY FUNCTIONS ==========
      */
+
+    async function sendOpenAIRequest({ apiKey, apiUrl, model, messages }) {
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ model, messages })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[OpenAI] API error response:', errorText);
+            throw new Error(`OpenAI request failed: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        log.debug('[Summary] Received response from OpenAI.');
+        log.debug('[Summary] Response structure:', {
+            usage: result.usage,
+            model: result.model,
+            choicesLength: result.choices?.length
+        });
+
+        return result;
+    }
+
+    function showConfirmationDialog(message, onConfirm) {
+        const existing = document.getElementById('dialog-overlay');
+        if (existing) existing.remove();
+
+        const dialog = document.createElement('div');
+        dialog.id = 'dialog-overlay';
+        dialog.className = 'dialog-overlay';
+        dialog.innerHTML = `
+            <div class="dialog-content">
+                <span class="dialog-close" id="dialog-close">&times;</span>
+                <p>${message}</p>
+                <div class="dialog-actions">
+                    <button id="dialog-cancel">Cancel</button>
+                    <button id="dialog-confirm">Confirm</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(dialog);
+
+        function remove() {
+            dialog.remove();
+        }
+
+        document.getElementById('dialog-close').onclick = remove;
+        document.getElementById('dialog-cancel').onclick = remove;
+        document.getElementById('dialog-confirm').onclick = () => {
+            remove();
+            onConfirm();
+        };
+
+        dialog.addEventListener('click', (e) => {
+            if (e.target === dialog) remove();
+        });
+    }
+
+    function resetSummaryButtons(buttons, label = '🧠 Summarize') {
+        buttons.forEach(b => {
+            b.textContent = label;
+            b.classList.remove('loading');
+            b.disabled = false;
+        });
+    }
+
+    async function getUserPrompt(pageData) {
+        const bodyHtmlRaw = await fetchConfluenceBodyById(pageData.id);
+        const bodyHtml = sanitizeHtmlContent(bodyHtmlRaw);
+
+        const localData = await new Promise((resolve) => {
+            chrome.storage.local.get(['customUserPrompt'], resolve);
+        });
+
+        const userPrompt = typeof localData.customUserPrompt === 'string'
+            ? localData.customUserPrompt.trim()
+            : '';
+
+        let fullUserPrompt = userPrompt;
+        const contentDetails = `
+            --- Content Details ---
+            Title: ${pageData.title}
+            Type: ${pageData.type}
+            Space: ${pageData.space?.name || 'N/A'}
+            Parent Title: ${pageData.parentTitle || 'N/A'}
+            Content (HTML): ${bodyHtml}
+        `.trim();
+
+        fullUserPrompt += (fullUserPrompt ? '\n\n' : '') + contentDetails;
+
+        return fullUserPrompt;
+    }
+
 
     function detectDirection(text) {
         const rtlChars = /[\u0590-\u05FF\u0600-\u06FF]/; // Hebrew + Arabic
@@ -896,7 +1024,7 @@ document.addEventListener('DOMContentLoaded', () => {
             html += `${arrow} <a href="${node.url}" class="tree-node" target="_blank">${icon}&nbsp;&nbsp;${node.title || ''}</a>`;
             if (node.isSearchResult && window.ENABLE_SUMMARIES) {
                 const cached = summaryCache.has(node.id);
-                const btnText = cached ? '✅ See Summary' : '🧠 Summarize with AI';
+                const btnText = cached ? '✅ Summary Available!' : '🧠 Summarize';
                 html += `<div><button class="summarize-button" data-id="${node.id}">${btnText}</button></div>`;
             }
             if (hasChildren) {
@@ -1042,7 +1170,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const summaryBtn = document.createElement('button');
             summaryBtn.className = 'summarize-button';
             summaryBtn.dataset.id = page.id;
-            summaryBtn.textContent = summaryCache.has(page.id) ? '✅ See Summary' : '🧠 Summarize with AI';
+            summaryBtn.textContent = summaryCache.has(page.id) ? '✅ Summary Available!' : '🧠 Summarize';
 
             if (!window.ENABLE_SUMMARIES) {
                 summaryBtn.style.display = 'none';
@@ -1259,7 +1387,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function addEventListeners() {
         // 1) Tree arrows (expand/collapse)
-        document.getElementById('tree-container').addEventListener('click', event => {
+        const treeContainer = document.getElementById('tree-container');
+        const existing = treeContainer._clickHandler;
+        if (existing) treeContainer.removeEventListener('click', existing);
+
+        const handler = event => {
             const arrow = event.target.closest('.arrow');
             if (!arrow) return;
 
@@ -1276,7 +1408,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 arrow.classList.remove('expanded');
                 arrow.classList.add('collapsed');
             }
-        });
+        };
+
+        treeContainer._clickHandler = handler;
+        treeContainer.addEventListener('click', handler);
 
         // 3) Tree/Table view buttons
         const treeViewBtn = document.getElementById('tree-view-btn');
@@ -1606,9 +1741,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Attach global event listeners
-    addEventListeners();
-
     async function fetchConfluenceBodyById(contentId) {
         if (confluenceBodyCache.has(contentId)) {
             log.debug(`[Cache] Returning cached body for contentId: ${contentId}`);
@@ -1660,11 +1792,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 log.debug(`[DB] Loaded summary from IndexedDB for contentId: ${contentId}`);
                 summaryCache.set(contentId, stored.summaryHtml);
                 showSummaryModal(stored.summaryHtml, pageData, bodyHtml);
-                allButtons.forEach(b => {
-                    b.textContent = '✅ See Summary';
-                    b.classList.remove('loading');
-                    b.disabled = false;
-                });
+                resetSummaryButtons(allButtons, '✅ Summary Available!');
                 return;
             }
 
@@ -1673,6 +1801,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 b.classList.add('loading');
                 b.disabled = true;
             });
+            await new Promise(requestAnimationFrame); // allow DOM to update
 
             chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], (syncData) => {
                 chrome.storage.local.get(['customUserPrompt'], async (localData) => {
@@ -1682,132 +1811,64 @@ document.addEventListener('DOMContentLoaded', () => {
                         return;
                     }
 
-                    const stored = await getStoredSummary(contentId, baseUrl);
                     if (stored && stored.summaryHtml) {
                         log.debug(`[DB] Loaded summary from IndexedDB for contentId: ${contentId}`);
                         summaryCache.set(contentId, stored.summaryHtml);
                         showSummaryModal(stored.summaryHtml);
-                        allButtons.forEach(b => {
-                            b.textContent = '✅ See Summary';
-                            b.classList.remove('loading');
-                            b.disabled = false;
-                        });
+                        resetSummaryButtons(allButtons, '✅ Summary Available!');
                         return;
                     }
 
-                    const systemPrompt = `
-                        You are a technical summarizer. Your task is to generate a concise, relevance-focused HTML summary of Confluence content. This will help users assess whether a document is worth opening.
-
-                        You are given:
-                        - Title
-                        - Raw HTML body (Confluence storage format)
-                        - Type: "page", "blogpost", "comment", or "attachment"
-                        - Space name (if available)
-                        - Parent title (if comment)
-                        - Optional user prompt (important!)
-
-                        Output only valid, clean HTML (no Markdown or code blocks). Unless overridden, use this format:
-
-                        1. <h1> with: "🧠 AI Summary: [Title]"
-                        2. Paragraph summarizing content, with context:
-                        - Page: "This page, from the <b>[space]</b> space, covers..."
-                        - Blog post: "...published in..."
-                        - Comment: "...posted on the page titled..."
-                        - Attachment: "...uploaded to..."
-                        3. "Here are the main points:" followed by a <ul><li> list
-                        4. Keep tone concise, neutral, and useful. Avoid repeating title. Omit internal field names or Confluence-specific terms.
-
-                        --- Content Details ---
-                        Title: ${pageData.title}
-                        Type: ${pageData.type}
-                        Space: ${pageData.space?.name || 'N/A'}
-                        Parent Title: ${pageData.parentTitle || 'N/A'}
-                        Content (HTML): ${bodyHtml}
-                    `;
-
-                    const userPrompt = typeof localData.customUserPrompt === 'string'
-                        ? localData.customUserPrompt.trim()
-                        : '';
-
+                    const userPrompt = await getUserPrompt(pageData);
                     const apiEndpoint = syncData.customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions';
                     const aiModel = 'gpt-4o';
 
                     log.debug('[Summary] Model:', aiModel);
                     log.debug('[Summary] User prompt length:', userPrompt.length);
-                    log.debug('[Summary] System prompt length:', systemPrompt.length);
+                    log.debug('[Summary] System prompt length:', summarySystemPrompt.length);
 
-                    const combinedLength = systemPrompt.length + userPrompt.length;
+                    const combinedLength = summarySystemPrompt.length + userPrompt.length;
                     if (combinedLength > 500000) {
                         alert('The content is too large to summarize with the AI model (token limit exceeded). Try summarizing a shorter page.');
-                        allButtons.forEach(b => {
-                            b.textContent = '🧠 Summarize with AI';
-                            b.classList.remove('loading');
-                            b.disabled = false;
-                        });
+                        resetSummaryButtons(allButtons, '🧠 Summarize');
                         return;
                     }
 
-                    log.debug('[Summary] Sending OpenAI request to:', apiEndpoint);
-
-                    const response = await fetch(apiEndpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${apiKey}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
+                    try {
+                        const result = await sendOpenAIRequest({
+                            apiKey,
+                            apiUrl: apiEndpoint,
                             model: aiModel,
                             messages: [
-                                { role: 'system', content: systemPrompt },
+                                { role: 'system', content: summarySystemPrompt },
                                 { role: 'user', content: userPrompt }
                             ]
-                        })
-                    });
+                        });
 
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        console.error('[Summary] OpenAI API error response:', errorText);
-                        btn.textContent = '🧠 Summarize with AI';
-                        btn.classList.remove('loading');
-                        btn.disabled = false;
-                        throw new Error(`OpenAI API error: ${response.statusText}`);
+                        const summary = result.choices[0].message.content;
+                        summaryCache.set(contentId, summary);
+                        await storeSummary({
+                            contentId,
+                            baseUrl,
+                            title: pageData.title,
+                            summaryHtml: summary,
+                            bodyHtml: bodyHtml
+                        });
+                        showSummaryModal(summary, pageData, bodyHtml);
+                        resetSummaryButtons(allButtons, '✅ Summary Available!');
+                    } catch (err) {
+                        console.error('[Summary] Error:', err);
+                        alert('Failed to get summary from OpenAI. See console for details.');
+                        resetSummaryButtons(allButtons, '🧠 Summarize');
                     }
-
-                    const result = await response.json();
-                    log.debug('[Summary] Received response from OpenAI.');
-                    log.debug('[Summary] Response structure:', {
-                        usage: result.usage,
-                        model: result.model,
-                        choicesLength: result.choices?.length
-                    });
-                    const summary = result.choices[0].message.content;
-                    summaryCache.set(contentId, summary);
-                    await storeSummary({
-                        contentId,
-                        baseUrl,
-                        title: pageData.title,
-                        summaryHtml: summary,
-                        bodyHtml: bodyHtml
-                    });
-                    showSummaryModal(summary, pageData, bodyHtml);
-                    allButtons.forEach(b => {
-                        b.textContent = '✅ See Summary';
-                        b.classList.remove('loading');
-                        b.disabled = false;
-                    });
                 });
             });
         } catch (e) {
             console.error('[Summary] Failed to summarize content:', e);
             alert('Failed to summarize content. See console for details.');
-            allButtons.forEach(b => {
-                b.textContent = '🧠 Summarize with AI';
-                b.classList.remove('loading');
-                b.disabled = false;
-            });
+            resetSummaryButtons(allButtons, '🧠 Summarize');
         }
     });
-
 
     async function showSummaryModal(summaryText, pageData, bodyHtml) {
         const modal = document.getElementById('summary-modal');
@@ -1827,26 +1888,14 @@ document.addEventListener('DOMContentLoaded', () => {
         summaryDiv.id = 'summary-content';
         summaryDiv.innerHTML = tempDiv.innerHTML;
 
+        const summaryTitle = document.getElementById('summary-title');
+        if (summaryTitle) {
+            summaryTitle.textContent = `🧠 AI Summary: ${pageData.title}`;
+        }
+
         const qaHeader = document.createElement('h3');
         qaHeader.textContent = 'Conversation';
-
-        const qaThread = document.createElement('div');
-        qaThread.id = 'qa-thread';
-
         modalBody.appendChild(qaHeader);
-
-
-        const qaInputArea = document.createElement('div');
-        qaInputArea.id = 'qa-input-area';
-        qaInputArea.innerHTML = `
-            <textarea id="qa-input" placeholder="Ask a follow-up question..."></textarea>
-            <div class="qa-button-row">
-                <button id="qa-submit">Ask A Question</button>
-                <button id="qa-clear">Clear Conversation</button>
-            </div>
-            <div id="qa-loading" style="display: none;">Answering...</div>
-        `;
-
 
         modalBody.innerHTML = '';
         modalBody.appendChild(summaryDiv);
@@ -1854,26 +1903,47 @@ document.addEventListener('DOMContentLoaded', () => {
         qaTitle.textContent = 'Conversation';
         qaTitle.className = 'conversation-title';
         modalBody.appendChild(qaTitle);
+
+        const qaThread = document.createElement('div');
+        qaThread.id = 'qa-thread';
         modalBody.appendChild(qaThread);
 
+        // Add the input area for follow-up questions
         const modalContent = modal.querySelector('.modal-content');
         const existingInputArea = modalContent.querySelector('#qa-input-area');
         if (existingInputArea) existingInputArea.remove();
+        const qaInputArea = document.createElement('div');
+        qaInputArea.id = 'qa-input-area';
+        qaInputArea.innerHTML = `
+            <div class="qa-input-wrapper">
+                <textarea id="qa-input" placeholder="Ask a follow-up question..."></textarea>
+                <div class="textarea-resizer" id="qa-resizer"></div>
+            </div>
+            <div class="qa-button-row">
+                <button id="qa-submit">❓ Ask A Question</button>
+                <button id="qa-resummarize">🧠 Re-summarize</button>
+                <button id="qa-clear">🧹 Clear Conversation</button>
+            </div>
+            <div id="qa-loading" style="display: none;">Answering...</div>
+            <div id="resummarize-loading-overlay">
+                <div class="loader small-loader"></div>
+                Regenerating summary...
+            </div>
+
+        `;
+
+
         modalContent.appendChild(qaInputArea);
 
         const qaInput = document.getElementById('qa-input');
         const qaSubmit = document.getElementById('qa-submit');
 
         const contentId = pageData.id;
-        const systemPrompt = `
-        You are a technical summarizer helping users understand a Confluence page.
-        Use concise, helpful HTML to answer questions based on the provided content.
-        `;
-
         const storedConv = await getStoredConversation(contentId, baseUrl);
+        const userPrompt = await getUserPrompt(pageData);
         const conversation = storedConv?.messages || [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Summarize this page:\n\nTitle: ${pageData.title}\nType: ${pageData.type}\nSpace: ${pageData.space?.name || 'N/A'}\nParent Title: ${pageData.parentTitle || 'N/A'}\nContent: ${bodyHtml}` },
+            { role: 'system', content: qaSystemPrompt },
+            { role: 'user', content: userPrompt },
             { role: 'assistant', content: summaryText }
         ];
         conversationHistories.set(contentId, conversation);
@@ -1940,25 +2010,15 @@ document.addEventListener('DOMContentLoaded', () => {
             chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], async (data) => {
                 const apiKey = data.openaiApiKey;
                 const endpoint = data.customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions';
-
+                const aiModel = 'gpt-4o';
                 try {
-                    const response = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Bearer ${apiKey}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            model: 'gpt-4o',
-                            messages
-                        })
+                    const result = await sendOpenAIRequest({
+                        apiKey,
+                        apiUrl: endpoint,
+                        model: aiModel,
+                        messages
                     });
 
-                    if (!response.ok) {
-                        throw new Error(`OpenAI error: ${response.statusText}`);
-                    }
-
-                    const result = await response.json();
                     const answer = result.choices?.[0]?.message?.content || '[No response]';
                     messages.push({ role: 'assistant', content: answer });
                     storeConversation(contentId, baseUrl, messages);
@@ -1987,6 +2047,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
         qaSubmit.onclick = submitQuestion;
 
+        // Custom textarea resizer
+        const qaResizer = document.getElementById('qa-resizer');
+        let isResizing = false;
+        let startY, startHeight;
+
+        qaResizer.addEventListener('mousedown', e => {
+            isResizing = true;
+            startY = e.clientY;
+            startHeight = parseInt(window.getComputedStyle(qaInput).height, 10);
+            document.body.style.cursor = 'ns-resize';
+            document.addEventListener('mousemove', resizeMouseMove);
+            document.addEventListener('mouseup', stopResize);
+        });
+
+        function resizeMouseMove(e) {
+            if (!isResizing) return;
+            const dy = e.clientY - startY;
+            qaInput.style.height = `${Math.max(startHeight - dy, 60)}px`;
+        }
+
+        function stopResize() {
+            isResizing = false;
+            document.body.style.cursor = '';
+            document.removeEventListener('mousemove', resizeMouseMove);
+            document.removeEventListener('mouseup', stopResize);
+        }
+
         qaInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -1995,12 +2082,86 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         const qaClear = document.getElementById('qa-clear');
+        const qaResummarize = document.getElementById('qa-resummarize');
+        const resummarizeOverlay = document.getElementById('resummarize-loading-overlay');
+
+        qaResummarize.onclick = async () => {
+            showConfirmationDialog('<b>Are you sure you want to regenerate the summary?</b><br>This will replace the current summary and reset the conversation.', async () => {
+
+                qaSubmit.disabled = true;
+                qaClear.disabled = true;
+                qaResummarize.disabled = true;
+                resummarizeOverlay.style.display = 'flex';
+
+                const allButtons = document.querySelectorAll(`.summarize-button[data-id="${contentId}"]`);
+                allButtons.forEach(b => {
+                    b.textContent = 'Re-summarizing...';
+                    b.classList.add('loading');
+                    b.disabled = true;
+                });
+
+                await new Promise(requestAnimationFrame); // allow DOM to update
+
+                try {
+                    const userPrompt = await getUserPrompt(pageData);
+                    const { openaiApiKey: apiKey, customApiEndpoint } = await new Promise(res =>
+                        chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
+                    const endpoint = customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions';
+                    const model = 'gpt-4o';
+
+                    const result = await sendOpenAIRequest({
+                        apiKey,
+                        apiUrl: endpoint,
+                        model,
+                        messages: [
+                            { role: 'system', content: summarySystemPrompt },
+                            { role: 'user', content: userPrompt }
+                        ]
+                    });
+
+                    const newSummary = result.choices[0].message.content;
+                    summaryCache.set(contentId, newSummary);
+
+                    await storeSummary({
+                        contentId,
+                        baseUrl,
+                        title: pageData.title,
+                        summaryHtml: newSummary,
+                        bodyHtml
+                    });
+
+                    const newConversation = [
+                        { role: 'system', content: qaSystemPrompt },
+                        { role: 'user', content: userPrompt },
+                        { role: 'assistant', content: newSummary }
+                    ];
+
+                    conversationHistories.set(contentId, newConversation);
+                    await storeConversation(contentId, baseUrl, newConversation);
+
+                    resummarizeOverlay.style.display = 'none';
+                    showSummaryModal(newSummary, pageData, bodyHtml);
+                    resetSummaryButtons(allButtons, '✅ Summary Available!');
+                    return;
+                } catch (err) {
+                    console.error('Re-summarize failed:', err);
+                    alert('Failed to regenerate summary.');
+                    resummarizeOverlay.style.display = 'none';
+                    resetSummaryButtons(allButtons, '🧠 Summarize');
+                } finally {
+                    qaSubmit.disabled = false;
+                    qaClear.disabled = false;
+                    qaResummarize.disabled = false;
+                }
+            });
+        };
+
         qaClear.onclick = () => {
-            if (confirm('Are you sure you want to clear this conversation?')) {
+            showConfirmationDialog('<b>Are you sure you want to clear this conversation?</b>', () => {
                 // Reset conversation to initial state
                 const newConversation = [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: `Summarize this page:\n\nTitle: ${pageData.title}\nType: ${pageData.type}\nSpace: ${pageData.space?.name || 'N/A'}\nParent Title: ${pageData.parentTitle || 'N/A'}\nContent: ${bodyHtml}` },
+                    { role: 'system', content: qaSystemPrompt },
+                    { role: 'user', content: userPrompt },
                     { role: 'assistant', content: summaryText }
                 ];
                 conversationHistories.set(contentId, newConversation);
@@ -2021,7 +2182,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     qaThread.appendChild(div);
                 }
-            }
+            });
         };
 
         modal.style.display = 'flex';
@@ -2043,4 +2204,19 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
     }
+
+    chrome.runtime.onMessage.addListener((message) => {
+        if (message.action === 'summariesCleared') {
+            summaryCache.clear();
+            document.querySelectorAll('.summarize-button').forEach(btn => {
+                btn.textContent = '🧠 Summarize';
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            });
+            log.debug('[Summaries] Cleared cache and reset summarize buttons.');
+        }
+    });
+
+    // Attach global event listeners
+    addEventListeners();
 });

@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const clearSummariesButton = document.getElementById('clearSummaries');
     const clearConversationsButton = document.getElementById('clearConversations');
     clearConversationsButton.addEventListener('click', () => {
-        if (confirm('Are you sure you want to delete all saved conversation history?')) {
+        showConfirmationDialog('<b>Are you sure you want to delete all saved conversation history?</b>', () => {
             const request = indexedDB.open('ConfluenceSummariesDB', 2);
 
             request.onsuccess = () => {
@@ -43,11 +43,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('[ERROR] Failed to open database:', request.error);
                 showStatus('Could not access conversation store.', 'error');
             };
-        }
+        });
     });
 
     clearSummariesButton.addEventListener('click', () => {
-        if (confirm('Are you sure you want to delete all cached AI summaries? This cannot be undone.')) {
+        showConfirmationDialog('<b>Are you sure you want to delete all cached AI summaries?</b><br>This will remove all conversation history as well, and cannot be undone.', () => {
             const request = indexedDB.open('ConfluenceSummariesDB', 2);
 
             request.onsuccess = () => {
@@ -64,6 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const done = () => {
                     if (++cleared === 2) {
                         showStatus('Cached summaries and conversations cleared.', 'success');
+                        chrome.runtime.sendMessage({ action: 'summariesCleared' });
                     }
                 };
                 const fail = (label, error) => {
@@ -82,7 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('[ERROR] Failed to open database:', request.error);
                 showStatus('Could not access summary cache.', 'error');
             };
-        }
+        });
     });
 
     const domainSettingsContainer = document.getElementById('domainSettings');
@@ -337,5 +338,42 @@ document.addEventListener('DOMContentLoaded', () => {
     function isValidInputId(inputId) {
         const regex = /^[a-zA-Z0-9-_]+$/;
         return regex.test(inputId);
+    }
+
+    function showConfirmationDialog(messageHtml, onConfirm) {
+        const overlay = document.getElementById('dialog-overlay');
+        const message = document.getElementById('dialog-message');
+        const closeBtn = document.getElementById('dialog-close');
+        const cancelBtn = document.getElementById('dialog-cancel');
+        const confirmBtn = document.getElementById('dialog-confirm');
+
+        message.innerHTML = messageHtml;
+        overlay.style.display = 'flex';
+
+        function cleanup() {
+            overlay.style.display = 'none';
+            closeBtn.removeEventListener('click', hide);
+            cancelBtn.removeEventListener('click', hide);
+            confirmBtn.removeEventListener('click', confirm);
+            overlay.removeEventListener('click', onOverlayClick);
+        }
+
+        function hide() {
+            cleanup();
+        }
+
+        function confirm() {
+            cleanup();
+            onConfirm();
+        }
+
+        function onOverlayClick(e) {
+            if (e.target === overlay) hide();
+        }
+
+        closeBtn.addEventListener('click', hide);
+        cancelBtn.addEventListener('click', hide);
+        confirmBtn.addEventListener('click', confirm);
+        overlay.addEventListener('click', onOverlayClick);
     }
 });
