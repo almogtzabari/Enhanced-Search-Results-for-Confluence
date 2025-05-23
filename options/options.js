@@ -14,24 +14,68 @@ const log = {
 
 document.addEventListener('DOMContentLoaded', () => {
     const clearSummariesButton = document.getElementById('clearSummaries');
-
-    clearSummariesButton.addEventListener('click', () => {
-        if (confirm('Are you sure you want to delete all cached AI summaries? This cannot be undone.')) {
-            const request = indexedDB.open('ConfluenceSummariesDB', 1);
+    const clearConversationsButton = document.getElementById('clearConversations');
+    clearConversationsButton.addEventListener('click', () => {
+        if (confirm('Are you sure you want to delete all saved conversation history?')) {
+            const request = indexedDB.open('ConfluenceSummariesDB', 2);
 
             request.onsuccess = () => {
                 const db = request.result;
-                const tx = db.transaction('summaries', 'readwrite');
-                const store = tx.objectStore('summaries');
+                if (!db.objectStoreNames.contains('conversations')) {
+                    showStatus('No conversation history found.', 'success');
+                    return;
+                }
+
+                const tx = db.transaction('conversations', 'readwrite');
+                const store = tx.objectStore('conversations');
                 const clearRequest = store.clear();
 
                 clearRequest.onsuccess = () => {
-                    showStatus('Cached summaries cleared.', 'success');
+                    showStatus('Conversation history cleared.', 'success');
                 };
                 clearRequest.onerror = () => {
-                    console.error('[ERROR] Failed to clear summaries:', clearRequest.error);
-                    showStatus('Failed to clear cached summaries.', 'error');
+                    console.error('[ERROR] Failed to clear conversation history:', clearRequest.error);
+                    showStatus('Failed to clear conversation history.', 'error');
                 };
+            };
+
+            request.onerror = () => {
+                console.error('[ERROR] Failed to open database:', request.error);
+                showStatus('Could not access conversation store.', 'error');
+            };
+        }
+    });
+
+    clearSummariesButton.addEventListener('click', () => {
+        if (confirm('Are you sure you want to delete all cached AI summaries? This cannot be undone.')) {
+            const request = indexedDB.open('ConfluenceSummariesDB', 2);
+
+            request.onsuccess = () => {
+                const db = request.result;
+                const tx = db.transaction(['summaries', 'conversations'], 'readwrite');
+
+                const summariesStore = tx.objectStore('summaries');
+                const conversationsStore = tx.objectStore('conversations');
+
+                const clearSummaries = summariesStore.clear();
+                const clearConversations = conversationsStore.clear();
+
+                let cleared = 0;
+                const done = () => {
+                    if (++cleared === 2) {
+                        showStatus('Cached summaries and conversations cleared.', 'success');
+                    }
+                };
+                const fail = (label, error) => {
+                console.error(`[ERROR] Failed to clear ${label}:`, error);
+                showStatus(`Failed to clear ${label}.`, 'error');
+            };
+
+            clearSummaries.onsuccess = done;
+            clearConversations.onsuccess = done;
+            clearSummaries.onerror = () => fail('summaries', clearSummaries.error);
+            clearConversations.onerror = () => fail('conversations', clearConversations.error);
+
             };
 
             request.onerror = () => {
