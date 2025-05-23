@@ -161,10 +161,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function sanitizeHtmlContent(html) {
-        // Remove script, style, iframe tags and their content
-        html = html.replace(/<script[\s\S]*?<\/script>/gi, '');
-        html = html.replace(/<style[\s\S]*?<\/style>/gi, '');
-        html = html.replace(/<iframe[\s\S]*?<\/iframe>/gi, '');
+        // Remove script, style, iframe tags and their content using robust regex
+        html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+        html = html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '');
+        html = html.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '');
 
         // Remove comments
         html = html.replace(/<!--[\s\S]*?-->/g, '');
@@ -509,7 +509,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         updateTableHtml(filteredResults);
                         addEventListeners();
                     }
-                }).catch(err => {
+                }).catch(() => {
                     log.debug('No stored summary for', pageId);
                 });
             }
@@ -1863,7 +1863,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const qaInput = document.getElementById('qa-input');
         const qaSubmit = document.getElementById('qa-submit');
-        const qaLoading = document.getElementById('qa-loading');
 
         const contentId = pageData.id;
         const systemPrompt = `
@@ -1934,7 +1933,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     modalBody.scrollTo({ top: modalBody.scrollHeight, behavior: 'smooth' });
                 });
             });
-            
+
             qaThread.scrollTop = qaThread.scrollHeight;
             qaInput.value = '';
 
@@ -2006,7 +2005,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ];
                 conversationHistories.set(contentId, newConversation);
                 storeConversation(contentId, baseUrl, newConversation);
-                
+
                 // Clear and re-render conversation thread
                 qaThread.innerHTML = '';
                 for (const msg of newConversation.slice(3)) {
