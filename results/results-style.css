@@ -971,10 +971,12 @@ td:nth-child(2) a.multiline-ellipsis {
     width: 600px;
     max-width: 90%;
     max-height: 80%;
-    overflow-y: auto;
-    box-shadow: 0 4px 8px var(--shadow-color);
+    display: flex;
+    flex-direction: column;
     position: relative;
+    height: 80vh;
 }
+
 
 body.dark-mode .modal-content {
     background-color: rgba(32, 33, 36, 0.88); /* Matches dark var --header-background with slight transparency */
@@ -999,6 +1001,9 @@ body.dark-mode .modal-content {
     line-height: 1.5;
     color: var(--text-color);
     white-space: normal; /* important: removes space collapse issue */
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 8px;
 }
 
 .modal-body ul,
@@ -1065,46 +1070,87 @@ body:not(.dark-mode) .modal-body p:hover {
     top: 0.3em;
 }
 
-#qa-thread {
-    margin-top: 20px;
-    font-size: 14px;
-    line-height: 1.5;
-}
-
 .qa-entry {
     margin-bottom: 10px;
 }
 
+.qa-entry {
+    max-width: 80%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    margin-bottom: 10px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    box-shadow: 0 1px 3px var(--shadow-color);
+}
+
 .qa-entry.user {
-    font-weight: bold;
-    color: var(--link-color);
+    align-self: flex-end;
+    background-color: #1a73e8; /* Blue bubble for user */
+    color: white;
+    border-top-right-radius: 0;
 }
 
 .qa-entry.assistant {
-    background-color: rgba(0, 123, 255, 0.05);
-    padding: 6px 10px;
-    border-radius: 6px;
+    align-self: flex-start;
+    background-color: #e5e5ea; /* Light gray for assistant */
+    color: black;
+    border-top-left-radius: 0;
 }
 
-#qa-input-area {
+body.dark-mode .qa-entry.assistant {
+    background-color: #333439;
+    color: #ffffff;
+}
+
+body.dark-mode .qa-entry.user {
+    background-color: #3a86ff;
+    color: #ffffff;
+}
+
+
+#qa-thread {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin-top: 20px;
-    border-top: 1px solid var(--input-border-color);
-    padding-top: 12px;
+    gap: 10px;
+    padding-right: 4px;
 }
+
 
 #qa-input {
     width: 100%;
     min-height: 60px;
-    padding: 8px;
+    padding: 10px;
     font-size: 14px;
     border: 1px solid var(--input-border-color);
     border-radius: 6px;
     resize: vertical;
     background-color: var(--input-background-color);
     color: var(--text-color);
+    box-sizing: border-box;
+}
+
+#qa-clear {
+    align-self: flex-end;
+    padding: 8px 16px;
+    font-size: 14px;
+    background-color: #e53935; /* red */
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.2s;
+}
+
+#qa-clear:hover:enabled {
+    background-color: #c62828;
+    transform: scale(1.1);
+}
+
+#qa-clear:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 #qa-submit {
@@ -1116,6 +1162,12 @@ body:not(.dark-mode) .modal-body p:hover {
     border: none;
     border-radius: 6px;
     cursor: pointer;
+    transition: background-color 0.2s, transform 0.2s;
+}
+
+#qa-submit:hover:enabled {
+    background-color: var(--button-hover-background);
+    transform: scale(1.1);
 }
 
 #qa-submit:disabled {
@@ -1127,3 +1179,97 @@ body:not(.dark-mode) .modal-body p:hover {
     font-style: italic;
     color: #888;
 }
+
+.modal-body h3.conversation-title {
+    margin: 24px 0 12px 0;
+    font-size: 16px;
+    border-bottom: 1px solid var(--input-border-color);
+    padding-bottom: 4px;
+    color: var(--text-color);
+}
+
+.qa-entry li {
+    position: relative;
+    padding-left: 18px;
+    margin-bottom: 4px;
+    line-height: 1.5;
+    list-style: none;
+}
+
+.qa-entry li::before {
+    content: '•';
+    position: absolute;
+    top: 0.3em;
+    left: 0;
+    font-weight: bold;
+    color: var(--text-color);
+}
+
+.qa-entry[dir="rtl"] li {
+    padding-left: 0;
+    padding-right: 18px;
+    text-align: right;
+}
+
+.qa-entry[dir="rtl"] li::before {
+    left: auto;
+    right: 0;
+}
+
+#qa-input-area {
+    margin-top: 16px;
+    border-top: 1px solid var(--input-border-color);
+    padding-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+body.dark-mode #qa-input-area {
+    background-color: var(--background-color);
+}
+
+.qa-button-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.typing-bubble {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 40px;
+    opacity: 0.8;
+    font-style: italic;
+    background-color: var(--table-row-hover);
+    color: var(--text-color);
+}
+
+.typing-dots {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    justify-content: center;
+    height: 1em;
+}
+
+.typing-dots .dot {
+    width: 6px;
+    height: 6px;
+    background-color: var(--text-color);
+    border-radius: 50%;
+    opacity: 0.3;
+    animation: blink 1.4s infinite;
+}
+
+.typing-dots .dot:nth-child(1) { animation-delay: 0s; }
+.typing-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes blink {
+    0%, 80%, 100% { opacity: 0.3; }
+    40% { opacity: 1; }
+}
+
+

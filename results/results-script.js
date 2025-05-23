@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // ========== INDEXEDDB UTILITIES ==========
     const DB_NAME = 'ConfluenceSummariesDB';
-    const DB_VERSION = 1;
+    const DB_VERSION = 2;
     const STORE_NAME = 'summaries';
 
     function openDb() {
@@ -13,6 +13,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const db = request.result;
                 if (!db.objectStoreNames.contains(STORE_NAME)) {
                     db.createObjectStore(STORE_NAME, { keyPath: ['contentId', 'baseUrl'] });
+                }
+                if (!db.objectStoreNames.contains('conversations')) {
+                    db.createObjectStore('conversations', { keyPath: ['contentId', 'baseUrl'] });
                 }
             };
         });
@@ -47,6 +50,35 @@ document.addEventListener('DOMContentLoaded', () => {
             request.onerror = () => reject(request.error);
         });
     }
+
+    async function storeConversation(contentId, baseUrl, messages) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction('conversations', 'readwrite');
+            const store = tx.objectStore('conversations');
+            const entry = {
+                contentId,
+                baseUrl,
+                messages,
+                timestamp: Date.now()
+            };
+            const request = store.put(entry);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async function getStoredConversation(contentId, baseUrl) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction('conversations', 'readonly');
+            const store = tx.objectStore('conversations');
+            const request = store.get([contentId, baseUrl]);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
 
     /**
      * ========== CONSTANTS & GLOBALS ==========
@@ -1777,7 +1809,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
 
-    function showSummaryModal(summaryText, pageData, bodyHtml) {
+    async function showSummaryModal(summaryText, pageData, bodyHtml) {
         const modal = document.getElementById('summary-modal');
         const modalBody = document.getElementById('modal-body');
         const closeBtn = document.getElementById('modal-close');
@@ -1795,21 +1827,39 @@ document.addEventListener('DOMContentLoaded', () => {
         summaryDiv.id = 'summary-content';
         summaryDiv.innerHTML = tempDiv.innerHTML;
 
+        const qaHeader = document.createElement('h3');
+        qaHeader.textContent = 'Conversation';
+
         const qaThread = document.createElement('div');
         qaThread.id = 'qa-thread';
+
+        modalBody.appendChild(qaHeader);
+
 
         const qaInputArea = document.createElement('div');
         qaInputArea.id = 'qa-input-area';
         qaInputArea.innerHTML = `
             <textarea id="qa-input" placeholder="Ask a follow-up question..."></textarea>
-            <button id="qa-submit">Ask</button>
+            <div class="qa-button-row">
+                <button id="qa-submit">Ask A Question</button>
+                <button id="qa-clear">Clear Conversation</button>
+            </div>
             <div id="qa-loading" style="display: none;">Answering...</div>
         `;
 
+
         modalBody.innerHTML = '';
         modalBody.appendChild(summaryDiv);
+        const qaTitle = document.createElement('h3');
+        qaTitle.textContent = 'Conversation';
+        qaTitle.className = 'conversation-title';
+        modalBody.appendChild(qaTitle);
         modalBody.appendChild(qaThread);
-        modalBody.appendChild(qaInputArea);
+
+        const modalContent = modal.querySelector('.modal-content');
+        const existingInputArea = modalContent.querySelector('#qa-input-area');
+        if (existingInputArea) existingInputArea.remove();
+        modalContent.appendChild(qaInputArea);
 
         const qaInput = document.getElementById('qa-input');
         const qaSubmit = document.getElementById('qa-submit');
@@ -1821,14 +1871,33 @@ document.addEventListener('DOMContentLoaded', () => {
         Use concise, helpful HTML to answer questions based on the provided content.
         `;
 
-        const conversation = [
+        const storedConv = await getStoredConversation(contentId, baseUrl);
+        const conversation = storedConv?.messages || [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Summarize this page:\n\nTitle: ${pageData.title}\nType: ${pageData.type}\nSpace: ${pageData.space?.name || 'N/A'}\nParent Title: ${pageData.parentTitle || 'N/A'}\nContent: ${bodyHtml}` },
             { role: 'assistant', content: summaryText }
         ];
         conversationHistories.set(contentId, conversation);
+        storeConversation(contentId, baseUrl, conversation);
 
-        qaSubmit.onclick = async () => {
+        // Render the conversation into the DOM (skip system prompt)
+        for (const msg of conversation.slice(3)) {
+            const div = document.createElement('div');
+            div.className = `qa-entry ${msg.role}`;
+            const dir = detectDirection(msg.content);
+            div.setAttribute('dir', dir);
+            div.style.textAlign = dir === 'rtl' ? 'right' : 'left';
+
+            if (msg.role === 'assistant') {
+                div.innerHTML = msg.content;
+            } else {
+                div.textContent = msg.content;
+            }
+
+            qaThread.appendChild(div);
+        }
+
+        function submitQuestion() {
             const question = qaInput.value.trim();
             if (!question) return;
 
@@ -1837,11 +1906,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const userMsg = document.createElement('div');
             userMsg.className = 'qa-entry user';
+            const userDir = detectDirection(question);
+            userMsg.setAttribute('dir', userDir);
+            userMsg.style.textAlign = userDir === 'rtl' ? 'right' : 'left';
             userMsg.textContent = question;
             qaThread.appendChild(userMsg);
-
             qaSubmit.disabled = true;
-            qaLoading.style.display = 'block';
+            // Add typing bubble
+            const typingBubble = document.createElement('div');
+            typingBubble.className = 'qa-entry assistant typing-bubble';
+            typingBubble.innerHTML = `
+                <span class="typing-dots">
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                    <span class="dot"></span>
+                </span>
+            `;
+
+            const typingDir = detectDirection('...');
+            typingBubble.setAttribute('dir', typingDir);
+            typingBubble.style.textAlign = typingDir === 'rtl' ? 'right' : 'left';
+            qaThread.appendChild(typingBubble);
+
+            const modalBody = document.getElementById('modal-body');
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    modalBody.scrollTo({ top: modalBody.scrollHeight, behavior: 'smooth' });
+                });
+            });
+            
+            qaThread.scrollTop = qaThread.scrollHeight;
+            qaInput.value = '';
 
             chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], async (data) => {
                 const apiKey = data.openaiApiKey;
@@ -1867,20 +1962,67 @@ document.addEventListener('DOMContentLoaded', () => {
                     const result = await response.json();
                     const answer = result.choices?.[0]?.message?.content || '[No response]';
                     messages.push({ role: 'assistant', content: answer });
+                    storeConversation(contentId, baseUrl, messages);
 
                     const reply = document.createElement('div');
                     reply.className = 'qa-entry assistant';
+                    const assistantDir = detectDirection(answer);
+                    reply.setAttribute('dir', assistantDir);
+                    reply.style.textAlign = assistantDir === 'rtl' ? 'right' : 'left';
                     reply.innerHTML = answer;
                     qaThread.appendChild(reply);
-                    qaInput.value = '';
+                    requestAnimationFrame(() => {
+                        reply.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    });
+
                 } catch (err) {
                     console.error('[QA] Error:', err);
                     alert('Failed to get answer from OpenAI.');
                 } finally {
                     qaSubmit.disabled = false;
-                    qaLoading.style.display = 'none';
+                    const oldTyping = document.querySelector('.typing-bubble');
+                    if (oldTyping) oldTyping.remove();
                 }
             });
+        }
+
+        qaSubmit.onclick = submitQuestion;
+
+        qaInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submitQuestion();
+            }
+        });
+
+        const qaClear = document.getElementById('qa-clear');
+        qaClear.onclick = () => {
+            if (confirm('Are you sure you want to clear this conversation?')) {
+                // Reset conversation to initial state
+                const newConversation = [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: `Summarize this page:\n\nTitle: ${pageData.title}\nType: ${pageData.type}\nSpace: ${pageData.space?.name || 'N/A'}\nParent Title: ${pageData.parentTitle || 'N/A'}\nContent: ${bodyHtml}` },
+                    { role: 'assistant', content: summaryText }
+                ];
+                conversationHistories.set(contentId, newConversation);
+                storeConversation(contentId, baseUrl, newConversation);
+                
+                // Clear and re-render conversation thread
+                qaThread.innerHTML = '';
+                for (const msg of newConversation.slice(3)) {
+                    const div = document.createElement('div');
+                    div.className = `qa-entry ${msg.role}`;
+                    const dir = detectDirection(msg.content);
+                    div.setAttribute('dir', dir);
+                    div.style.textAlign = dir === 'rtl' ? 'right' : 'left';
+                    if (msg.role === 'assistant') {
+                        div.innerHTML = msg.content;
+                    } else {
+                        div.textContent = msg.content;
+                    }
+                    qaThread.appendChild(div);
+                }
+            }
         };
 
         modal.style.display = 'flex';

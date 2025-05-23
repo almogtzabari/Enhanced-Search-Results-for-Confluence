@@ -437,6 +437,7 @@ body.dark-mode #advancedSettingsContent textarea#customUserPrompt {
     max-width: 50%;
 }
 
+#clearConversations,
 #clearSummaries {
     background-color: #f44336; /* Red for destructive action */
     color: #ffffff;
@@ -451,14 +452,17 @@ body.dark-mode #advancedSettingsContent textarea#customUserPrompt {
     width: 40%
 }
 
+#clearConversations:hover,
 #clearSummaries:hover {
     background-color: #d32f2f;
 }
 
+body.dark-mode #clearConversations,
 body.dark-mode #clearSummaries {
     background-color: #e57373;
 }
 
+body.dark-mode #clearConversations:hover,
 body.dark-mode #clearSummaries:hover {
     background-color: #ef5350;
 }
