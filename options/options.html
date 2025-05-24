@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <meta charset="UTF-8">
     <title>Enhanced Search Results for Confluence - Options</title>
     <link rel="stylesheet" href="options.css">
 </head>
+
 <body>
     <div class="header">
         <img id="page-title-image" src="../logo.png" alt="" />
@@ -14,7 +16,6 @@
         <div class="form-group">
             <label>Domains and Search Input IDs:</label>
             <div id="domainSettings">
-                <!-- Dynamic content will be inserted here -->
             </div>
             <button id="addDomain">Add Domain</button>
         </div>
@@ -24,7 +25,7 @@
                 <div id="status" class="status"></div>
             </div>
 
-            <h3 class="section-heading">More Options</h3>
+            <h3 class="section-heading">Options</h3>
             <div class="toggle-group">
                 <div class="toggle-row">
                     <div class="toggle-label-col">
@@ -47,11 +48,12 @@
                         <span class="slider round"></span>
                     </label>
                 </div>
-
+                <h3 class="section-heading">AI Options</h3>
                 <div class="toggle-row">
                     <div class="toggle-label-col">
                         <label for="enableSummariesToggle" class="toggle-label">Enable AI Summary</label>
-                        <p class="toggle-desc">Show summarize buttons in search results. Requires an OpenAI API key below.</p>
+                        <p class="toggle-desc">Show summarize buttons in search results. Requires an OpenAI API key
+                            below.</p>
                     </div>
                     <label class="switch">
                         <input type="checkbox" id="enableSummariesToggle">
@@ -63,29 +65,40 @@
                         <label for="openaiApiKey" class="toggle-label">OpenAI API Key</label>
                         <p class="toggle-desc">Used to request AI analysis of search results.</p>
                     </div>
-                    <input type="password" id="openaiApiKey" class="openai-api-input" placeholder="Paste your key here...">
+                    <input type="password" id="openaiApiKey" class="openai-api-input"
+                        placeholder="Paste your key here...">
                 </div>
                 <div class="toggle-row">
                     <div class="toggle-label-col">
                         <label for="customUserPrompt" class="toggle-label">Custom User Prompt</label>
-                        <p class="toggle-desc">Optional prompt text that will be used instead of the default when generating summaries. Leave empty to use the default.</p>
+                        <p class="toggle-desc">Optional prompt text that will be used instead of the default when
+                            generating summaries. Leave empty to use the default.</p>
                     </div>
                 </div>
                 <textarea id="customUserPrompt" placeholder="Optional custom prompt..."></textarea>
                 <div class="toggle-row">
                     <div class="toggle-label-col">
+                        <label for="customApiEndpoint" class="toggle-label">Custom API Endpoint</label>
+                        <p class="toggle-desc">Optional override for OpenAI API endpoint. Default is
+                            "https://api.openai.com/v1/chat/completions".</p>
+                    </div>
+                    <input type="text" id="customApiEndpoint" class="openai-api-input"
+                        placeholder="https://your-api-endpoint..." />
+                </div>
+                <div class="toggle-row">
+                    <div class="toggle-label-col">
                         <label for="clearSummaries" class="toggle-label">Clear Cached Summaries</label>
-                        <p class="toggle-desc">Delete all locally stored AI-generated summaries. This cannot be undone.</p>
+                        <p class="toggle-desc">Delete all locally stored AI-generated summaries.</p>
                     </div>
                     <button id="clearSummaries">Clear</button>
-                </div>   
+                </div>
                 <div class="toggle-row">
                     <div class="toggle-label-col">
                         <label for="clearConversations" class="toggle-label">Clear Conversation History</label>
-                        <p class="toggle-desc">Delete all stored AI conversation history from local database.</p>
+                        <p class="toggle-desc">Delete all locally stored AI conversation history.</p>
                     </div>
                     <button id="clearConversations">Clear</button>
-                </div>         
+                </div>
             </div>
 
             <h3 class="section-heading collapsible-heading" id="advancedSettingsToggle">
@@ -106,18 +119,10 @@
                         <option value="200">200</option>
                     </select>
                 </div>
-                <div class="toggle-row">
-                    <div class="toggle-label-col">
-                        <label for="customApiEndpoint" class="toggle-label">Custom API Endpoint</label>
-                        <p class="toggle-desc">Optional override for OpenAI API endpoint. Default is "https://api.openai.com/v1/chat/completions".</p>
-                    </div>
-                    <input type="text" id="customApiEndpoint" class="openai-api-input" placeholder="https://your-api-endpoint..." />
-                </div>
             </div>
+        </div>
     </div>
-
     <script src="options.js"></script>
-    <!-- Modal Dialog Overlay -->
     <div id="dialog-overlay" class="dialog-overlay" style="display: none;">
         <div class="dialog-content">
             <span class="dialog-close" id="dialog-close">&times;</span>
@@ -129,4 +134,5 @@
         </div>
     </div>
 </body>
+
 </html>

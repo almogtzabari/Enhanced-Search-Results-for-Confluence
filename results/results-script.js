@@ -162,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
         - Parent title (if comment)
         - Optional user prompt (important!)
 
-        Output only valid, clean HTML (no Markdown or code blocks, and no \`\`\`html). Use this format (unless user prompt requests otherwise):
+        Output only valid, clean and nicely formatted HTML (no Markdown or code blocks, and no \`\`\`html). Use this format (unless user prompt requests otherwise):
 
         1. <h3> What is this [content type] about?</h3> followed by a paragraph summarizing content, with context:
         - Page: "This page, from the <b>[space]</b> space, covers..."
@@ -179,7 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
         You are a helpful AI assistant answering follow-up questions about a Confluence document and its summary.
         Respond clearly, accurately, and in plain text. Avoid reiterating the full summary format.
         Answer as a helpful peer who understands the document’s purpose and key details.
-        Output only valid, clean HTML (no Markdown or code blocks, and no \`\`\`html)
+        Output only valid, clean and nicely formatted HTML (no Markdown or code blocks, and no \`\`\`html)
     `;
 
 
@@ -187,14 +187,20 @@ document.addEventListener('DOMContentLoaded', () => {
      * ========== UTILITY FUNCTIONS ==========
      */
 
+    // PROXY SERVER!
     async function sendOpenAIRequest({ apiKey, apiUrl, model, messages }) {
-        const response = await fetch(apiUrl, {
+        log.debug('[Summary] Sending OpenAI request to:', apiUrl);
+        const response = await fetch('http://localhost:3000/proxy', {
             method: 'POST',
             headers: {
-                Authorization: `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ model, messages })
+            body: JSON.stringify({
+                apiKey,
+                apiUrl,
+                model,
+                messages
+            })
         });
 
         if (!response.ok) {
@@ -339,7 +345,7 @@ document.addEventListener('DOMContentLoaded', () => {
             '<': '&lt;',
             '>': '&gt;',
             '"': '&quot;',
-            "'": '&#039;'
+            '\'': '&#039;'
         };
         return text.replace(/[&<>"']/g, m => map[m]);
     }
@@ -417,21 +423,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (tooltipBoundNodes.has(node)) return;
 
             const enter = () => {
-            const title = node.dataset.title;
-            const contributor = node.dataset.contributor;
-            const modified = node.dataset.modified;
-            const nodeType = node.dataset.type || '';
-            let typeLabel = '';
-            switch (nodeType) {
-                case 'page': typeLabel = 'Page'; break;
-                case 'blogpost': typeLabel = 'Blog Post'; break;
-                case 'comment': typeLabel = 'Comment'; break;
-                case 'attachment': typeLabel = 'Attachment'; break;
-                default: typeLabel = '';
-            }
-            tooltip.innerHTML = `<strong>${title}</strong><br>Type: ${typeLabel}<br>By: ${contributor}<br>Last Modified: ${modified}`;
-            tooltip.style.display = 'block';
-        };
+                const title = node.dataset.title;
+                const contributor = node.dataset.contributor;
+                const modified = node.dataset.modified;
+                const nodeType = node.dataset.type || '';
+                let typeLabel = '';
+                switch (nodeType) {
+                    case 'page': typeLabel = 'Page'; break;
+                    case 'blogpost': typeLabel = 'Blog Post'; break;
+                    case 'comment': typeLabel = 'Comment'; break;
+                    case 'attachment': typeLabel = 'Attachment'; break;
+                    default: typeLabel = '';
+                }
+                tooltip.innerHTML = `<strong>${title}</strong><br>Type: ${typeLabel}<br>By: ${contributor}<br>Last Modified: ${modified}`;
+                tooltip.style.display = 'block';
+            };
 
             const move = e => {
                 tooltip.style.left = `${e.pageX + 10}px`;
@@ -802,8 +808,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const clearIcon = document.getElementById(
                     inputId === 'space-filter' ? 'space-clear' :
-                    inputId === 'contributor-filter' ? 'contributor-clear' :
-                    null
+                        inputId === 'contributor-filter' ? 'contributor-clear' :
+                            null
                 );
                 if (clearIcon) toggleClearIcon(input, clearIcon);
 
@@ -841,8 +847,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const matchesContributor = !contributorKey || (
                 pageData.history?.createdBy &&
                 (pageData.history.createdBy.username === contributorKey ||
-                pageData.history.createdBy.userKey === contributorKey ||
-                pageData.history.createdBy.accountId === contributorKey)
+                    pageData.history.createdBy.userKey === contributorKey ||
+                    pageData.history.createdBy.accountId === contributorKey)
             );
             return matchesText && matchesSpace && matchesContributor;
         });
@@ -1058,7 +1064,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (currentSortColumn === col) {
                 icon.textContent = currentSortOrder === 'asc' ? '↑' :
-                                currentSortOrder === 'desc' ? '↓' : '';
+                    currentSortOrder === 'desc' ? '↓' : '';
             } else {
                 icon.textContent = '';
             }
@@ -1088,7 +1094,7 @@ document.addEventListener('DOMContentLoaded', () => {
             /* first render → apply sensible default widths and persist them */
             // share the defaults so the resizer can reset to them
             window.defaultColWidths = DEFAULT_COL_WIDTHS;
-            window.colWidths        = DEFAULT_COL_WIDTHS.slice();
+            window.colWidths = DEFAULT_COL_WIDTHS.slice();
             DEFAULT_COL_WIDTHS.forEach((w, idx) => {
                 if (colGroup.children[idx]) colGroup.children[idx].style.width = w + 'px';
             });
@@ -1617,13 +1623,13 @@ document.addEventListener('DOMContentLoaded', () => {
             scrollableContainer.scrollTo({ top: 0, behavior: 'smooth' });
         }
     });
-        // Show or hide Scroll to Top button
-        const scrollableContainer = document.querySelector('.container');
-        if (scrollableContainer) {
-            scrollableContainer.addEventListener('scroll', () => {
-                scrollToTopButton.style.display = (scrollableContainer.scrollTop > 200) ? 'block' : 'none';
-            });
-        }
+    // Show or hide Scroll to Top button
+    const scrollableContainer = document.querySelector('.container');
+    if (scrollableContainer) {
+        scrollableContainer.addEventListener('scroll', () => {
+            scrollToTopButton.style.display = (scrollableContainer.scrollTop > 200) ? 'block' : 'none';
+        });
+    }
 
     /**
      * ========== INITIALIZATION (RUN ON DOM READY) ==========

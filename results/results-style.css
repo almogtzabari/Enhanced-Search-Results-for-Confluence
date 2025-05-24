@@ -11,7 +11,8 @@ body {
     font-size: 14px;
 }
 
-html, body {
+html,
+body {
     height: 100%;
     overflow: hidden;
 }
@@ -253,7 +254,8 @@ body.dark-mode {
     align-items: center;
     padding: 8px 12px;
     font-size: 14px;
-    height: 20px; /* consistent height */
+    height: 20px;
+    /* consistent height */
     cursor: pointer;
     color: var(--text-color);
     white-space: nowrap;
@@ -365,16 +367,16 @@ a:hover {
     color: var(--link-hover-color);
 }
 
-.search-result > a::before {
+.search-result>a::before {
     margin-right: 5px;
     vertical-align: middle;
 }
 
-search-result > a {
+search-result>a {
     font-weight: 500;
 }
 
-li:hover > a {
+li:hover>a {
     text-decoration: underline;
 }
 
@@ -408,10 +410,6 @@ li .children li:first-child::before {
 
 li .children li:last-child::before {
     top: 12px;
-}
-
-li .children li.only-child::before {
-    display: none;
 }
 
 /* Table Styles */
@@ -472,17 +470,21 @@ body.dark-mode .th-resizer:hover::before {
 }
 
 table {
-    width: auto;           /* grows as columns grow */
-    min-width: 100%;       /* never smaller than the container */
+    width: auto;
+    /* grows as columns grow */
+    min-width: 100%;
+    /* never smaller than the container */
     border-collapse: collapse;
     margin-bottom: 20px;
     box-shadow: 0 2px 4px var(--shadow-color);
     border-radius: var(--border-radius);
     overflow: hidden;
-    table-layout: fixed;   /* 🔒 keep widths set via <col>, even after new rows */
+    table-layout: fixed;
+    /* 🔒 keep widths set via <col>, even after new rows */
 }
 
-th, td {
+th,
+td {
     padding: 12px 15px;
     text-align: left;
     color: var(--text-color);
@@ -563,11 +565,18 @@ tbody td a:hover {
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
 }
 
-input, select, textarea {
+input,
+select,
+textarea {
     background-color: var(--input-background-color);
     color: var(--text-color);
 }
@@ -597,7 +606,8 @@ button:active {
         align-items: stretch;
     }
 
-    .search-box, .view-buttons {
+    .search-box,
+    .view-buttons {
         width: 100%;
         justify-content: center;
     }
@@ -615,7 +625,8 @@ button:active {
         align-items: center;
     }
 
-    .filter-controls input, .filter-select {
+    .filter-controls input,
+    .filter-select {
         width: 100%;
         max-width: 300px;
     }
@@ -661,7 +672,8 @@ td:nth-child(3) a {
 /* Modern Summarize Button for Tree View */
 /* Tree view styling */
 #tree-container .summarize-button {
-    margin-left: 24px; /* aligns button under text, not icon */
+    margin-left: 24px;
+    /* aligns button under text, not icon */
 }
 
 /* Table view override */
@@ -726,7 +738,9 @@ body.dark-mode .tree-container .summarize-button {
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* Contributor avatar styling */
@@ -773,13 +787,6 @@ td:nth-child(2) a.multiline-ellipsis {
     border-radius: 50%;
     object-fit: cover;
     display: block;
-}
-
-.ellipsis-text {
-    display: block;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 .settings-icon-button {
@@ -863,9 +870,10 @@ td:nth-child(2) a.multiline-ellipsis {
 
 .filter-sidebar {
     position: sticky;
-    top: 0px; /* just below the fixed header */
-    align-self:normal;
-    will-change:inherit;
+    top: 0px;
+    /* just below the fixed header */
+    align-self: normal;
+    will-change: inherit;
     transition: none !important;
     width: 250px;
     min-width: 170px;
@@ -966,7 +974,8 @@ td:nth-child(2) a.multiline-ellipsis {
 }
 
 .modal-content {
-    background-color: rgba(255, 255, 255, 0.80); /* Light mode */
+    background-color: rgba(255, 255, 255, 0.80);
+    /* Light mode */
     color: var(--text-color);
     padding: 20px;
     border-radius: var(--border-radius);
@@ -981,7 +990,8 @@ td:nth-child(2) a.multiline-ellipsis {
 }
 
 body.dark-mode .modal-content {
-    background-color: rgba(32, 33, 36, 0.80); /* Matches dark var --header-background with slight transparency */
+    background-color: rgba(32, 33, 36, 0.85);
+    /* Matches dark var --header-background with slight transparency */
 }
 
 .modal-close {
@@ -1002,14 +1012,14 @@ body.dark-mode .modal-content {
     font-size: 14px;
     line-height: 1.5;
     color: var(--text-color);
-    white-space: normal; /* important: removes space collapse issue */
+    white-space: normal;
+    /* important: removes space collapse issue */
     flex: 1;
     overflow-y: auto;
     padding-right: 8px;
 }
 
-.modal-body ul,
-.modal-body ol {
+.modal-body ul {
     list-style: none;
     margin: 0 0 10px 0;
 }
@@ -1043,7 +1053,8 @@ body.dark-mode .modal-content {
 
 body:not(.dark-mode) .modal-body li:hover,
 body:not(.dark-mode) .modal-body p:hover {
-    background-color: #c2c2c2; /* or a slightly darker #e1e1e1 for better contrast */
+    background-color: #c2c2c2;
+    /* or a slightly darker #e1e1e1 for better contrast */
 }
 
 #modal-body li[dir="rtl"],
@@ -1061,7 +1072,8 @@ body:not(.dark-mode) .modal-body p:hover {
     text-align: right;
     list-style-type: none;
     position: relative;
-    padding-right: 16px; /* add spacing for the bullet */
+    padding-right: 16px;
+    /* add spacing for the bullet */
 }
 
 #modal-body li[dir="rtl"]::before {
@@ -1084,14 +1096,16 @@ body:not(.dark-mode) .modal-body p:hover {
 
 .qa-entry.user {
     align-self: flex-end;
-    background-color: #1a73e8; /* Blue bubble for user */
+    background-color: #1a73e8;
+    /* Blue bubble for user */
     color: white;
     border-top-right-radius: 0;
 }
 
 .qa-entry.assistant {
     align-self: flex-start;
-    background-color: #e5e5ea; /* Light gray for assistant */
+    background-color: #e5e5ea;
+    /* Light gray for assistant */
     color: black;
     border-top-left-radius: 0;
 }
@@ -1125,8 +1139,10 @@ body.dark-mode .qa-entry.user {
     font-size: 14px;
     border: 1px solid var(--input-border-color);
     border-radius: 6px;
-    resize: none; /* Disable native resize */
-    padding-top: 20px; /* Space for custom resizer */
+    resize: none;
+    /* Disable native resize */
+    padding-top: 20px;
+    /* Space for custom resizer */
     position: relative;
     background-color: var(--input-background-color);
     color: var(--text-color);
@@ -1170,7 +1186,8 @@ body.dark-mode .textarea-resizer:hover::before {
 }
 
 #qa-clear {
-    background-color: #e53935; /* red */
+    background-color: #e53935;
+    /* red */
     color: #fff;
 }
 
@@ -1309,13 +1326,29 @@ body.dark-mode .textarea-resizer:hover::before {
     animation: blink 1.4s infinite;
 }
 
-.typing-dots .dot:nth-child(1) { animation-delay: 0s; }
-.typing-dots .dot:nth-child(2) { animation-delay: 0.2s; }
-.typing-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+.typing-dots .dot:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.typing-dots .dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing-dots .dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
 
 @keyframes blink {
-    0%, 80%, 100% { opacity: 0.3; }
-    40% { opacity: 1; }
+
+    0%,
+    80%,
+    100% {
+        opacity: 0.3;
+    }
+
+    40% {
+        opacity: 1;
+    }
 }
 
 #resummarize-loading-overlay {
