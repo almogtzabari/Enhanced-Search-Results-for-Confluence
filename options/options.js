@@ -175,7 +175,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     };
                 })();
 
-                customUserPromptInput.addEventListener('input', savePrompt);
+                applyInputDirection(customUserPromptInput);
+                customUserPromptInput.addEventListener('input', () => {
+                    applyInputDirection(customUserPromptInput);
+                    savePrompt();
+                });
             }
         });
     });
@@ -288,9 +292,12 @@ document.addEventListener('DOMContentLoaded', () => {
         domainInput.value = domainValue;
         domainInput.addEventListener('input', () => {
             saveButton.disabled = false;
+            applyInputDirection(domainInput);
         });
+        applyInputDirection(domainInput);
 
         const searchInputIdInput = document.createElement('input');
+
         searchInputIdInput.type = 'text';
         searchInputIdInput.placeholder = 'Search input ID (e.g., search-filter-input)';
         searchInputIdInput.className = 'search-input-id-input';
@@ -338,6 +345,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function isValidInputId(inputId) {
         const regex = /^[a-zA-Z0-9-_]+$/;
         return regex.test(inputId);
+    }
+
+    // === Helper: Auto-detect and apply RTL or LTR direction ===
+    function applyInputDirection(input) {
+        const rtlChars = /[\u0590-\u05FF\u0600-\u06FF]/; // Hebrew + Arabic
+        const direction = rtlChars.test(input.value) ? 'rtl' : 'ltr';
+        input.setAttribute('dir', direction);
     }
 
     function showConfirmationDialog(messageHtml, onConfirm) {
