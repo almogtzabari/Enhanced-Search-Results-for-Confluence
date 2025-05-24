@@ -271,9 +271,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const contentDetails = `
             --- Content Details ---
             Title: ${pageData.title}
+            Contributor: ${pageData.history?.createdBy?.displayName || 'Unknown'}
+            Created: ${pageData.history.createdDate || 'N/A'}
+            Modified: ${pageData.version?.when ? formatDate(pageData.version.when) : 'N/A'}
             Type: ${pageData.type}
             Space: ${pageData.space?.name || 'N/A'}
             Parent Title: ${pageData.parentTitle || 'N/A'}
+            URL: ${buildConfluenceUrl(pageData._links.webui)}
             Content (HTML): ${bodyHtml}
         `.trim();
 
@@ -320,11 +324,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Get URL parameters
     function getQueryParams() {
         const params = {};
-        const queryString = window.location.search.substring(1);
-        const regex = /([^&=]+)=([^&]*)/g;
-        let m;
-        while ((m = regex.exec(queryString))) {
-            params[decodeURIComponent(m[1])] = decodeURIComponent(m[2]);
+        const searchParams = new URLSearchParams(window.location.search);
+        for (const [key, value] of searchParams.entries()) {
+            params[key] = value;
         }
         return params;
     }
@@ -541,6 +543,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         log.info(`[Search] Starting new search for: "${query}"`);
         searchText = query;
+        chrome.storage.local.set({ lastSearchText: query });
+
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set('searchText', query);
+        newUrl.searchParams.set('baseUrl', baseUrl);
+        history.replaceState(null, '', newUrl.toString());
+
         resetDataAndFetchResults();
     }
 
@@ -1783,6 +1792,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        allButtons.forEach(b => {
+            b.textContent = 'Summarizing...';
+            b.classList.add('loading');
+            b.disabled = true;
+        });
+
         let bodyHtml = await fetchConfluenceBodyById(contentId);
         bodyHtml = sanitizeHtmlContent(bodyHtml);
 
@@ -1795,13 +1810,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 resetSummaryButtons(allButtons, '✅ Summary Available!');
                 return;
             }
-
-            allButtons.forEach(b => {
-                b.textContent = 'Summarizing...';
-                b.classList.add('loading');
-                b.disabled = true;
-            });
-            await new Promise(requestAnimationFrame); // allow DOM to update
 
             chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], (syncData) => {
                 chrome.storage.local.get(['customUserPrompt'], async (localData) => {
@@ -1890,23 +1898,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const summaryTitle = document.getElementById('summary-title');
         if (summaryTitle) {
-            summaryTitle.textContent = `🧠 AI Summary: ${pageData.title}`;
+            const pageUrl = buildConfluenceUrl(pageData._links.webui);
+            summaryTitle.innerHTML = `<center><strong>🧠 AI Summary</strong><br><a href="${pageUrl}" target="_blank" rel="noopener noreferrer">${escapeHtml(pageData.title)}</a></center>`;
         }
 
-        const qaHeader = document.createElement('h3');
-        qaHeader.textContent = 'Conversation';
-        modalBody.appendChild(qaHeader);
 
         modalBody.innerHTML = '';
-        modalBody.appendChild(summaryDiv);
+
+        const summaryAndThreadWrapper = document.createElement('div');
+        summaryAndThreadWrapper.id = 'summary-thread-wrapper';
+        summaryAndThreadWrapper.style.display = 'flex';
+        summaryAndThreadWrapper.style.flexDirection = 'column';
+        summaryAndThreadWrapper.style.gap = '12px';
+
+        summaryAndThreadWrapper.appendChild(summaryDiv);
+
         const qaTitle = document.createElement('h3');
         qaTitle.textContent = 'Conversation';
         qaTitle.className = 'conversation-title';
-        modalBody.appendChild(qaTitle);
+        summaryAndThreadWrapper.appendChild(qaTitle);
 
         const qaThread = document.createElement('div');
         qaThread.id = 'qa-thread';
-        modalBody.appendChild(qaThread);
+        summaryAndThreadWrapper.appendChild(qaThread);
+
+        const scrollBtn = document.createElement('button');
+        scrollBtn.id = 'qa-scroll-top';
+        scrollBtn.textContent = '⬆';
+        scrollBtn.title = 'Scroll to summary';
+        scrollBtn.style.alignSelf = 'flex-end';
+        scrollBtn.style.display = 'none';
+        summaryAndThreadWrapper.appendChild(scrollBtn);
+
+        modalBody.appendChild(summaryAndThreadWrapper);
 
         // Add the input area for follow-up questions
         const modalContent = modal.querySelector('.modal-content');
@@ -1931,7 +1955,6 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
 
         `;
-
 
         modalContent.appendChild(qaInputArea);
 
@@ -2155,6 +2178,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         };
+
+        scrollBtn.onclick = () => {
+            modalBody.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        modalBody.addEventListener('scroll', () => {
+            scrollBtn.style.display = modalBody.scrollTop > 100 ? 'inline-block' : 'none';
+        });
 
         qaClear.onclick = () => {
             showConfirmationDialog('<b>Are you sure you want to clear this conversation?</b>', () => {

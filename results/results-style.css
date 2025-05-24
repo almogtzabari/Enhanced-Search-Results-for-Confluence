@@ -1361,6 +1361,25 @@ body.dark-mode #resummarize-loading-overlay {
     letter-spacing: 0.5px;
 }
 
+#summary-title a {
+    font-size: 20px;
+    font-weight: 500;
+    color: var(--text-color);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+#summary-title a::after {
+    content: ' 🔗';
+    font-size: 16px;
+    vertical-align: middle;
+    opacity: 0.6;
+}
+
+#summary-title a:hover::after {
+    opacity: 1;
+}
+
 body.dark-mode #summary-title {
     background-color: rgba(32, 33, 36, 0.65);
 }
@@ -1449,4 +1468,32 @@ body.dark-mode .dialog-content {
     display: flex;
     justify-content: center;
     margin-top: 20px;
+}
+
+#qa-scroll-top {
+    position: sticky;
+    bottom: 10px;
+    align-self: flex-end;
+    margin-top: 12px;
+    margin-bottom: 4px;
+    background-color: #6c757d;
+    color: white;
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    z-index: 2;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+#qa-scroll-top:hover {
+    background-color: #5a6268;
+    transform: scale(1.05);
+}
+
+#summary-thread-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
