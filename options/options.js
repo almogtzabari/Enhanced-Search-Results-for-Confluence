@@ -68,14 +68,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 };
                 const fail = (label, error) => {
-                console.error(`[ERROR] Failed to clear ${label}:`, error);
-                showStatus(`Failed to clear ${label}.`, 'error');
-            };
+                    console.error(`[ERROR] Failed to clear ${label}:`, error);
+                    showStatus(`Failed to clear ${label}.`, 'error');
+                };
 
-            clearSummaries.onsuccess = done;
-            clearConversations.onsuccess = done;
-            clearSummaries.onerror = () => fail('summaries', clearSummaries.error);
-            clearConversations.onerror = () => fail('conversations', clearConversations.error);
+                clearSummaries.onsuccess = done;
+                clearConversations.onsuccess = done;
+                clearSummaries.onerror = () => fail('summaries', clearSummaries.error);
+                clearConversations.onerror = () => fail('conversations', clearConversations.error);
 
             };
 
