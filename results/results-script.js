@@ -87,7 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const SCROLL_THRESHOLD_REACHED = (el) =>
         el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
     let RESULTS_PER_REQUEST = 75; // default value, overridden from storage
-    const DEBUG = true;
+    const DEBUG = false;
 
     const log = {
         debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
@@ -1899,9 +1899,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryTitle = document.getElementById('summary-title');
         if (summaryTitle) {
             const pageUrl = buildConfluenceUrl(pageData._links.webui);
-            summaryTitle.innerHTML = `<center><strong>🧠 AI Summary</strong><br><a href="${pageUrl}" target="_blank" rel="noopener noreferrer">${escapeHtml(pageData.title)}</a></center>`;
+            summaryTitle.innerHTML = `<strong>🧠 AI Summary</strong><br><a href="${pageUrl}" target="_blank" rel="noopener noreferrer">${escapeHtml(pageData.title)}</a>`;
         }
-
 
         modalBody.innerHTML = '';
 
@@ -1959,6 +1958,13 @@ document.addEventListener('DOMContentLoaded', () => {
         modalContent.appendChild(qaInputArea);
 
         const qaInput = document.getElementById('qa-input');
+
+        // Restore saved height for qa-input
+        const savedHeight = sessionStorage.getItem('qaInputHeight');
+        if (savedHeight) {
+            qaInput.style.height = `${savedHeight}px`;
+        }
+
         const qaSubmit = document.getElementById('qa-submit');
 
         const contentId = pageData.id;
@@ -2072,6 +2078,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Custom textarea resizer
         const qaResizer = document.getElementById('qa-resizer');
+
+        // Double-click to reset height
+        qaResizer.addEventListener('dblclick', () => {
+            qaInput.style.height = '60px';
+            sessionStorage.removeItem('qaInputHeight');
+        });
+
         let isResizing = false;
         let startY, startHeight;
 
@@ -2087,7 +2100,9 @@ document.addEventListener('DOMContentLoaded', () => {
         function resizeMouseMove(e) {
             if (!isResizing) return;
             const dy = e.clientY - startY;
-            qaInput.style.height = `${Math.max(startHeight - dy, 60)}px`;
+            const newHeight = Math.max(60, startHeight - dy);
+            qaInput.style.height = `${newHeight}px`;
+            sessionStorage.setItem('qaInputHeight', newHeight);
         }
 
         function stopResize() {
@@ -2246,6 +2261,71 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             log.debug('[Summaries] Cleared cache and reset summarize buttons.');
         }
+    });
+
+    const modal = document.getElementById('resizable-modal');
+    const modalResizerRight = document.getElementById('modal-resizer');
+
+    const savedWidth = sessionStorage.getItem('modalWidth');
+    if (savedWidth && modal) {
+        modal.style.width = `${savedWidth}px`;
+    }
+
+    if (modalResizerRight && modal) {
+        modalResizerRight.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            const startX = e.clientX;
+            const startWidth = modal.offsetWidth;
+
+            const onMouseMove = (moveEvent) => {
+                const delta = moveEvent.clientX - startX;
+                const newWidth = Math.max(300, startWidth + 2 * delta); // double for symmetric
+                modal.style.width = `${newWidth}px`;
+                sessionStorage.setItem('modalWidth', newWidth);
+            };
+
+            const onMouseUp = () => {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            };
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+    }
+
+    modalResizerRight.addEventListener('dblclick', () => {
+        modal.style.width = '600px';
+        sessionStorage.removeItem('modalWidth');
+    });
+
+    const modalResizerLeft = document.getElementById('modal-resizer-left');
+    if (modalResizerLeft && modal) {
+        modalResizerLeft.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            const startX = e.clientX;
+            const startWidth = modal.offsetWidth;
+
+            const onMouseMove = (moveEvent) => {
+                const delta = startX - moveEvent.clientX; // Inverse direction
+                const newWidth = Math.max(300, startWidth + 2 * delta);
+                modal.style.width = `${newWidth}px`;
+                sessionStorage.setItem('modalWidth', newWidth);
+            };
+
+            const onMouseUp = () => {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            };
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+    }
+
+    modalResizerLeft.addEventListener('dblclick', () => {
+        modal.style.width = '600px';
+        sessionStorage.removeItem('modalWidth');
     });
 
     // Attach global event listeners
