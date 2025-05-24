@@ -117,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tooltipToggle.checked = tooltipEnabled;
 
             const enableSummariesToggle = document.getElementById('enableSummariesToggle');
-            enableSummariesToggle.checked = data.enableSummaries === true;
+            enableSummariesToggle.checked = data.enableSummaries !== false;
             enableSummariesToggle.addEventListener('change', () => {
                 const enabled = enableSummariesToggle.checked;
                 chrome.storage.sync.set({ enableSummaries: enabled }, () => {
