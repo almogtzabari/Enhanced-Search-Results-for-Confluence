@@ -259,7 +259,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function getUserPrompt(pageData) {
         const bodyHtmlRaw = await fetchConfluenceBodyById(pageData.id);
-        const bodyHtml = sanitizeHtmlContent(bodyHtmlRaw);
+        const bodyHtml = sanitizeHtmlWithDOM(bodyHtmlRaw);
 
         const localData = await new Promise((resolve) => {
             chrome.storage.local.get(['customUserPrompt'], resolve);
@@ -294,25 +294,25 @@ document.addEventListener('DOMContentLoaded', () => {
         return rtlChars.test(text) ? 'rtl' : 'ltr';
     }
 
-    function sanitizeHtmlContent(html) {
-        // Remove script, style, iframe tags and their content using robust regex
-        html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
-        html = html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '');
-        html = html.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '');
+    function sanitizeHtmlWithDOM(htmlString) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlString, 'text/html');
+
+        const forbiddenTags = ['script', 'style', 'iframe'];
+        forbiddenTags.forEach(tag => {
+            const elements = doc.querySelectorAll(tag);
+            elements.forEach(el => el.remove());
+        });
 
         // Remove comments
-        html = html.replace(/<!--[\s\S]*?-->/g, '');
+        const treeWalker = document.createTreeWalker(doc, NodeFilter.SHOW_COMMENT, null);
+        let comment;
+        while ((comment = treeWalker.nextNode())) {
+            comment.parentNode.removeChild(comment);
+        }
 
-        // Remove base64 image sources
-        html = html.replace(/<img[^>]+src=["']data:image\/[^"']+["'][^>]*>/gi, '');
-
-        // Trim excess whitespace
-        html = html.replace(/\s{2,}/g, ' ');
-        html = html.trim();
-
-        return html;
+        return doc.body.innerHTML;
     }
-
 
     // Debounce utility
     function debounce(fn, delay) {
@@ -1801,7 +1801,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         let bodyHtml = await fetchConfluenceBodyById(contentId);
-        bodyHtml = sanitizeHtmlContent(bodyHtml);
+        bodyHtml = sanitizeHtmlWithDOM(bodyHtml);
 
         try {
             const stored = await getStoredSummary(contentId, baseUrl);
@@ -1814,7 +1814,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], (syncData) => {
-                chrome.storage.local.get(['customUserPrompt'], async (localData) => {
+                chrome.storage.local.get(['customUserPrompt'], async () => {
                     const apiKey = syncData.openaiApiKey;
                     if (!apiKey) {
                         alert('OpenAI API key not set. Please enter it in the extension options.');
