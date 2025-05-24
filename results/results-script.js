@@ -1664,7 +1664,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.body.classList.toggle('dark-mode', isDark);
 
-        window.ENABLE_SUMMARIES = data.enableSummaries === true && !!data.openaiApiKey;
+        window.ENABLE_SUMMARIES = data.enableSummaries !== false && !!data.openaiApiKey;
 
         if (searchText) {
             performNewSearch(searchText);
@@ -2116,7 +2116,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 submitQuestion();
+
+                qaInput.setAttribute('dir', 'ltr');
             }
+        });
+
+        // Dynamically update input direction based on text
+        qaInput.addEventListener('input', () => {
+            const direction = detectDirection(qaInput.value);
+            qaInput.setAttribute('dir', direction);
         });
 
         const qaClear = document.getElementById('qa-clear');
