@@ -162,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
         - Parent title (if comment)
         - Optional user prompt (important!)
 
-        Output only valid, clean HTML (no Markdown or code blocks, and no \`\`\`html). Use this format:
+        Output only valid, clean HTML (no Markdown or code blocks, and no \`\`\`html). Use this format (unless user prompt requests otherwise):
 
         1. <h3> What is this [content type] about?</h3> followed by a paragraph summarizing content, with context:
         - Page: "This page, from the <b>[space]</b> space, covers..."
@@ -171,6 +171,8 @@ document.addEventListener('DOMContentLoaded', () => {
         - Attachment: "...uploaded to..."
         2. <h3> Main points</h3> followed by a <ul><li> list
         3. Keep tone concise, neutral, and useful. Avoid repeating title. Omit internal field names or Confluence-specific terms.
+
+        Important: If a user prompt is provided, it must be addressed in the summary. Use it to focus the summary on what the user cares about.
     `;
 
     const qaSystemPrompt = `
@@ -1887,7 +1889,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = summaryText;
 
-        tempDiv.querySelectorAll('p, li').forEach(el => {
+        tempDiv.querySelectorAll('p, li, h2, h3, h4, h5, h6').forEach(el => {
             const dir = detectDirection(el.textContent);
             el.setAttribute('dir', dir);
         });
@@ -1899,7 +1901,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const summaryTitle = document.getElementById('summary-title');
         if (summaryTitle) {
             const pageUrl = buildConfluenceUrl(pageData._links.webui);
-            summaryTitle.innerHTML = `<strong>🧠 AI Summary</strong><br><a href="${pageUrl}" target="_blank" rel="noopener noreferrer">${escapeHtml(pageData.title)}</a>`;
+            summaryTitle.innerHTML = `<strong>🧠 AI Summary</strong><br><a href="${pageUrl}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(pageData.title)}">${escapeHtml(pageData.title)}</a>`;
         }
 
         modalBody.innerHTML = '';
@@ -1913,7 +1915,7 @@ document.addEventListener('DOMContentLoaded', () => {
         summaryAndThreadWrapper.appendChild(summaryDiv);
 
         const qaTitle = document.createElement('h3');
-        qaTitle.textContent = 'Conversation';
+        qaTitle.textContent = '💬 Follow-Up Questions';
         qaTitle.className = 'conversation-title';
         summaryAndThreadWrapper.appendChild(qaTitle);
 
@@ -1939,8 +1941,8 @@ document.addEventListener('DOMContentLoaded', () => {
         qaInputArea.id = 'qa-input-area';
         qaInputArea.innerHTML = `
             <div class="qa-input-wrapper">
-                <textarea id="qa-input" placeholder="Ask a follow-up question..."></textarea>
                 <div class="textarea-resizer" id="qa-resizer"></div>
+                <textarea id="qa-input" placeholder="Ask a follow-up question..."></textarea>
             </div>
             <div class="qa-button-row">
                 <button id="qa-submit">❓ Ask A Question</button>
@@ -1952,7 +1954,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="loader small-loader"></div>
                 Regenerating summary...
             </div>
-
         `;
 
         modalContent.appendChild(qaInputArea);
