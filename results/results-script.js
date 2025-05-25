@@ -1,239 +1,35 @@
+/**
+ * results-script.js
+ *
+ * Powers the enhanced search results page for the "Enhanced Search Results for Confluence"
+ * browser extension. Handles fetching, display, filtering, sorting, AI summarization,
+ * and user interactions.
+ *
+ * Version 3: Addresses IndexedDB store creation, Tree View population,
+ * 3-state sorting, and filter clear icon visibility.
+ */
 document.addEventListener('DOMContentLoaded', () => {
-    // ---------- IndexedDB configuration ----------
+
+    // =========================================================
+    //                    CONSTANTS & GLOBALS
+    // =========================================================
+
+    // --- Configuration ---
+    const DEBUG = true; // Toggle verbose DEBUG logging
+    const USE_LOCAL_PROXY = true; // Use local proxy for OpenAI requests
     const DB_NAME = 'ConfluenceSummariesDB';
-    const DB_VERSION = 2;
-    const STORE_NAME = 'summaries';
-
-    /**
-     * Open (or create/upgrade) the IndexedDB database.
-     * @returns {Promise<IDBDatabase>} Resolved database instance on success.
-     */
-    function openDb() {
-        log.debug('Opening IndexedDB', { DB_NAME, DB_VERSION });
-
-        return new Promise((resolve, reject) => {
-            const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-            request.onerror = () => {
-                log.error('IndexedDB open error', request.error);
-                reject(request.error);
-            };
-
-            request.onsuccess = () => {
-                log.info('IndexedDB connection opened', { version: DB_VERSION });
-                resolve(request.result);
-            };
-
-            request.onupgradeneeded = () => {
-                const db = request.result;
-                log.info('IndexedDB upgrade Needed → Initialising object stores', {
-                    oldVersion: request.oldVersion,
-                    newVersion: DB_VERSION
-                });
-
-                if (!db.objectStoreNames.contains(STORE_NAME)) {
-                    log.debug(`Creating object store: ${STORE_NAME}`);
-                    db.createObjectStore(STORE_NAME, { keyPath: ['contentId', 'baseUrl'] });
-                }
-                if (!db.objectStoreNames.contains('conversations')) {
-                    log.debug('Creating object store: conversations');
-                    db.createObjectStore('conversations', { keyPath: ['contentId', 'baseUrl'] });
-                }
-            };
-        });
-    }
-
-    /**
-     * Retrieve a cached summary (if present) for a given Confluence contentId.
-     * @param {string|number} contentId
-     * @param {string} baseUrl
-     * @returns {Promise<object|null>} Cached entry or null.
-     */
-    async function getStoredSummary(contentId, baseUrl) {
-        const db = await openDb();
-        log.debug('Fetching stored summary', { contentId, baseUrl });
-
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readonly');
-            const store = tx.objectStore(STORE_NAME);
-            const request = store.get([contentId, baseUrl]);
-
-            request.onsuccess = () => {
-                log.info('Summary fetched', { key: [contentId, baseUrl], hit: !!request.result });
-                resolve(request.result);
-            };
-
-            request.onerror = () => {
-                log.error('Error reading summary from IndexedDB', request.error);
-                reject(request.error);
-            };
-        });
-    }
-
-    /**
-     * Persist a summary to IndexedDB.
-     * @param {{contentId:string|number, baseUrl:string, title:string, summaryHtml:string, bodyHtml:string}} entry
-     */
-    async function storeSummary({ contentId, baseUrl, title, summaryHtml, bodyHtml }) {
-        const db = await openDb();
-        const entry = { contentId, baseUrl, title, summaryHtml, bodyHtml, timestamp: Date.now() };
-        log.debug('Storing summary', entry);
-
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            const store = tx.objectStore(STORE_NAME);
-            const request = store.put(entry);
-
-            request.onsuccess = () => {
-                log.info('Summary stored', { key: [contentId, baseUrl] });
-                resolve();
-            };
-
-            request.onerror = () => {
-                log.error('Failed to store summary', request.error);
-                reject(request.error);
-            };
-        });
-    }
-
-    /**
-     * Persist a conversation message history.
-     * @param {string|number} contentId
-     * @param {string} baseUrl
-     * @param {Array<object>} messages Chat history for follow‑up Q&A.
-     */
-    async function storeConversation(contentId, baseUrl, messages) {
-        const db = await openDb();
-        const entry = { contentId, baseUrl, messages, timestamp: Date.now() };
-        log.debug('Storing conversation', { contentId, baseUrl, messagesCount: messages.length });
-
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction('conversations', 'readwrite');
-            const store = tx.objectStore('conversations');
-            const request = store.put(entry);
-
-            request.onsuccess = () => {
-                log.info('Conversation stored', { key: [contentId, baseUrl] });
-                resolve();
-            };
-
-            request.onerror = () => {
-                log.error('Failed to store conversation', request.error);
-                reject(request.error);
-            };
-        });
-    }
-
-    /**
-     * Retrieve a stored conversation.
-     */
-    async function getStoredConversation(contentId, baseUrl) {
-        const db = await openDb();
-        log.debug('Fetching stored conversation', { contentId, baseUrl });
-
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction('conversations', 'readonly');
-            const store = tx.objectStore('conversations');
-            const request = store.get([contentId, baseUrl]);
-
-            request.onsuccess = () => {
-                log.info('Conversation fetched', { key: [contentId, baseUrl], hit: !!request.result });
-                resolve(request.result);
-            };
-
-            request.onerror = () => {
-                log.error('Error reading conversation from IndexedDB', request.error);
-                reject(request.error);
-            };
-        });
-    }
-
-    // ======================= CONSTANTS & GLOBALS ========================
-    //  The following configuration & runtime state is used throughout
-    //  the content‑browser UI.  Only key additions are annotated here;
-    //  unchanged constants are left as‑is for brevity.
-    // --------------------------------------------------------------------
-
-    // Trigger additional fetch when user is scrolled to container bottom.
-    const SCROLL_THRESHOLD_REACHED = (el) =>
-        el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-
-    // Default page size (overridable from chrome.storage).
+    const DB_VERSION = 3; // << INCREMENTED DB VERSION to fix store creation issues
+    const SUMMARY_STORE_NAME = 'summaries';
+    const CONVERSATION_STORE_NAME = 'conversations';
+    const SCROLL_THRESHOLD_PX = 5;
     let RESULTS_PER_REQUEST = 75;
 
-    // Master flag to toggle verbose DEBUG logging without recompiling.
-    const DEBUG = false;
+    // --- Type Definitions ---
+    const typeIcons = { page: '📘', blogpost: '📝', attachment: '📎', comment: '💬' };
+    const typeLabels = { page: 'Page', blogpost: 'Blog Post', attachment: 'Attachment', comment: 'Comment' };
+    const DEFAULT_COL_WIDTHS = [80, 320, 200, 160, 100, 100];
 
-    // Master flag to toggle whether to use the local proxy server
-    const USE_LOCAL_PROXY = false;
-
-    /**
-     * Lightweight logging shim that attaches a namespace and honours the
-     * global DEBUG flag for noisy messages.  Replace with your favourite
-     * logger (pino, loglevel) if desired.
-     */
-    const log = {
-        debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
-        info: (...args) => console.info('[INFO]', ...args),
-        warn: (...args) => console.warn('[WARN]', ...args),
-        error: (...args) => console.error('[ERROR]', ...args)
-    };
-
-    let searchText = '';
-    let baseUrl = '';
-    let domainName = '';
-
-    // Tree/Filtering/Sorting state
-    let nodeMap = {};
-    let roots = [];
-    let searchResultIds = new Set();
-    let allExpanded = true;
-    let collapsedNodes = new Set(); // Track collapsed node IDs
-    let loading = false;
-    let isFetching = false; // Prevent overlapping fetch calls
-    let allResultsLoaded = false;
-    let start = 0;
-    let totalSize = null;
-    let allResults = [];
-    let filteredResults = [];
-    let spaceList = [];
-    let contributorList = [];
-    let fullSpaceList = [];
-    let fullContributorList = [];
-    const conversationHistories = new Map(); // contentId -> messages[]
-
-    // Variables for sorting
-    let currentSortColumn = '';
-    let currentSortOrder = ''; // 'asc', 'desc', or ''
-
-    let tooltipSettings = { showTooltips: true };
-
-    const confluenceBodyCache = new Map();
-    const summaryCache = new Map();
-
-    const typeIcons = {
-        page: '📘',
-        blogpost: '📝',
-        attachment: '📎',
-        comment: '💬'
-    };
-
-    const typeLabels = {
-        page: 'Page',
-        blogpost: 'Blog Post',
-        attachment: 'Attachment',
-        comment: 'Comment'
-    };
-
-    const DEFAULT_COL_WIDTHS = [
-        80,  // Type
-        320, // Name
-        200, // Space
-        160, // Contributor
-        100, // Date Created
-        100  // Last Modified
-    ];
-
+    // --- AI Prompts ---
     const summarySystemPrompt = `
         You are a technical summarizer. Your task is to generate a concise, relevance-focused HTML summary of Confluence content. This will help users assess whether a document is worth opening.
 
@@ -265,272 +61,59 @@ document.addEventListener('DOMContentLoaded', () => {
         Output only valid, clean and nicely formatted HTML (no Markdown or code blocks, and no \`\`\`html)
     `;
 
+    // --- Global State ---
+    let searchText = '', baseUrl = '', domainName = '';
+    let nodeMap = {}, roots = [], searchResultIds = new Set();
+    let allExpanded = true, collapsedNodes = new Set();
+    let loading = false, isFetching = false, allResultsLoaded = false;
+    let start = 0, totalSize = null;
+    let allResults = [], filteredResults = [];
+    let fullSpaceList = [], fullContributorList = [];
+    const conversationHistories = new Map();
+    let currentSortColumn = '', currentSortOrder = '';
+    let tooltipSettings = { showTooltips: true };
+    const confluenceBodyCache = new Map(), summaryCache = new Map();
+    const tooltipBoundNodes = new WeakMap();
+    let lastTextFilter = '', lastSpaceKey = '', lastContributorKey = '';
+    let colWidths = [...DEFAULT_COL_WIDTHS];
 
-    /* =========================================================
-     *                    UTILITY FUNCTIONS
-     * =========================================================*/
+    // --- DOM Elements (Cached) ---
+    const treeContainer = document.getElementById('tree-container');
+    const tableContainer = document.getElementById('table-container');
+    const loadingIndicator = document.getElementById('loading-indicator');
+    const spaceOptionsContainer = document.getElementById('space-options');
+    const contributorOptionsContainer = document.getElementById('contributor-options');
+    const spaceFilterInput = document.getElementById('space-filter');
+    const contributorFilterInput = document.getElementById('contributor-filter');
+    const textFilterInput = document.getElementById('text-filter');
+    const dateFilter = document.getElementById('date-filter');
+    const typeFilter = document.getElementById('type-filter');
+    const newSearchInput = document.getElementById('new-search-input');
+    const newSearchButton = document.getElementById('new-search-button');
+    const mainSearchClear = document.getElementById('main-search-clear');
+    const scrollToTopButton = document.getElementById('scroll-to-top');
+    const scrollableContainer = document.querySelector('.container');
+    const summaryModal = document.getElementById('summary-modal');
+    const resizableModal = document.getElementById('resizable-modal');
 
+    // --- Logging Utility ---
+    const log = {
+        debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
+        info: (...args) => console.info('[INFO]', ...args),
+        warn: (...args) => console.warn('[WARN]', ...args),
+        error: (...args) => console.error('[ERROR]', ...args),
+    };
+
+    // =========================================================
+    //                    UTILITY FUNCTIONS
+    // =========================================================
     function triggerPoofEffect() {
         const audio = document.getElementById('poof-audio');
-
         if (audio) {
             audio.currentTime = 0;
-            audio.play().catch(e => console.warn('Poof sound error:', e));
+            audio.play().catch(e => log.warn('Poof sound error:', e));
         }
     }
-
-    /**
-     * Send a completion / chat request to OpenAI **via the local proxy**.
-     *
-     * @param {Object} opts
-     * @param {string} opts.apiKey   – Raw OpenAI key (never logged!)
-     * @param {string} opts.apiUrl   – OpenAI REST endpoint (v1/chat/completions, etc.)
-     * @param {string} opts.model    – Model name (gpt-4o-mini, gpt-3.5-turbo-1106, …)
-     * @param {Array<Object>} opts.messages – OpenAI chat message array
-     * @returns {Promise<Object>} Parsed JSON response from OpenAI
-     * @throws {Error} If the fetch fails or returns non-2xx
-     */
-    async function sendOpenAIRequestViaLocalProxy({ apiKey, apiUrl, model, messages }) {
-        log.info('[OpenAI] → POST', apiUrl);
-        log.debug('[OpenAI] Payload:', { model, msgCount: messages.length });
-
-        const response = await fetch('http://localhost:3000/proxy', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ apiKey, apiUrl, model, messages })
-        });
-
-        // ——— Error handling ———
-        if (!response.ok) {
-            const errorText = await response.text();
-            log.error('[OpenAI] HTTP', response.status, errorText.slice(0, 200));
-            throw new Error(`OpenAI request failed: ${response.statusText}`);
-        }
-
-        // ——— Success path ———
-        const result = await response.json();
-        log.info('[OpenAI] ✓ Response OK');
-        log.debug('[OpenAI] Meta:', {
-            model: result.model,
-            tokens: result.usage,
-            choices: result.choices?.length
-        });
-
-        return result;
-    }
-
-    /**
-     * Fire a direct request to OpenAI’s REST endpoint (no local proxy).
-     *
-     * @param {Object} opts
-     * @param {string} opts.apiKey   – Secret Bearer token.
-     * @param {string} opts.apiUrl   – Full URL, e.g. "https://api.openai.com/v1/chat/completions".
-     * @param {string} opts.model    – Model id, e.g. "gpt-4o-mini".
-     * @param {Array<Object>} opts.messages – OpenAI chat message array.
-     * @returns {Promise<Object>}    Parsed JSON payload.
-     * @throws {Error}               If the fetch fails or returns non-2xx.
-     *
-     * The helper prints:
-     *   • log.info  – one-liners for the request / success path.
-     *   • log.debug – verbose payload & response meta (only when DEBUG === true).
-     */
-    async function sendOpenAIRequestDirect({ apiKey, apiUrl, model, messages }) {
-        log.info('[OpenAI] → POST', apiUrl);
-        log.debug('[OpenAI] Payload:', { model, msgCount: messages.length });
-
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ model, messages })
-        });
-
-        /* ---------- Error handling ---------- */
-        if (!response.ok) {
-            const errorText = await response.text();
-            log.error('[OpenAI] HTTP', response.status, errorText.slice(0, 200));
-            throw new Error(`OpenAI request failed: ${response.statusText}`);
-        }
-
-        /* ---------- Success path ---------- */
-        const result = await response.json();
-        log.info('[OpenAI] ✓ Response OK');
-        log.debug('[OpenAI] Meta:', {
-            model: result.model,
-            tokens: result.usage,
-            choices: result.choices?.length
-        });
-
-        return result;
-    }
-
-    async function sendOpenAIRequest({ apiKey, apiUrl, model, messages }) {
-        if (USE_LOCAL_PROXY) {
-            return sendOpenAIRequestViaLocalProxy({ apiKey, apiUrl, model, messages });
-        } else {
-            return sendOpenAIRequestDirect({ apiKey, apiUrl, model, messages });
-        }
-    }
-
-
-    /**
-     * Show a modal confirmation dialog with Cancel / Confirm buttons.
-     *
-     * @param {string}   message   – HTML or text displayed in the dialog body.
-     * @param {Function} onConfirm – Callback executed only if user clicks **Confirm**.
-     */
-    function showConfirmationDialog(message, onConfirm) {
-        log.debug('[Dialog] Creating confirmation dialog');
-
-        // Remove any stale overlay first
-        const existing = document.getElementById('dialog-overlay');
-        if (existing) existing.remove();
-
-        // Build overlay HTML
-        const dialog = document.createElement('div');
-        dialog.id = 'dialog-overlay';
-        dialog.className = 'dialog-overlay';
-        dialog.innerHTML = `
-        <div class="dialog-content">
-            <span class="dialog-close" id="dialog-close">&times;</span>
-            <p>${message}</p>
-            <div class="dialog-actions">
-                <button id="dialog-cancel">Cancel</button>
-                <button id="dialog-confirm">Confirm</button>
-            </div>
-        </div>
-    `;
-        document.body.appendChild(dialog);
-
-        /** Helper that removes the dialog from DOM */
-        const remove = () => {
-            log.debug('[Dialog] Closed / removed');
-            dialog.remove();
-        };
-
-        // Wire up events ---------------------------------------------------------
-        document.getElementById('dialog-close').onclick = remove;
-        document.getElementById('dialog-cancel').onclick = remove;
-        document.getElementById('dialog-confirm').onclick = () => {
-            remove();
-            log.info('[Dialog] ✔ User confirmed');
-            onConfirm();
-        };
-        dialog.addEventListener('click', (e) => {
-            // Allow click outside content area to dismiss
-            if (e.target === dialog) remove();
-        });
-    }
-
-    /**
-     * Reset a batch of “Summarize” buttons back to their idle state.
-     *
-     * @param {HTMLButtonElement[]} buttons – NodeList / Array of buttons to reset.
-     * @param {string} [label='🧠 Summarize'] – InnerText to restore.
-     */
-    function resetSummaryButtons(buttons, label = '🧠 Summarize') {
-        buttons.forEach(btn => {
-            btn.textContent = label;
-            btn.classList.remove('loading');
-            btn.disabled = false;
-        });
-        log.debug('[UI] Reset', buttons.length, 'summary button(s)');
-    }
-
-    /**
-     * Build the full prompt that will be sent to OpenAI when summarizing a page.
-     * It concatenates the (optional) saved user prompt with rich contextual data
-     * about the Confluence page.
-     *
-     * @param {Object} pageData – Raw page record from Confluence REST
-     * @returns {Promise<string>} Full, multi-line prompt ready for the LLM
-     */
-    async function getUserPrompt(pageData) {
-        log.debug('[Prompt] Building user prompt for page', pageData.id);
-
-        const bodyHtmlRaw = await fetchConfluenceBodyById(pageData.id);
-        const bodyHtml = sanitizeHtmlWithDOM(bodyHtmlRaw);
-
-        // Retrieve any custom prompt saved in extension storage
-        const localData = await new Promise(resolve =>
-            chrome.storage.local.get(['customUserPrompt'], resolve)
-        );
-        const userPrompt = typeof localData.customUserPrompt === 'string'
-            ? localData.customUserPrompt.trim()
-            : '';
-
-        // Compose contextual “content details” section
-        const contentDetails = `
-        --- Content Details ---
-        Title: ${pageData.title}
-        Contributor: ${pageData.history?.createdBy?.displayName || 'Unknown'}
-        Created: ${pageData.history.createdDate || 'N/A'}
-        Modified: ${pageData.version?.when ? formatDate(pageData.version.when) : 'N/A'}
-        Type: ${pageData.type}
-        Space: ${pageData.space?.name || 'N/A'}
-        Parent Title: ${pageData.parentTitle || 'N/A'}
-        URL: ${buildConfluenceUrl(pageData._links.webui)}
-        Content (HTML): ${bodyHtml}
-    `.trim();
-
-        const finalPrompt = (userPrompt ? userPrompt + '\n\n' : '') + contentDetails;
-        log.debug('[Prompt] Final prompt length:', finalPrompt.length, 'chars');
-
-        return finalPrompt;
-    }
-
-    /**
-     * Very small helper that guesses writing direction (LTR / RTL)
-     * by looking for any Hebrew or Arabic Unicode blocks.
-     *
-     * @param {string} text
-     * @returns {'ltr' | 'rtl'}
-     */
-    function detectDirection(text) {
-        const rtlChars = /[\u0590-\u05FF\u0600-\u06FF]/; // Hebrew + Arabic blocks
-        const dir = rtlChars.test(text) ? 'rtl' : 'ltr';
-        log.debug('[Dir] Detected', dir);
-        return dir;
-    }
-
-    /**
-     * Sanitise raw HTML by stripping `<script>`, `<style>`, `<iframe>` and **all** comments.
-     *
-     * @param {string} htmlString – Unsafe HTML
-     * @returns {string} Clean innerHTML
-     */
-    function sanitizeHtmlWithDOM(htmlString) {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(htmlString, 'text/html');
-
-        // Remove potentially unsafe elements completely
-        ['script', 'style', 'iframe'].forEach(tag => {
-            doc.querySelectorAll(tag).forEach(el => el.remove());
-        });
-
-        // Strip HTML comments
-        const walker = document.createTreeWalker(doc, NodeFilter.SHOW_COMMENT, null);
-        let comment;
-        let removed = 0;
-        while ((comment = walker.nextNode())) {
-            comment.parentNode.removeChild(comment);
-            removed++;
-        }
-        log.debug('[Sanitize] Removed', removed, 'comments from HTML');
-
-        return doc.body.innerHTML;
-    }
-
-    /**
-     * Debounce wrapper: returns a function that delays invocation of `fn`
-     * until `delay` ms have passed since the last call.
-     *
-     * @param {Function} fn
-     * @param {number} delay – Milliseconds
-     * @returns {Function}
-     */
     function debounce(fn, delay) {
         let timeout;
         return (...args) => {
@@ -538,12 +121,6 @@ document.addEventListener('DOMContentLoaded', () => {
             timeout = setTimeout(() => fn(...args), delay);
         };
     }
-
-    /**
-     * Parse window.location.search into a plain object.
-     *
-     * @returns {Record<string,string>}
-     */
     function getQueryParams() {
         const params = {};
         const sp = new URLSearchParams(window.location.search);
@@ -551,250 +128,222 @@ document.addEventListener('DOMContentLoaded', () => {
         log.debug('[Query] Params:', params);
         return params;
     }
-
-    /**
-     * Escape HTML special characters so the string can be safely injected
-     * into the DOM using `innerHTML`.
-     *
-     * @param {string} text
-     * @returns {string}
-     */
-    function escapeHtml(text) {
+    function escapeHtml(text = '') {
         const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#039;' };
         return text.replace(/[&<>"']/g, m => map[m]);
     }
-
-    /**
-     * Quick client-side validation for free-text search inputs.
-     * Alphanumeric + basic punctuation and quoted phrases.
-     *
-     * @param {string} input
-     * @returns {boolean}
-     */
     function isValidInput(input) {
         const regex = /^[\p{L}\p{N}\s\-_.@"']*$/u;
         return regex.test(input);
     }
-
-    /**
-     * Strip any character *not* allowed by `isValidInput`.
-     *
-     * @param {string} input
-     * @returns {string}
-     */
-    function sanitizeInput(input) {
-        return input.replace(/[^\p{L}\p{N}\s\-_.@"']/gu, '');
-    }
-
-    /**
-     * Format an ISO date string as `DD/MM/YYYY at HH:MM`.
-     *
-     * @param {string|number|Date} dateString
-     * @returns {string}
-     */
+    function sanitizeInput(input) { return input.replace(/[^\p{L}\p{N}\s\-_.@"']/gu, ''); }
     function formatDate(dateString) {
         const date = new Date(dateString);
         const pad = n => String(n).padStart(2, '0');
-        const out = `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`
-            + ` at ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-        return out;
+        return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} at ${pad(date.getHours())}:${pad(date.getMinutes())}`;
     }
-
-    // ---- URL-security helpers ---------------------------------------------
-
-    /**
-     * Accepts the user-supplied baseUrl *once*, validates it and normalises it
-     * to "<scheme>://<host>" (no path / query / fragment allowed).
-     * Returns an empty string if the value is unsafe.
-     */
     function sanitiseBaseUrl(raw) {
         try {
             const u = new URL(raw);
-            // allow only http(s) and (optionally) an allow-list of hosts
-            if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error();
-            // If you only ever search the one Confluence host you can
-            // replace the next line with e.g.
-            // if (u.hostname !== 'confluence.mycorp.com') throw new Error();
-            return u.origin;                // "https://confluence.mycorp.com"
-        } catch (_) {
-            console.error('Rejected baseUrl:', raw);
+            if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('Invalid protocol');
+            return u.origin;
+        }
+        catch (_) {
+            log.error('Rejected baseUrl:', raw);
             return '';
         }
     }
-
-    /**
-     * Safely joins a *relative* Confluence path (e.g. "/spaces/FOO") onto the
-     * already-sanitised baseUrl.
-     * If the path is not a string or is absolute / schemeful, returns "#".
-     */
     function buildConfluenceUrl(path) {
-        if (typeof path !== 'string' ||
-            path.startsWith('http:') ||
-            path.startsWith('https:') ||
-            path.includes('javascript:') ||
-            path.includes('data:')) {
-            return '#';
-        }
-        try {
-            return new URL(path, baseUrl).toString();   // automatic encoding
-        } catch (_) {
-            return '#';
-        }
+        if (typeof path !== 'string' || path.startsWith('http:') || path.startsWith('https:') || path.includes('javascript:') || path.includes('data:')) return '#';
+        try { return new URL(path, baseUrl).toString(); } catch (_) { return '#'; }
+    }
+    function detectDirection(text = '') {
+        const rtlChars = /[\u0590-\u05FF\u0600-\u06FF]/;
+        return rtlChars.test(text) ? 'rtl' : 'ltr';
+    }
+    function sanitizeHtmlWithDOM(htmlString = '') {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlString, 'text/html');
+        ['script', 'style', 'iframe'].forEach(tag => doc.querySelectorAll(tag).forEach(el => el.remove()));
+        const walker = document.createTreeWalker(doc, NodeFilter.SHOW_COMMENT, null);
+        let comment;
+        while ((comment = walker.nextNode())) comment.parentNode.removeChild(comment);
+        return doc.body.innerHTML;
+    }
+    function toggleClearIcon(inputElem, clearIcon) { clearIcon.style.display = inputElem.value.trim() ? 'inline' : 'none'; } // Using trim for accuracy
+    function showLoadingIndicator(show) { loadingIndicator.style.display = show ? 'flex' : 'none'; }
+    function showNoResultsMessage() {
+        const message = '<p>No results found.</p>';
+        treeContainer.innerHTML = message;
+        tableContainer.innerHTML = message;
     }
 
-    const tooltipBoundNodes = new WeakMap(); // Tracks nodes already bound with their handlers
-
-    function attachTooltipListeners() {
-        const tooltip = document.getElementById('tree-tooltip');
-        if (!tooltip) return;
-
-        document.querySelectorAll('.search-result').forEach(node => {
-            if (tooltipBoundNodes.has(node)) return;
-
-            const enter = () => {
-                const title = node.dataset.title;
-                const contributor = node.dataset.contributor;
-                const modified = node.dataset.modified;
-                const nodeType = node.dataset.type || '';
-                let typeLabel = '';
-                switch (nodeType) {
-                    case 'page': typeLabel = 'Page'; break;
-                    case 'blogpost': typeLabel = 'Blog Post'; break;
-                    case 'comment': typeLabel = 'Comment'; break;
-                    case 'attachment': typeLabel = 'Attachment'; break;
-                    default: typeLabel = '';
+    // =========================================================
+    //                    IndexedDB FUNCTIONS
+    // =========================================================
+    function openDb() {
+        log.debug(`[DB] Attempting to open DB: ${DB_NAME}, Version: ${DB_VERSION}`);
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onerror = (event) => {
+                log.error('[DB] Open error:', event.target.error);
+                reject(event.target.error);
+            };
+            request.onsuccess = (event) => {
+                log.info('[DB] Connection opened successfully.', { version: event.target.result.version });
+                resolve(event.target.result);
+            };
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                log.info(`[DB] Upgrade needed from v${event.oldVersion} to v${DB_VERSION}. Current stores:`, Array.from(db.objectStoreNames));
+                if (!db.objectStoreNames.contains(SUMMARY_STORE_NAME)) {
+                    log.info(`[DB] Creating object store: ${SUMMARY_STORE_NAME}`);
+                    db.createObjectStore(SUMMARY_STORE_NAME, { keyPath: ['contentId', 'baseUrl'] });
+                } else {
+                    log.info(`[DB] Object store already exists: ${SUMMARY_STORE_NAME}`);
                 }
-                tooltip.innerHTML = `<strong>${title}</strong><br>Type: ${typeLabel}<br>By: ${contributor}<br>Last Modified: ${modified}`;
-                tooltip.style.display = 'block';
+                if (!db.objectStoreNames.contains(CONVERSATION_STORE_NAME)) {
+                    log.info(`[DB] Creating object store: ${CONVERSATION_STORE_NAME}`);
+                    db.createObjectStore(CONVERSATION_STORE_NAME, { keyPath: ['contentId', 'baseUrl'] });
+                } else {
+                    log.info(`[DB] Object store already exists: ${CONVERSATION_STORE_NAME}`);
+                }
+                log.info('[DB] Upgrade complete. Stores after upgrade:', Array.from(db.objectStoreNames));
             };
-
-            const move = e => {
-                tooltip.style.left = `${e.pageX + 10}px`;
-                tooltip.style.top = `${e.pageY + 10}px`;
-            };
-
-            const leave = () => {
-                tooltip.style.display = 'none';
-            };
-
-            node.addEventListener('mouseenter', enter);
-            node.addEventListener('mousemove', move);
-            node.addEventListener('mouseleave', leave);
-
-            tooltipBoundNodes.set(node, { enter, move, leave });
         });
     }
-
-    function detachTooltipListeners() {
-        const tooltip = document.getElementById('tree-tooltip');
-        if (!tooltip) return;
-
-        document.querySelectorAll('.search-result').forEach(node => {
-            const handlers = tooltipBoundNodes.get(node);
-            if (handlers) {
-                node.removeEventListener('mouseenter', handlers.enter);
-                node.removeEventListener('mousemove', handlers.move);
-                node.removeEventListener('mouseleave', handlers.leave);
-                tooltipBoundNodes.delete(node);
+    async function makeDbRequest(storeName, mode, operation, data = null) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+            try {
+                if (!db.objectStoreNames.contains(storeName)) {
+                    log.error(`[DB] Store not found for transaction: ${storeName}. Available stores:`, Array.from(db.objectStoreNames));
+                    reject(new DOMException(`Object store ${storeName} not found`, 'NotFoundError'));
+                    return;
+                }
+                const tx = db.transaction(storeName, mode);
+                const store = tx.objectStore(storeName);
+                const request = data !== null ? store[operation](data) : store[operation](); // Handle operations like clear()
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = (event) => {
+                    log.error(`[DB] ${operation} error on ${storeName}`, event.target.error);
+                    reject(event.target.error);
+                };
+            } catch (error) {
+                log.error(`[DB] Transaction creation error on ${storeName}`, error);
+                reject(error);
             }
         });
-
-        tooltip.style.display = 'none';
+    }
+    async function getStoredSummary(contentId, baseUrl) {
+        log.debug('[DB] Fetching stored summary', { contentId, baseUrl });
+        try { return await makeDbRequest(SUMMARY_STORE_NAME, 'readonly', 'get', [contentId, baseUrl]); }
+        catch (e) {
+            log.warn('[DB] Failed to get stored summary', e);
+            return null;
+        }
+    }
+    async function storeSummary({ contentId, baseUrl, title, summaryHtml, bodyHtml }) {
+        const entry = { contentId, baseUrl, title, summaryHtml, bodyHtml, timestamp: Date.now() };
+        log.debug('[DB] Storing summary', { contentId, baseUrl });
+        try { await makeDbRequest(SUMMARY_STORE_NAME, 'readwrite', 'put', entry); }
+        catch (e) { log.error('[DB] Failed to store summary', e); }
+    }
+    async function getStoredConversation(contentId, baseUrl) {
+        log.debug('[DB] Fetching stored conversation', { contentId, baseUrl });
+        try { return await makeDbRequest(CONVERSATION_STORE_NAME, 'readonly', 'get', [contentId, baseUrl]); }
+        catch (e) {
+            log.warn('[DB] Failed to get stored conversation', e);
+            return null;
+        }
+    }
+    async function storeConversation(contentId, baseUrl, messages) {
+        const entry = { contentId, baseUrl, messages, timestamp: Date.now() };
+        log.debug('[DB] Storing conversation', { contentId, baseUrl, count: messages.length });
+        try { await makeDbRequest(CONVERSATION_STORE_NAME, 'readwrite', 'put', entry); }
+        catch (e) { log.error('[DB] Failed to store conversation', e); }
     }
 
-    /**
-     * ========== CORE LOGIC FUNCTIONS ==========
-     */
+    // =========================================================
+    //                      API FUNCTIONS
+    // =========================================================
+    async function fetchConfluenceBodyById(contentId) {
+        if (confluenceBodyCache.has(contentId)) {
+            log.debug(`[Cache] Returning body for ${contentId}`);
+            return confluenceBodyCache.get(contentId);
+        }
+        const apiUrl = `${baseUrl}/rest/api/content/${contentId}?expand=body.storage`;
+        try {
+            const response = await fetch(apiUrl, { method: 'GET', headers: { 'Accept': 'application/json' }, credentials: 'include' });
+            if (!response.ok) throw new Error(`Workspace failed: ${response.statusText}`);
+            const data = await response.json();
+            const bodyHtml = data.body?.storage?.value || '(No content)';
+            confluenceBodyCache.set(contentId, bodyHtml);
+            log.debug(`[Cache] Fetched body for ${contentId}`);
+            return bodyHtml;
+        } catch (error) {
+            log.error('[API] Error in fetchConfluenceBodyById:', error);
+            throw error;
+        }
+    }
+    async function sendOpenAIRequest({ apiKey, apiUrl, model, messages }) {
+        log.info('[OpenAI] → POST', apiUrl);
+        log.debug('[OpenAI] Payload:', { model, msgCount: messages.length });
+        const useProxy = USE_LOCAL_PROXY;
+        const url = useProxy ? 'http://localhost:3000/proxy' : apiUrl;
+        const body = useProxy ? JSON.stringify({ apiKey, apiUrl, model, messages }) : JSON.stringify({ model, messages });
+        const headers = useProxy ? { 'Content-Type': 'application/json' } : { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+        try {
+            const response = await fetch(url, { method: 'POST', headers, body });
+            if (!response.ok) {
+                const errorText = await response.text();
+                log.error('[OpenAI] HTTP Error', response.status, errorText.slice(0, 200));
+                throw new Error(`OpenAI request failed: ${response.statusText}`);
+            }
+            const result = await response.json();
+            log.info('[OpenAI] ✓ Response OK');
+            log.debug('[OpenAI] Meta:', { model: result.model, usage: result.usage });
+            return result;
+        } catch (error) {
+            log.error('[OpenAI] Fetch/Request Error:', error);
+            throw error;
+        }
+    }
 
+    // =========================================================
+    //                    CORE LOGIC FUNCTIONS
+    // =========================================================
     function buildCQL() {
         const cqlParts = [];
-        // Escape backslash **first**, then double quotes
         const escapedSearchText = searchText.replace(/(["\\])/g, '\\$1');
-        // Construct text query
-        const textQuery = `(text ~ "${escapedSearchText}" OR title ~ "${escapedSearchText}")`;
-        cqlParts.push(textQuery);
-
-        // Grab filter values
-        const spaceFilterValue = document.getElementById('space-filter').dataset.key || '';
-        const contributorFilterValue = document.getElementById('contributor-filter').dataset.key || '';
-
-        if (spaceFilterValue) {
-            cqlParts.push(`space="${spaceFilterValue}"`);
-        }
-        if (contributorFilterValue) {
-            cqlParts.push(`creator="${contributorFilterValue}"`);
-        }
-
-        const dateFilter = document.getElementById('date-filter');
-        const dateVal = dateFilter ? dateFilter.value : 'any';
-        const typeVal = typeFilter ? typeFilter.value : '';
+        cqlParts.push(`(text ~ "${escapedSearchText}" OR title ~ "${escapedSearchText}")`);
+        const spaceKey = spaceFilterInput.dataset.key || '';
+        const contributorKey = contributorFilterInput.dataset.key || '';
+        if (spaceKey) cqlParts.push(`space="${spaceKey}"`);
+        if (contributorKey) cqlParts.push(`creator="${contributorKey}"`);
+        const dateVal = dateFilter.value;
+        const typeVal = typeFilter.value;
         const today = new Date();
         let fromDate = null;
-
-        if (dateVal === '1d') {
-            fromDate = new Date(today.setDate(today.getDate() - 1));
-        } else if (dateVal === '1w') {
-            fromDate = new Date(today.setDate(today.getDate() - 7));
-        } else if (dateVal === '1m') {
-            fromDate = new Date(today.setMonth(today.getMonth() - 1));
-        } else if (dateVal === '1y') {
-            fromDate = new Date(today.setFullYear(today.getFullYear() - 1));
+        switch (dateVal) {
+            case '1d': fromDate = new Date(new Date().setDate(today.getDate() - 1));
+                break;
+            case '1w': fromDate = new Date(new Date().setDate(today.getDate() - 7));
+                break;
+            case '1m': fromDate = new Date(new Date().setMonth(today.getMonth() - 1));
+                break;
+            case '1y': fromDate = new Date(new Date().setFullYear(today.getFullYear() - 1));
+                break;
         }
-
-        if (fromDate) {
-            const isoDate = fromDate.toISOString().split('T')[0];
-            cqlParts.push(`lastModified >= "${isoDate}"`);
-        }
-
-        // Only apply type filter if a specific type is selected (omit for "All Types")
-        if (typeVal && ['page', 'blogpost', 'attachment', 'comment'].includes(typeVal)) {
-            cqlParts.push(`type="${typeVal}"`);
-        }
-
+        if (fromDate) cqlParts.push(`lastModified >= "${fromDate.toISOString().split('T')[0]}"`);
+        if (typeVal) cqlParts.push(`type="${typeVal}"`);
         const finalCQL = cqlParts.join(' AND ');
-        log.debug('Applied filters:', {
-            space: spaceFilterValue,
-            contributor: contributorFilterValue,
-            date: dateVal,
-            query: escapedSearchText
-        });
+        log.debug('[CQL] Built:', finalCQL);
         return encodeURIComponent(finalCQL);
     }
-
-    async function performNewSearch(query) {
-        if (!query) {
-            alert('Please enter a search query.');
-            return;
-        }
-        if (!isValidInput(query)) {
-            alert('Invalid search query. Please use only alphanumeric characters, spaces, and -_.@');
-            return;
-        }
-
-        query = sanitizeInput(query);
-
-        // Update document title
-        document.title = `Search results for '${escapeHtml(query)}' on ${domainName}`;
-        // Update the page header title
-        document.getElementById('page-title').textContent = `(${domainName})`;
-
-        log.info(`[Search] Starting new search for: "${query}"`);
-        searchText = query;
-        chrome.storage.local.set({ lastSearchText: query });
-
-        const newUrl = new URL(window.location.href);
-        newUrl.searchParams.set('searchText', query);
-        newUrl.searchParams.set('baseUrl', baseUrl);
-        history.replaceState(null, '', newUrl.toString());
-
-        resetDataAndFetchResults();
-    }
-
     function resetDataAndFetchResults() {
-        log.debug('Resetting data and fetching fresh results');
-        // Prevent scroll-triggered loadMoreResults while resetting
-        window.removeEventListener('scroll', infiniteScrollHandler);
-        // Reset variables
+        log.debug('[Search] Resetting data and fetching fresh results');
+        scrollableContainer?.removeEventListener('scroll', infiniteScrollHandler);
         nodeMap = {};
         roots = [];
         searchResultIds = new Set();
@@ -806,489 +355,276 @@ document.addEventListener('DOMContentLoaded', () => {
         totalSize = null;
         allResults = [];
         filteredResults = [];
-        spaceList = [];
-        contributorList = [];
         fullSpaceList = [];
         fullContributorList = [];
         currentSortColumn = '';
-        currentSortOrder = 'asc';
-
-        // Clear containers
-        document.getElementById('tree-container').innerHTML = '';
-        document.getElementById('table-container').innerHTML = '';
-        // Clear the filter options
-        document.getElementById('space-options').innerHTML = '';
-        document.getElementById('contributor-options').innerHTML = '';
-
+        currentSortOrder = ''; // Reset sort
+        treeContainer.innerHTML = '';
+        tableContainer.innerHTML = '';
+        spaceOptionsContainer.innerHTML = '';
+        contributorOptionsContainer.innerHTML = '';
         loadMoreResults();
     }
-
+    async function performNewSearch(query) {
+        if (!query) {
+            alert('Please enter a search query.');
+            return;
+        }
+        if (!isValidInput(query)) {
+            alert('Invalid search query.');
+            return;
+        }
+        searchText = sanitizeInput(query);
+        log.info(`[Search] Starting new search for: "${searchText}"`);
+        document.title = `Search results for '${escapeHtml(searchText)}' on ${domainName}`;
+        document.getElementById('page-title').textContent = `(${domainName})`;
+        chrome.storage.local.set({ lastSearchText: searchText });
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set('searchText', searchText);
+        newUrl.searchParams.set('baseUrl', baseUrl);
+        history.replaceState(null, '', newUrl.toString());
+        resetDataAndFetchResults();
+    }
     async function loadMoreResults() {
         if (loading || allResultsLoaded || isFetching) return;
         isFetching = true;
-        log.debug('[Search] Triggered loadMoreResults');
-        log.debug('No results found after CQL search.');
-        loading = true;
+        log.debug('[Search] Loading more results...');
         showLoadingIndicator(true);
-
         const cql = buildCQL();
-        // Updated search URL to include expand parameter
         const searchUrl = `${baseUrl}/rest/api/content/search?cql=${cql}&limit=${RESULTS_PER_REQUEST}&start=${start}&expand=ancestors,space.icon,history.createdBy,version`;
-
         try {
-            const response = await fetch(searchUrl, {
-                method: 'GET',
-                headers: { 'Accept': 'application/json' },
-                credentials: 'include' // Include cookies for authentication
-            });
-
-            if (!response.ok) {
-                throw new Error(`Error fetching search results: ${response.statusText}`);
-            }
-
+            const response = await fetch(searchUrl, { method: 'GET', headers: { 'Accept': 'application/json' }, credentials: 'include' });
+            if (!response.ok) throw new Error(`Workspace error: ${response.statusText}`);
             const searchData = await response.json();
-            if (totalSize === null) {
-                totalSize = searchData.totalSize;
-            }
-
-            const results = searchData.results;
+            if (totalSize === null) totalSize = searchData.totalSize;
+            const results = searchData.results || [];
             if (results.length === 0) {
-                log.debug('No results found after CQL search.');
                 allResultsLoaded = true;
-                if (allResults.length === 0) {
-                    // No results at all
-                    showNoResultsMessage();
-                }
-                showLoadingIndicator(false);
-                return;
-            }
-
-            start += results.length;
-            log.debug(`Fetched ${results.length} results. Total so far: ${allResults.length}`);
-
-            // Process each result
-            for (const pageData of results) {
-                const pageId = pageData.id;
-                if (searchResultIds.has(pageId)) {
-                    continue; // Skip duplicates
-                }
-                searchResultIds.add(pageId);
-                allResults.push(pageData); // Add to all results
-
-                // Attempt to preload summary from IndexedDB
-                getStoredSummary(pageId, baseUrl).then(entry => {
-                    if (entry?.summaryHtml) {
-                        summaryCache.set(pageId, entry.summaryHtml);
-                        updateTreeHtml(filteredResults);
-                        updateTableHtml(filteredResults);
-                        addEventListeners();
+                if (allResults.length === 0) showNoResultsMessage();
+            } else {
+                start += results.length;
+                log.debug(`[Search] Fetched ${results.length} results. Total: ${start} of ${totalSize || '?'}`);
+                results.forEach(pageData => {
+                    if (!searchResultIds.has(pageData.id)) {
+                        searchResultIds.add(pageData.id);
+                        allResults.push(pageData);
+                        getStoredSummary(pageData.id, baseUrl).then(entry => { // Non-blocking
+                            if (entry?.summaryHtml) {
+                                summaryCache.set(pageData.id, entry.summaryHtml);
+                                renderResults();
+                            }
+                        }).catch(e => log.warn('Error preloading summary:', e));
                     }
-                }).catch(() => {
-                    log.debug('No stored summary for', pageId);
                 });
-            }
-
-            // Update filter options (spaces/contributors)
-            updateFilterOptions();
-
-            // Re-filter and sort
-            filteredResults = allResults.slice();
-            filterResults(true); // force recalculation
-
-            if (start >= totalSize) {
-                allResultsLoaded = true;
+                updateFilterOptions();
+                filterResults(true); // Re-filter and render
+                if (start >= totalSize) allResultsLoaded = true;
             }
         } catch (err) {
-            log.error('[Search] Failed to fetch search results:', err);
+            log.error('[Search] Failed to fetch results:', err);
             alert(`An error occurred: ${err.message}`);
+            allResultsLoaded = true;
+        } finally {
+            showLoadingIndicator(false);
+            loading = false;
+            isFetching = false;
+            if (!allResultsLoaded) scrollableContainer?.addEventListener('scroll', infiniteScrollHandler);
         }
-        log.info(`[Search] Finished loading batch. Total loaded: ${allResults.length}`);
-        showLoadingIndicator(false);
-        loading = false;
-        isFetching = false;
-        window.addEventListener('scroll', infiniteScrollHandler);
     }
 
+    // =========================================================
+    //                  FILTER & SORT FUNCTIONS
+    // =========================================================
     async function updateFilterOptions() {
-        const seenSpaceKeys = new Set(spaceList.map(s => s.key));
-        const seenContributorKeys = new Set(contributorList.map(c => c.key));
+        const newSpaces = [], newContributors = [];
+        const currentBatch = allResults.slice(Math.max(0, start - RESULTS_PER_REQUEST)); // Process only the newly fetched batch
 
-        allResults.slice(start - RESULTS_PER_REQUEST, start).forEach(pageData => {
-            if (pageData.space && pageData.space.key && pageData.space.name) {
-                const spaceKey = pageData.space.key;
-                if (!seenSpaceKeys.has(spaceKey)) {
-                    seenSpaceKeys.add(spaceKey);
-                    const iconUrl = pageData.space.icon?.path ? `${baseUrl}${pageData.space.icon.path}` : `${baseUrl}/images/logo/default-space-logo.svg`;
-                    spaceList.push({
-                        key: spaceKey,
-                        name: pageData.space.name,
-                        url: buildConfluenceUrl(pageData.space._links.webui),
-                        iconUrl
-                    });
-                }
-                pageData.space.iconUrl = pageData.space.iconUrl || `${baseUrl}${pageData.space.icon?.path || '/images/logo/default-space-logo.svg'}`;
+        currentBatch.forEach(pageData => {
+            if (pageData.space?.key && !fullSpaceList.find(s => s.key === pageData.space.key)) {
+                const iconUrl = pageData.space.icon?.path ? `${baseUrl}${pageData.space.icon.path}` : `${baseUrl}/images/logo/default-space-logo.svg`;
+                newSpaces.push({ key: pageData.space.key, name: pageData.space.name, iconUrl });
+                pageData.space.iconUrl = iconUrl; // Cache for table view
             }
-
-            if (pageData.history && pageData.history.createdBy) {
-                const contributor = pageData.history.createdBy;
-                const key = contributor.username || contributor.userKey || contributor.accountId;
-                if (key && !seenContributorKeys.has(key)) {
-                    seenContributorKeys.add(key);
-                    let avatarPath = contributor.profilePicture?.path || '/images/icons/profilepics/default.png';
-                    contributorList.push({
-                        key,
-                        name: contributor.displayName,
-                        avatarUrl: `${baseUrl}${avatarPath}`
-                    });
-                    contributor.avatarUrl = `${baseUrl}${avatarPath}`;
+            const creator = pageData.history?.createdBy;
+            if (creator) {
+                const key = creator.username || creator.userKey || creator.accountId;
+                if (key && !fullContributorList.find(c => c.key === key)) {
+                    const avatarUrl = `${baseUrl}${creator.profilePicture?.path || '/images/icons/profilepics/default.png'}`;
+                    newContributors.push({ key, name: creator.displayName, avatarUrl });
+                    creator.avatarUrl = avatarUrl; // Cache for table view
                 }
             }
         });
-
-        fullSpaceList = [...spaceList];
-        fullContributorList = [...contributorList];
-
-        // Sort them
-        fullSpaceList.sort((a, b) => a.name.localeCompare(b.name));
-        fullContributorList.sort((a, b) => a.name.localeCompare(b.name));
-
-        // Initial display
-        displayFilteredSpaceOptions('');
-        displayFilteredContributorOptions('');
+        if (newSpaces.length > 0) {
+            fullSpaceList.push(...newSpaces);
+            fullSpaceList.sort((a, b) => a.name.localeCompare(b.name));
+        }
+        if (newContributors.length > 0) {
+            fullContributorList.push(...newContributors);
+            fullContributorList.sort((a, b) => a.name.localeCompare(b.name));
+        }
+        displayFilteredSpaceOptions(spaceFilterInput.value);
+        displayFilteredContributorOptions(contributorFilterInput.value);
     }
-
     function displayFilteredSpaceOptions(filterValue) {
-        const spaceOptionsContainer = document.getElementById('space-options');
         spaceOptionsContainer.innerHTML = '';
-
-        const filteredSpaces = fullSpaceList.filter(space => {
-            const nameMatch = space.name.toLowerCase().includes(filterValue.toLowerCase());
-            const keyMatch = space.key.toLowerCase().includes(filterValue.toLowerCase());
-            return nameMatch || keyMatch;
-        });
-
-        filteredSpaces.forEach(space => {
+        const filtered = fullSpaceList.filter(s => s.name.toLowerCase().includes(filterValue.toLowerCase()) || s.key.toLowerCase().includes(filterValue.toLowerCase()));
+        filtered.forEach(space => {
             const option = document.createElement('div');
-            option.classList.add('option');
-
-            // Add space icon if available, otherwise use Confluence's default icon
-            const iconImg = document.createElement('img');
-            iconImg.src = space.iconUrl;
-            iconImg.loading = 'lazy';
-            iconImg.loading = 'lazy';
-            iconImg.alt = `${space.name} icon`;
-            iconImg.classList.add('space-icon'); // Add a CSS class for styling
-            option.appendChild(iconImg);
-
-            // Add space name
-            const textNode = document.createTextNode(space.name);
-            option.appendChild(textNode);
-
-            // Set additional attributes
-            option.title = space.name; // Show full name on hover
+            option.className = 'option';
             option.dataset.key = space.key;
-
-            // Append to container
+            option.title = space.name;
+            option.innerHTML = `<img src="${space.iconUrl}" class="space-icon" alt=""> ${escapeHtml(space.name)}`;
             spaceOptionsContainer.appendChild(option);
         });
-
-        addOptionListeners(spaceOptionsContainer, 'space-filter', 'space-options');
+        addOptionListeners(spaceOptionsContainer, 'space-filter');
     }
-
     function displayFilteredContributorOptions(filterValue) {
-        const contributorOptionsContainer = document.getElementById('contributor-options');
         contributorOptionsContainer.innerHTML = '';
-
-        const filteredContributors = fullContributorList.filter(contributor => {
-            const nameMatch = contributor.name.toLowerCase().includes(filterValue.toLowerCase());
-            const keyMatch = contributor.key.toLowerCase().includes(filterValue.toLowerCase());
-            return nameMatch || keyMatch;
-        });
-
-        filteredContributors.forEach(contributor => {
+        const filtered = fullContributorList.filter(c => c.name.toLowerCase().includes(filterValue.toLowerCase()) || c.key.toLowerCase().includes(filterValue.toLowerCase()));
+        filtered.forEach(contributor => {
             const option = document.createElement('div');
-            option.classList.add('option');
-
-            const img = document.createElement('img');
-            img.src = contributor.avatarUrl;
-            img.alt = `${contributor.name}'s avatar`;
-            img.classList.add('contributor-avatar');
-            option.appendChild(img);
-
-            const nameText = contributor.name || contributor.key || 'Unknown';
-            const textNode = document.createTextNode(nameText);
-            option.appendChild(textNode);
-
-            option.title = nameText;
+            option.className = 'option';
             option.dataset.key = contributor.key;
+            option.title = contributor.name;
+            option.innerHTML = `<img src="${contributor.avatarUrl}" class="contributor-avatar" alt=""> ${escapeHtml(contributor.name)}`;
             contributorOptionsContainer.appendChild(option);
         });
-
-        addOptionListeners(contributorOptionsContainer, 'contributor-filter', 'contributor-options');
+        addOptionListeners(contributorOptionsContainer, 'contributor-filter');
     }
-
-    function addOptionListeners(container, inputId) {
-        container.querySelectorAll('.option').forEach(option => {
-            option.addEventListener('click', () => {
-                const input = document.getElementById(inputId);
-                input.value = option.textContent;
-                input.dataset.key = option.dataset.key;
-                container.style.display = 'none';
-
-                const clearIcon = document.getElementById(
-                    inputId === 'space-filter' ? 'space-clear' :
-                        inputId === 'contributor-filter' ? 'contributor-clear' :
-                            null
-                );
-                if (clearIcon) toggleClearIcon(input, clearIcon);
-
-                resetDataAndFetchResults();
-            });
-        });
-    }
-
-    let lastTextFilter = '';
-    let lastSpaceKey = '';
-    let lastContributorKey = '';
-
     function filterResults(force = false) {
-        const textFilterValue = document.getElementById('text-filter').value.toLowerCase();
-        const spaceKey = document.getElementById('space-filter').dataset.key || '';
-        const contributorKey = document.getElementById('contributor-filter').dataset.key || '';
-
-        // Short-circuit if no change
-        if (
-            !force &&
-            textFilterValue === lastTextFilter &&
-            spaceKey === lastSpaceKey &&
-            contributorKey === lastContributorKey
-        ) {
-            return;
-        }
-
-        lastTextFilter = textFilterValue;
+        const textValue = textFilterInput.value.toLowerCase();
+        const spaceKey = spaceFilterInput.dataset.key || '';
+        const contributorKey = contributorFilterInput.dataset.key || '';
+        if (!force && textValue === lastTextFilter && spaceKey === lastSpaceKey && contributorKey === lastContributorKey) return;
+        log.debug('[Filter] Filtering results...', { textValue, spaceKey, contributorKey });
+        lastTextFilter = textValue;
         lastSpaceKey = spaceKey;
         lastContributorKey = contributorKey;
-
-        filteredResults = allResults.filter(pageData => {
-            const matchesText = !textFilterValue || pageData.title.toLowerCase().includes(textFilterValue);
-            const matchesSpace = !spaceKey || pageData.space?.key === spaceKey;
-            const matchesContributor = !contributorKey || (
-                pageData.history?.createdBy &&
-                (pageData.history.createdBy.username === contributorKey ||
-                    pageData.history.createdBy.userKey === contributorKey ||
-                    pageData.history.createdBy.accountId === contributorKey)
-            );
+        filteredResults = allResults.filter(page => {
+            const matchesText = !textValue || page.title.toLowerCase().includes(textValue);
+            const matchesSpace = !spaceKey || page.space?.key === spaceKey;
+            const creator = page.history?.createdBy;
+            const matchesContributor = !contributorKey || (creator && (creator.username === contributorKey || creator.userKey === contributorKey || creator.accountId === contributorKey));
             return matchesText && matchesSpace && matchesContributor;
         });
-
-        if (currentSortColumn && currentSortOrder) {
-            sortResults(currentSortColumn, currentSortOrder);
-        }
-
-        if (filteredResults.length === 0) {
-            showNoResultsMessage();
-        } else {
-            updateTableHtml(filteredResults);
-            updateSortIcons();
-            updateTreeHtml(filteredResults);
-            addEventListeners();
-        }
+        if (currentSortColumn && currentSortOrder) sortResults(currentSortColumn, currentSortOrder);
+        else renderResults();
     }
-
     function sortResults(column, order) {
+        log.debug('[Sort] Sorting results...', { column, order });
         filteredResults.sort((a, b) => {
             let valA, valB;
             switch (column) {
-                case 'Type': {
-                    const labelMap = {
-                        page: 'Page',
-                        blogpost: 'Blog Post',
-                        comment: 'Comment',
-                        attachment: 'Attachment'
-                    };
-                    valA = labelMap[a.type] || a.type || '';
-                    valB = labelMap[b.type] || b.type || '';
+                case 'Type': valA = typeLabels[a.type] || '';
+                    valB = typeLabels[b.type] || '';
                     break;
-                }
-                case 'Name':
-                    valA = a.title.toLowerCase();
+                case 'Name': valA = a.title.toLowerCase();
                     valB = b.title.toLowerCase();
                     break;
-                case 'Space':
-                    valA = a.space ? a.space.name.toLowerCase() : '';
-                    valB = b.space ? b.space.name.toLowerCase() : '';
+                case 'Space': valA = a.space?.name.toLowerCase() || '';
+                    valB = b.space?.name.toLowerCase() || '';
                     break;
-                case 'Contributor':
-                    valA = (a.history && a.history.createdBy)
-                        ? a.history.createdBy.displayName.toLowerCase()
-                        : '';
-                    valB = (b.history && b.history.createdBy)
-                        ? b.history.createdBy.displayName.toLowerCase()
-                        : '';
+                case 'Contributor': valA = a.history?.createdBy?.displayName.toLowerCase() || '';
+                    valB = b.history?.createdBy?.displayName.toLowerCase() || '';
                     break;
-                case 'Date Created':
-                    valA = (a.history && a.history.createdDate)
-                        ? new Date(a.history.createdDate)
-                        : new Date(0);
-                    valB = (b.history && b.history.createdDate)
-                        ? new Date(b.history.createdDate)
-                        : new Date(0);
+                case 'Date Created': valA = new Date(a.history?.createdDate || 0);
+                    valB = new Date(b.history?.createdDate || 0);
                     break;
-                case 'Last Modified':
-                    valA = (a.version && a.version.when)
-                        ? new Date(a.version.when)
-                        : new Date(0);
-                    valB = (b.version && b.version.when)
-                        ? new Date(b.version.when)
-                        : new Date(0);
+                case 'Last Modified': valA = new Date(a.version?.when || 0);
+                    valB = new Date(b.version?.when || 0);
                     break;
-                default:
-                    return 0;
+                default: return 0;
             }
             if (valA < valB) return order === 'asc' ? -1 : 1;
             if (valA > valB) return order === 'asc' ? 1 : -1;
             return 0;
         });
+        renderResults();
     }
 
-    function updateTreeHtml(results) {
-        // Preserve collapsed state before rebuilding
-        const currentCollapsed = document.querySelectorAll('.arrow.collapsed');
-        collapsedNodes.clear();
-        currentCollapsed.forEach(arrow => {
-            const li = arrow.closest('li');
-            if (li?.id) collapsedNodes.add(li.id);
-        });
-
+    // =========================================================
+    //                  UI RENDERING FUNCTIONS
+    // =========================================================
+    function renderResults() {
+        if (filteredResults.length === 0 && allResultsLoaded && allResults.length > 0) { // Check allResults to ensure it's not an initial empty load
+            showNoResultsMessage();
+        } else {
+            updateTableHtml(filteredResults);
+            updateTreeHtml(filteredResults);
+            addEventListeners(); // Re-attach for new elements
+        }
+    }
+    function generateTreeHtml(nodes) {
+        let html = '<ul>';
+        for (const node of nodes) {
+            const isResult = node.isSearchResult;
+            const hasChildren = node.children.length > 0;
+            const id = `node-${node.id}`;
+            const isCollapsed = collapsedNodes.has(id);
+            const arrowClass = hasChildren ? (isCollapsed ? 'collapsed' : 'expanded') : 'empty';
+            const tooltipAttrs = isResult ? ` data-title="${escapeHtml(node.title)}" data-contributor="${escapeHtml(node.contributor)}" data-modified="${escapeHtml(node.modified)}" data-type="${node.type}"` : '';
+            const icon = typeIcons[node.type] || '📄';
+            html += `<li id="${id}" class="${isResult ? 'search-result' : 'ancestor'}"${tooltipAttrs}>`;
+            html += `<span class="arrow ${arrowClass}"></span> <a href="${node.url}" class="tree-node" target="_blank">${icon}&nbsp;&nbsp;${escapeHtml(node.title)}</a>`;
+            if (isResult && window.ENABLE_SUMMARIES) {
+                const btnText = summaryCache.has(node.id) ? '✅ Summary Available!' : '🧠 Summarize';
+                html += `<div><button class="summarize-button" data-id="${node.id}">${btnText}</button></div>`;
+            }
+            if (hasChildren) { html += `<div class="children" style="display: ${isCollapsed ? 'none' : 'block'};">${generateTreeHtml(node.children)}</div>`; }
+            html += '</li>';
+        }
+        html += '</ul>';
+        return html;
+    }
+    function updateTreeHtml(results) { // FIX 1: Logic based on original script for tree building
         nodeMap = {};
-        roots = [];
+        roots = []; // Reset before build
 
         for (const pageData of results) {
             if (pageData.ancestors) {
                 for (const ancestor of pageData.ancestors) {
-                    const id = ancestor.id;
-                    if (!nodeMap[id]) {
-                        nodeMap[id] = {
-                            id,
-                            title: ancestor.title,
-                            url: buildConfluenceUrl(ancestor._links.webui),
-                            children: [],
-                            isSearchResult: false,
-                            expanded: true
-                        };
+                    if (!nodeMap[ancestor.id]) {
+                        nodeMap[ancestor.id] = { id: ancestor.id, title: ancestor.title, url: buildConfluenceUrl(ancestor._links.webui), children: [], isSearchResult: false, type: 'page' }; // Type for icon
                     }
                 }
             }
-            const id = pageData.id;
-            if (!nodeMap[id]) {
-                nodeMap[id] = {
-                    id,
-                    title: pageData.title,
-                    url: buildConfluenceUrl(pageData._links.webui),
-                    children: [],
-                    isSearchResult: true,
-                    expanded: true,
+            if (!nodeMap[pageData.id]) {
+                nodeMap[pageData.id] = {
+                    id: pageData.id, title: pageData.title, url: buildConfluenceUrl(pageData._links.webui), children: [], isSearchResult: true,
                     contributor: pageData.history?.createdBy?.displayName || 'Unknown',
                     modified: pageData.version?.when ? formatDate(pageData.version.when) : 'N/A',
                     type: pageData.type || 'page'
                 };
             }
         }
-
         for (const pageData of results) {
-            const ancestors = pageData.ancestors || [];
             const pageNode = nodeMap[pageData.id];
+            if (!pageNode) continue;
+            const ancestors = pageData.ancestors || [];
             if (ancestors.length > 0) {
                 let parentNode = null;
-                for (const ancestor of ancestors) {
-                    const ancestorNode = nodeMap[ancestor.id];
-                    if (parentNode && !parentNode.children.includes(ancestorNode)) {
-                        parentNode.children.push(ancestorNode);
-                    }
+                for (const ancestorData of ancestors) {
+                    const ancestorNode = nodeMap[ancestorData.id];
+                    if (!ancestorNode) continue;
+                    if (parentNode && !parentNode.children.some(child => child.id === ancestorNode.id)) { parentNode.children.push(ancestorNode); }
                     parentNode = ancestorNode;
                 }
-                if (parentNode && !parentNode.children.includes(pageNode)) {
-                    parentNode.children.push(pageNode);
-                }
-                const rootAncestorNode = nodeMap[ancestors[0].id];
-                if (!roots.includes(rootAncestorNode)) {
-                    roots.push(rootAncestorNode);
-                }
+                if (parentNode && !parentNode.children.some(child => child.id === pageNode.id)) { parentNode.children.push(pageNode); }
+                const rootAncestor = nodeMap[ancestors[0].id];
+                if (rootAncestor && !roots.some(root => root.id === rootAncestor.id)) { roots.push(rootAncestor); }
             } else {
-                if (!roots.includes(pageNode)) {
-                    roots.push(pageNode);
-                }
+                if (!roots.some(root => root.id === pageNode.id)) { roots.push(pageNode); }
             }
         }
-
-        const treeContainer = document.getElementById('tree-container');
-        log.debug(`Rendering tree with ${roots.length} top-level nodes`);
+        log.debug(`[Tree] Rendering with ${roots.length} root nodes. NodeMap size: ${Object.keys(nodeMap).length}`);
         treeContainer.innerHTML = generateTreeHtml(roots);
-
-        let tooltip = document.getElementById('tree-tooltip');
-        if (!tooltip) {
-            tooltip = document.createElement('div');
-            tooltip.id = 'tree-tooltip';
-            tooltip.className = 'tree-tooltip';
-            document.body.appendChild(tooltip);
-        }
-
-        chrome.storage.sync.get(['showTooltips'], (data) => {
-            tooltipSettings.showTooltips = data.showTooltips !== false;
-            log.debug('Tooltip feature enabled:', tooltipSettings.showTooltips);
-            detachTooltipListeners();
-            if (tooltipSettings.showTooltips) {
-                attachTooltipListeners();
-            }
-        });
+        updateTooltipState();
     }
-
-    function generateTreeHtml(nodes) {
-        let html = '<ul>';
-        for (const node of nodes) {
-            const nodeClass = node.isSearchResult ? 'search-result' : 'ancestor';
-            const hasChildren = node.children.length > 0;
-            const currentNodeId = `node-${node.id}`;
-            const isCollapsed = collapsedNodes.has(currentNodeId);
-            const arrow = hasChildren
-                ? `<span class="arrow ${isCollapsed ? 'collapsed' : 'expanded'}"></span>`
-                : '<span class="arrow empty"></span>';
-
-            const tooltipAttrs = node.isSearchResult
-                ? ` data-title="${escapeHtml(node.title)}" data-contributor="${escapeHtml(node.contributor)}" data-modified="${escapeHtml(node.modified)}" data-type="${node.type}"`
-                : '';
-
-            html += `<li id="${currentNodeId}" class="${nodeClass}"${tooltipAttrs}>`;
-            let icon = '';
-            switch (node.type) {
-                case 'page': icon = '📘'; break;
-                case 'blogpost': icon = '📝'; break;
-                case 'comment': icon = '💬'; break;
-                case 'attachment': icon = '📎'; break;
-            }
-            html += `${arrow} <a href="${node.url}" class="tree-node" target="_blank">${icon}&nbsp;&nbsp;${node.title || ''}</a>`;
-            if (node.isSearchResult && window.ENABLE_SUMMARIES) {
-                const cached = summaryCache.has(node.id);
-                const btnText = cached ? '✅ Summary Available!' : '🧠 Summarize';
-                html += `<div><button class="summarize-button" data-id="${node.id}">${btnText}</button></div>`;
-            }
-            if (hasChildren) {
-                const displayStyle = collapsedNodes.has(currentNodeId) ? 'none' : 'block';
-                html += `<div class="children" style="display: ${displayStyle};">`;
-                html += generateTreeHtml(node.children);
-                html += '</div>';
-            }
-            html += '</li>';
-        }
-        html += '</ul>';
-        return html;
-    }
-
     function updateSortIcons() {
         document.querySelectorAll('#table-container th').forEach(th => {
             const icon = th.querySelector('.sort-icon');
-            const col = th.getAttribute('data-column');
+            const col = th.dataset.column;
             if (!icon) return;
 
             if (currentSortColumn === col) {
@@ -1299,266 +635,114 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-
     function updateTableHtml(results) {
-        const container = document.getElementById('table-container');
-        log.debug('[Table] Clearing container content');
-        container.innerHTML = ''; // Clear previous content
+        log.debug('[Table] Rendering', results.length, 'rows');
+        tableContainer.innerHTML = '';
 
-        const table = document.createElement('table');
-        const colGroup = document.createElement('colgroup');
-        const [col1, col2, col3, col4, col5, col6] =
-            Array.from({ length: 6 }, () => document.createElement('col'));
-        [col1, col2, col3, col4, col5, col6].forEach(col => colGroup.appendChild(col));
-        table.appendChild(colGroup);
+        // Header container
+        const headerWrapper = document.createElement('div');
+        headerWrapper.className = 'table-header-wrapper';
 
-        /* ── restore user-resized widths (if any) ─────────────────────────── */
-        if (Array.isArray(window.colWidths) && window.colWidths.length) {
-            window.colWidths.forEach((w, idx) => {
-                if (colGroup.children[idx]) colGroup.children[idx].style.width = w + 'px';
-            });
-            const total = window.colWidths.reduce((a, b) => a + b, 0);
-            table.style.width = total + 'px';         // side-scroll works instantly
-        } else {
-            /* first render → apply sensible default widths and persist them */
-            // share the defaults so the resizer can reset to them
-            window.defaultColWidths = DEFAULT_COL_WIDTHS;
-            window.colWidths = DEFAULT_COL_WIDTHS.slice();
-            DEFAULT_COL_WIDTHS.forEach((w, idx) => {
-                if (colGroup.children[idx]) colGroup.children[idx].style.width = w + 'px';
-            });
-            table.style.width = DEFAULT_COL_WIDTHS.reduce((a, b) => a + b, 0) + 'px';
-        }
+        // Body scrollable container
+        const bodyWrapper = document.createElement('div');
+        bodyWrapper.className = 'table-body-wrapper';
+
+        // Table for header
+        const headerTable = document.createElement('table');
+        headerTable.style.tableLayout = 'fixed';
+        headerTable.style.width = '100%';
+
+        const headerColGroup = document.createElement('colgroup');
+        const resizerElements = [];
+
+        colWidths.forEach((width) => {
+            const col = document.createElement('col');
+            col.style.width = `${width}px`;
+            headerColGroup.appendChild(col);
+        });
+
+        headerTable.appendChild(headerColGroup);
+
         const thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
-
         const headers = ['Type', 'Name', 'Space', 'Contributor', 'Date Created', 'Last Modified'];
-        const colElements = [col1, col2, col3, col4, col5, col6];   // keep order in sync!
 
         headers.forEach((headerText, idx) => {
             const th = document.createElement('th');
-            const label = document.createElement('span');
-            label.textContent = headerText;
-            th.appendChild(label);
-
-            const sortIcon = document.createElement('span');
-            sortIcon.className = 'sort-icon';
-            sortIcon.textContent = ''; // Ensure it starts empty
-            sortIcon.style.marginLeft = '4px';
-            th.appendChild(sortIcon);
-            th.setAttribute('data-column', headerText);
-            th.style.cursor = 'pointer';
-
-            // Sort unless the user grabbed the resizer
-            th.addEventListener('click', (e) => {
-                if (e.target.classList.contains('th-resizer')) return;
-                const column = e.currentTarget.getAttribute('data-column');
-
-                if (currentSortColumn === column) {
-                    if (currentSortOrder === 'asc') {
-                        currentSortOrder = 'desc';
-                    } else if (currentSortOrder === 'desc') {
-                        currentSortOrder = '';
-                        currentSortColumn = '';
-                    } else {
-                        currentSortOrder = 'asc';
-                    }
-                } else {
-                    currentSortColumn = column;
-                    currentSortOrder = 'asc';
-                }
-
-                updateSortIcons();
-                filterResults(true);
-            });
-
-            /* ---------- resizer handle ---------- */
+            th.dataset.column = headerText;
             const resizer = document.createElement('span');
             resizer.className = 'th-resizer';
+            resizerElements.push({ el: resizer, idx });
+            th.innerHTML = `<span>${headerText}</span><span class="sort-icon"></span>`;
             th.appendChild(resizer);
-            attachColResizer(resizer, colElements[idx]);
-            /* ------------------------------------ */
-
+            th.addEventListener('click', handleSortClick);
             headerRow.appendChild(th);
         });
+
         thead.appendChild(headerRow);
-        table.appendChild(thead);
-        updateSortIcons();
+        headerTable.appendChild(thead);
+        headerWrapper.appendChild(headerTable);
+
+        // Table for body
+        const bodyTable = document.createElement('table');
+        bodyTable.style.tableLayout = 'fixed';
+        bodyTable.style.width = '100%';
+
+        const bodyColGroup = document.createElement('colgroup');
+        colWidths.forEach(width => {
+            const col = document.createElement('col');
+            col.style.width = `${width}px`;
+            bodyColGroup.appendChild(col);
+        });
+        bodyTable.appendChild(bodyColGroup);
 
         const tbody = document.createElement('tbody');
-
         results.forEach(page => {
             const row = document.createElement('tr');
-
-            // Type
-            const typeCell = document.createElement('td');
-            const type = page.type || 'page';
-            const typeIcon = typeIcons[type] || '';
-            const label = typeLabels[type] || type;
-
-            const typeSpan = document.createElement('span');
-            typeSpan.textContent = typeIcon;
-            typeSpan.style.fontSize = '2.0em';
-            typeSpan.title = label;
-            typeCell.appendChild(typeSpan);
-            row.appendChild(typeCell);
-
-            // Page Name with summary button
-            const nameCell = document.createElement('td');
-            const nameLink = document.createElement('a');
-            nameLink.href = buildConfluenceUrl(page._links.webui);
-            nameLink.target = '_blank';
-            const fullTitle = page.title || 'Untitled';
-            nameLink.classList.add('multiline-ellipsis');
-            nameLink.textContent = fullTitle;
-            nameLink.title = fullTitle;
-
-            const summaryBtn = document.createElement('button');
-            summaryBtn.className = 'summarize-button';
-            summaryBtn.dataset.id = page.id;
-            summaryBtn.textContent = summaryCache.has(page.id) ? '✅ Summary Available!' : '🧠 Summarize';
-
-            if (!window.ENABLE_SUMMARIES) {
-                summaryBtn.style.display = 'none';
-            }
-
-            const wrapper = document.createElement('div');
-            wrapper.style.display = 'flex';
-            wrapper.style.flexDirection = 'column';
-            wrapper.style.alignItems = 'flex-start';
-            wrapper.appendChild(nameLink);
-            wrapper.appendChild(summaryBtn);
-
-            nameCell.appendChild(wrapper);
-            row.appendChild(nameCell);
-
-            // Page Space
-            const spaceCell = document.createElement('td');
-            if (page.space && page.space.name) {
-                const spaceContainer = document.createElement('div');
-                spaceContainer.classList.add('space-cell');
-
-                // Add space icon if available, otherwise use Confluence's default icon
-                const iconImg = document.createElement('img');
-                iconImg.src = page.space.iconUrl || `${baseUrl}/images/logo/default-space-logo.svg`;
-                iconImg.alt = `${page.space.name} icon`;
-                iconImg.classList.add('space-icon'); // Add a CSS class for styling
-                spaceContainer.appendChild(iconImg);
-
-                // Add space name
-                const spaceLink = document.createElement('a');
-                spaceLink.href = buildConfluenceUrl(page.space._links?.webui);
-                spaceLink.target = '_blank';
-                const spaceSpan = document.createElement('span');
-                spaceLink.classList.add('multiline-ellipsis');
-                spaceSpan.textContent = page.space.name;
-                spaceSpan.title = page.space.name;
-                spaceLink.appendChild(spaceSpan);
-                spaceContainer.appendChild(spaceLink);
-                spaceCell.appendChild(spaceContainer);
-            }
-            row.appendChild(spaceCell);
-
-            // Contributor
-            const contributorCell = document.createElement('td');
-            const contributor = page.history?.createdBy;
-            if (contributor) {
-                const container = document.createElement('div');
-                container.classList.add('contributor-cell');
-
-                const avatarImg = document.createElement('img');
-                const avatarToUse = contributor.avatarUrl || `${baseUrl}/images/icons/profilepics/default.png`;
-                avatarImg.src = avatarToUse;
-                avatarImg.loading = 'lazy';
-                avatarImg.alt = `${contributor.displayName}'s avatar`;
-                avatarImg.classList.add('contributor-avatar');
-                container.appendChild(avatarImg);
-
-                const nameLink = document.createElement('a');
-                let contributorUrl = '#';
-                if (contributor.username) {
-                    contributorUrl = `${baseUrl}/display/~${contributor.username}`;
-                } else if (contributor.userKey) {
-                    contributorUrl = `${baseUrl}/display/~${contributor.userKey}`;
-                } else if (contributor.accountId) {
-                    contributorUrl = `${baseUrl}/display/~${contributor.accountId}`;
-                }
-                nameLink.href = contributorUrl;
-                nameLink.target = '_blank';
-                nameLink.classList.add('multiline-ellipsis');
-
-                const nameSpan = document.createElement('span');
-                let contributorName = contributor.displayName || '';
-                if (contributorName.startsWith('Unknown User')) {
-                    contributorName = contributor.username || contributor.userKey || contributor.accountId || 'Unknown';
-                }
-                nameSpan.textContent = contributorName;
-                nameSpan.title = contributorName;
-                nameLink.appendChild(nameSpan);
-
-                container.appendChild(nameLink);
-                contributorCell.appendChild(container);
-            } else {
-                contributorCell.textContent = 'Unknown';
-            }
-            row.appendChild(contributorCell);
-
-            // Date Created
-            const createdCell = document.createElement('td');
-            createdCell.textContent =
-                page.history?.createdDate ? formatDate(page.history.createdDate) : 'N/A';
-            row.appendChild(createdCell);
-
-            // Last Modified
-            const modifiedCell = document.createElement('td');
-            modifiedCell.textContent =
-                page.version?.when ? formatDate(page.version.when) : 'N/A';
-            row.appendChild(modifiedCell);
-
+            const creator = page.history?.createdBy;
+            const creatorId = creator ? (creator.username || creator.userKey || creator.accountId) : '';
+            row.innerHTML = `
+            <td><span title="${typeLabels[page.type] || page.type}" style="font-size: 2.0em;">${typeIcons[page.type] || '📄'}</span></td>
+            <td><div style="display: flex; flex-direction: column; align-items: flex-start;"><a href="${buildConfluenceUrl(page._links.webui)}" target="_blank" class="multiline-ellipsis" title="${escapeHtml(page.title)}">${escapeHtml(page.title)}</a><button class="summarize-button" data-id="${page.id}" style="display: ${window.ENABLE_SUMMARIES ? 'inline-block' : 'none'};">${summaryCache.has(page.id) ? '✅ Summary Available!' : '🧠 Summarize'}</button></div></td>
+            <td>${page.space ? `<div class="space-cell"><img src="${page.space.iconUrl || `${baseUrl}/images/logo/default-space-logo.svg`}" class="space-icon" alt=""><a href="${buildConfluenceUrl(page.space._links?.webui)}" target="_blank" class="multiline-ellipsis" title="${escapeHtml(page.space.name)}">${escapeHtml(page.space.name)}</a></div>` : ''}</td>
+            <td>${creator ? `<div class="contributor-cell"><img src="${creator.avatarUrl || `${baseUrl}/images/icons/profilepics/default.png`}" class="contributor-avatar" alt="" loading="lazy"><a href="${creatorId ? `${baseUrl}/display/~${creatorId}` : '#'}" target="_blank" class="multiline-ellipsis" title="${escapeHtml(creator.displayName)}">${escapeHtml(creator.displayName)}</a></div>` : 'Unknown'}</td>
+            <td>${page.history?.createdDate ? formatDate(page.history.createdDate) : 'N/A'}</td>
+            <td>${page.version?.when ? formatDate(page.version.when) : 'N/A'}</td>`;
             tbody.appendChild(row);
         });
 
-        table.appendChild(tbody);
-        container.appendChild(table);
+        bodyTable.appendChild(tbody);
+        bodyWrapper.appendChild(bodyTable);
+
+        // Attach resizers after both colgroups exist
+        resizerElements.forEach(({ el, idx }) =>
+            attachColResizer(el, idx, headerColGroup, bodyColGroup)
+        );
+
+        tableContainer.appendChild(headerWrapper);
+        tableContainer.appendChild(bodyWrapper);
+        updateSortIcons();
     }
 
-    function attachColResizer(resizerEl, colEl, minWidth = 60) {
-        if (!window.colWidths) window.colWidths = [];
+    function attachColResizer(resizerEl, idx, headerColGroup, bodyColGroup, minWidth = 60) {
+        const headerCols = headerColGroup.children;
+        const bodyCols = bodyColGroup.children;
 
-        const tableEl = colEl.closest('table');
-        const colIndex = () =>
-            Array.from(colEl.parentElement.children).indexOf(colEl);
-
-        /* helper – persist widths & keep table overflowable */
-        /* keep the other columns at their stored width so they don’t get squashed */
-        const syncTableWidth = () => {
-            tableEl.querySelectorAll('col').forEach((c, i) => {
-                c.style.width = `${window.colWidths[i]}px`;
-            });
-            tableEl.style.width =
-                window.colWidths.reduce((a, b) => a + b, 0) + 'px';
+        const syncWidths = () => {
+            for (let i = 0; i < colWidths.length; i++) {
+                headerCols[i].style.width = `${colWidths[i]}px`;
+                bodyCols[i].style.width = `${colWidths[i]}px`;
+            }
         };
 
-        /* ── drag to resize ─────────────────────────────────── */
-        let startX, startW;
         resizerEl.addEventListener('pointerdown', e => {
-            e.preventDefault(); e.stopPropagation();
-            startX = e.clientX;
-            startW = parseFloat(colEl.style.width) || colEl.getBoundingClientRect().width;
-
-            /* snapshot current widths so the other columns stay put while dragging */
-            window.colWidths = Array.from(tableEl.querySelectorAll('col')).map(c =>
-                Math.max(
-                    parseFloat(c.style.width) || c.getBoundingClientRect().width,
-                    minWidth
-                )
-            );
-            const columnIdx = colIndex();
-
+            e.preventDefault();
+            e.stopPropagation();
+            const startX = e.clientX;
+            const startW = colWidths[idx];
             const move = ev => {
-                const w = Math.max(startW + ev.clientX - startX, minWidth);
-                window.colWidths[columnIdx] = w;      // change only the dragged column
-                syncTableWidth();
+                colWidths[idx] = Math.max(startW + ev.clientX - startX, minWidth);
+                syncWidths();
             };
             const up = () => {
                 document.body.style.cursor = '';
@@ -1570,642 +754,299 @@ document.addEventListener('DOMContentLoaded', () => {
             window.addEventListener('pointerup', up);
         });
 
-        /* ── double-click behaviour ───────────────────────────────
-            • plain dbl-click  → reset to DEFAULT_COL_WIDTHS[idx]
-            • Alt + dbl-click → auto-fit to widest cell (old feature)
-        ---------------------------------------------------------------- */
         resizerEl.addEventListener('dblclick', e => {
-            e.preventDefault(); e.stopPropagation();
-            const idx = colIndex();
-
-            if (e.altKey) {                     // keep the old auto-fit
-                let max = 0;
-
-                const th = tableEl.querySelectorAll('thead tr th')[idx];
-                if (th) max = th.scrollWidth;
-
-                tableEl.querySelectorAll('tbody tr').forEach(row => {
-                    const cell = row.children[idx];
-                    if (cell) max = Math.max(max, cell.scrollWidth);
-                });
-
-                const padding = 24;
-                window.colWidths[idx] = Math.max(max + padding, minWidth);
-            } else {                            // restore default width
-                const def = (window.defaultColWidths || DEFAULT_COL_WIDTHS)[idx] || minWidth;
-                window.colWidths[idx] = def;
-            }
-
-            colEl.style.width = window.colWidths[idx] + 'px';
-            syncTableWidth();
+            e.preventDefault();
+            e.stopPropagation();
+            colWidths[idx] = DEFAULT_COL_WIDTHS[idx];
+            syncWidths();
         });
     }
 
-    function showNoResultsMessage() {
-        const message = '<p>No results found.</p>';
-        document.getElementById('tree-container').innerHTML = message;
-        document.getElementById('table-container').innerHTML = message;
+    // =========================================================
+    //                    TOOLTIP FUNCTIONS
+    // =========================================================
+    function attachTooltipListeners() {
+        const tooltip = document.getElementById('tree-tooltip');
+        if (!tooltip) return;
+        document.querySelectorAll('.search-result').forEach(node => {
+            if (tooltipBoundNodes.has(node)) return;
+            const enter = () => {
+                tooltip.innerHTML = `<strong>${node.dataset.title}</strong><br>Type: ${typeLabels[node.dataset.type] || 'N/A'}<br>By: ${node.dataset.contributor}<br>Modified: ${node.dataset.modified}`;
+                tooltip.style.display = 'block';
+            };
+            const move = e => {
+                tooltip.style.left = `${e.pageX + 10}px`;
+                tooltip.style.top = `${e.pageY + 10}px`;
+            };
+            const leave = () => { tooltip.style.display = 'none'; };
+            node.addEventListener('mouseenter', enter);
+            node.addEventListener('mousemove', move);
+            node.addEventListener('mouseleave', leave);
+            tooltipBoundNodes.set(node, { enter, move, leave });
+        });
     }
-
-    function showLoadingIndicator(show) {
-        const indicator = document.getElementById('loading-indicator');
-        indicator.style.display = show ? 'block' : 'none';
-    }
-
-    /**
-     * ========== EVENT HANDLERS ==========
-     */
-
-    // Helper to show/hide clear icons
-    function toggleClearIcon(inputElem, clearIcon) {
-        clearIcon.style.display = inputElem.value ? 'inline' : 'none';
-    }
-
-    function onTypeFilterChange() {
-        log.debug('[Filter] Type changed:', typeFilter.value);
-        resetDataAndFetchResults();
-    }
-
-    function onDateFilterChange() {
-        log.debug('[Filter] Date changed:', dateFilter.value);
-        resetDataAndFetchResults();
-    }
-
-    function addEventListeners() {
-        // 1) Tree arrows (expand/collapse)
-        const treeContainer = document.getElementById('tree-container');
-        const existing = treeContainer._clickHandler;
-        if (existing) treeContainer.removeEventListener('click', existing);
-
-        const handler = event => {
-            const arrow = event.target.closest('.arrow');
-            if (!arrow) return;
-
-            const li = arrow.closest('li');
-            const childrenDiv = li?.querySelector('.children');
-            if (!childrenDiv) return;
-
-            if (childrenDiv.style.display === 'none') {
-                childrenDiv.style.display = 'block';
-                arrow.classList.remove('collapsed');
-                arrow.classList.add('expanded');
-            } else {
-                childrenDiv.style.display = 'none';
-                arrow.classList.remove('expanded');
-                arrow.classList.add('collapsed');
+    function detachTooltipListeners() {
+        const tooltip = document.getElementById('tree-tooltip');
+        if (tooltip) tooltip.style.display = 'none';
+        document.querySelectorAll('.search-result').forEach(node => {
+            const handlers = tooltipBoundNodes.get(node);
+            if (handlers) {
+                node.removeEventListener('mouseenter', handlers.enter);
+                node.removeEventListener('mousemove', handlers.move);
+                node.removeEventListener('mouseleave', handlers.leave);
+                tooltipBoundNodes.delete(node);
             }
+        });
+    }
+    function updateTooltipState() {
+        let tooltip = document.getElementById('tree-tooltip');
+        if (!tooltip) {
+            tooltip = document.createElement('div');
+            tooltip.id = 'tree-tooltip';
+            tooltip.className = 'tree-tooltip';
+            document.body.appendChild(tooltip);
+        }
+        chrome.storage.sync.get(['showTooltips'], (data) => {
+            tooltipSettings.showTooltips = data.showTooltips !== false;
+            detachTooltipListeners();
+            if (tooltipSettings.showTooltips) attachTooltipListeners();
+        });
+    }
+
+    // =========================================================
+    //                  MODAL & AI FUNCTIONS
+    // =========================================================
+    function showConfirmationDialog(messageHtml, onConfirm) {
+        log.debug('[Dialog] Showing confirmation');
+        const existing = document.getElementById('dialog-overlay');
+        if (existing) existing.remove();
+        const dialog = document.createElement('div');
+        dialog.id = 'dialog-overlay';
+        dialog.className = 'dialog-overlay';
+        dialog.innerHTML = `<div class="dialog-content"><span class="dialog-close">&times;</span><p>${messageHtml}</p><div class="dialog-actions"><button id="dialog-cancel">Cancel</button><button id="dialog-confirm">Confirm</button></div></div>`;
+        document.body.appendChild(dialog);
+        const remove = () => dialog.remove();
+        dialog.querySelector('.dialog-close').onclick = remove;
+        dialog.querySelector('#dialog-cancel').onclick = remove;
+        dialog.querySelector('#dialog-confirm').onclick = () => {
+            remove();
+            log.info('[Dialog] ✔ User confirmed');
+            onConfirm();
         };
-
-        treeContainer._clickHandler = handler;
-        treeContainer.addEventListener('click', handler);
-
-        // 3) Tree/Table view buttons
-        const treeViewBtn = document.getElementById('tree-view-btn');
-        const tableViewBtn = document.getElementById('table-view-btn');
-        treeViewBtn.removeEventListener('click', switchToTreeView);
-        treeViewBtn.addEventListener('click', switchToTreeView);
-        tableViewBtn.removeEventListener('click', switchToTableView);
-        tableViewBtn.addEventListener('click', switchToTableView);
-
-        // 4) Filters (text, space, contributor)
-        const textFilter = document.getElementById('text-filter');
-        textFilter.removeEventListener('input', filterResults);
-        const debouncedFilterResults = debounce(filterResults, 250);
-        textFilter.addEventListener('input', (evt) => {
-            log.debug('[Filter] Text input changed:', evt.target.value);
-            debouncedFilterResults();
+        dialog.onclick = (e) => { if (e.target === dialog) remove(); };
+    }
+    function resetSummaryButtons(buttons, label = '🧠 Summarize') {
+        buttons.forEach(btn => {
+            btn.textContent = label;
+            btn.classList.remove('loading');
+            btn.disabled = false;
         });
-
-        const spaceFilter = document.getElementById('space-filter');
-        const contributorFilter = document.getElementById('contributor-filter');
-
-        dateFilter.removeEventListener('change', onDateFilterChange);
-        dateFilter.addEventListener('change', onDateFilterChange);
-
-        typeFilter.removeEventListener('change', onTypeFilterChange);
-        typeFilter.addEventListener('change', onTypeFilterChange);
-
-        spaceFilter.addEventListener('input', evt => {
-            log.debug('[Filter] Space input changed:', evt.target.value);
-            if (!isValidInput(evt.target.value)) {
-                alert('Invalid input. Please use only alphanumeric characters, spaces, and -_.@');
-                evt.target.value = '';
-            } else {
-                evt.target.value = sanitizeInput(evt.target.value);
-            }
-            displayFilteredSpaceOptions(evt.target.value);
-            document.getElementById('space-options').style.display = 'block';
+    }
+    async function getUserPrompt(pageData) {
+        log.debug('[Prompt] Building for', pageData.id);
+        const bodyHtmlRaw = await fetchConfluenceBodyById(pageData.id);
+        const bodyHtml = sanitizeHtmlWithDOM(bodyHtmlRaw);
+        const localData = await new Promise(resolve => chrome.storage.local.get(['customUserPrompt'], resolve));
+        const userPrompt = (localData.customUserPrompt || '').trim();
+        const contentDetails = `--- Content Details ---\nTitle: ${pageData.title}\nContributor: ${pageData.history?.createdBy?.displayName || 'Unknown'}\nCreated: ${pageData.history.createdDate || 'N/A'}\nModified: ${pageData.version?.when ? formatDate(pageData.version.when) : 'N/A'}\nType: ${pageData.type}\nSpace: ${pageData.space?.name || 'N/A'}\nParent Title: ${pageData.parentTitle || 'N/A'}\nURL: ${buildConfluenceUrl(pageData._links.webui)}\nContent (HTML): ${bodyHtml}`.trim();
+        return (userPrompt ? `${userPrompt}\n\n` : '') + contentDetails;
+    }
+    function renderConversationThread(container, conversation) {
+        container.innerHTML = '';
+        conversation.slice(3).forEach(msg => {
+            const div = document.createElement('div');
+            div.className = `qa-entry ${msg.role}`;
+            const dir = detectDirection(msg.content);
+            div.setAttribute('dir', dir);
+            div.style.textAlign = dir === 'rtl' ? 'right' : 'left';
+            div.innerHTML = msg.role === 'assistant' ? msg.content : escapeHtml(msg.content);
+            container.appendChild(div);
         });
-
-        contributorFilter.addEventListener('input', evt => {
-            log.debug('[Filter] Contributor input changed:', evt.target.value);
-            if (!isValidInput(evt.target.value)) {
-                alert('Invalid input. Please use only alphanumeric characters, spaces, and -_.@');
-                evt.target.value = '';
-            } else {
-                evt.target.value = sanitizeInput(evt.target.value);
-            }
-            displayFilteredContributorOptions(evt.target.value);
-            document.getElementById('contributor-options').style.display = 'block';
-        });
-
-        // Show options on focus
-        spaceFilter.addEventListener('focus', evt => {
-            displayFilteredSpaceOptions(evt.target.value);
-            document.getElementById('space-options').style.display = 'block';
-        });
-        contributorFilter.addEventListener('focus', evt => {
-            displayFilteredContributorOptions(evt.target.value);
-            document.getElementById('contributor-options').style.display = 'block';
-        });
-
-        // Clear icons
-        const spaceClear = document.getElementById('space-clear');
-        if (spaceClear && spaceFilter) {
-            spaceFilter.addEventListener('input', () => {
-                toggleClearIcon(spaceFilter, spaceClear);
-            });
-            toggleClearIcon(spaceFilter, spaceClear);
-
-            spaceClear.removeEventListener('click', clearSpaceFilter);
-            spaceClear.addEventListener('click', clearSpaceFilter);
-        }
-
-        const contributorClear = document.getElementById('contributor-clear');
-        if (contributorClear && contributorFilter) {
-            contributorFilter.addEventListener('input', () => {
-                toggleClearIcon(contributorFilter, contributorClear);
-            });
-            toggleClearIcon(contributorFilter, contributorClear);
-
-            contributorClear.removeEventListener('click', clearContributorFilter);
-            contributorClear.addEventListener('click', clearContributorFilter);
-        }
-
-        // Close filter options on clicking outside
-        document.addEventListener('click', evt => {
-            if (!evt.target.closest('#space-filter-container')) {
-                document.getElementById('space-options').style.display = 'none';
-            }
-            if (!evt.target.closest('#contributor-filter-container')) {
-                document.getElementById('contributor-options').style.display = 'none';
+        requestAnimationFrame(() => container.parentElement.scrollTo({ top: container.parentElement.scrollHeight, behavior: 'smooth' }));
+    }
+    async function handleQaSubmit(contentId, inputEl, threadEl, submitBtn) {
+        const question = inputEl.value.trim();
+        if (!question) return;
+        inputEl.value = '';
+        inputEl.setAttribute('dir', 'ltr');
+        submitBtn.disabled = true;
+        const messages = conversationHistories.get(contentId);
+        messages.push({ role: 'user', content: question });
+        const userMsg = document.createElement('div');
+        userMsg.className = 'qa-entry user';
+        userMsg.dir = detectDirection(question);
+        userMsg.textContent = question;
+        threadEl.appendChild(userMsg);
+        const typingBubble = document.createElement('div');
+        typingBubble.className = 'qa-entry assistant typing-bubble';
+        typingBubble.innerHTML = '<span class="typing-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>';
+        threadEl.appendChild(typingBubble);
+        requestAnimationFrame(() => {
+            const modalBody = document.getElementById('modal-body');
+            if (modalBody) {
+                modalBody.scrollTo({ top: modalBody.scrollHeight, behavior: 'smooth' });
             }
         });
-
-        // Text filter clear icon
-        const textFilterClear = document.getElementById('filter-text-clear');
-        if (textFilter && textFilterClear) {
-            textFilter.addEventListener('input', () => {
-                toggleClearIcon(textFilter, textFilterClear);
-            });
-            textFilterClear.addEventListener('click', (evt) => {
-                log.debug('[Filter] Text filter cleared');
-                evt.stopPropagation();
-                textFilter.value = '';
-                toggleClearIcon(textFilter, textFilterClear);
-                filterResults();
-                textFilter.focus();
-            });
-            toggleClearIcon(textFilter, textFilterClear);
-        }
-    }
-
-    function switchToTreeView() {
-        const treeBtn = document.getElementById('tree-view-btn');
-        const isTreeActive = treeBtn.classList.contains('active');
-
-        if (isTreeActive) {
-            const childrenDivs = document.querySelectorAll('.children');
-            const arrows = document.querySelectorAll('.arrow');
-
-            if (allExpanded) {
-                childrenDivs.forEach(div => div.style.display = 'none');
-                arrows.forEach(arrow => {
-                    arrow.classList.remove('expanded');
-                    arrow.classList.add('collapsed');
-                });
-                allExpanded = false;
-            } else {
-                childrenDivs.forEach(div => div.style.display = 'block');
-                arrows.forEach(arrow => {
-                    arrow.classList.remove('collapsed');
-                    arrow.classList.add('expanded');
-                });
-                allExpanded = true;
-            }
-        } else {
-            document.getElementById('tree-container').style.display = 'block';
-            document.getElementById('table-container').style.display = 'none';
-            treeBtn.classList.add('active');
-            document.getElementById('table-view-btn').classList.remove('active');
-            allExpanded = true; // expanded by default when switching to tree
-        }
-    }
-
-    function switchToTableView() {
-        document.getElementById('tree-container').style.display = 'none';
-        document.getElementById('table-container').style.display = 'block';
-        document.getElementById('tree-view-btn').classList.remove('active');
-        document.getElementById('table-view-btn').classList.add('active');
-    }
-
-    function clearSpaceFilter(evt) {
-        log.debug('[Filter] Space filter cleared');
-        evt.stopPropagation();
-        const spaceFilter = document.getElementById('space-filter');
-        const spaceClear = document.getElementById('space-clear');
-        spaceFilter.value = '';
-        spaceFilter.dataset.key = '';
-        toggleClearIcon(spaceFilter, spaceClear);
-        displayFilteredSpaceOptions('');
-        resetDataAndFetchResults();
-    }
-
-    function clearContributorFilter(evt) {
-        log.debug('[Filter] Contributor filter cleared');
-        evt.stopPropagation();
-        const contributorFilter = document.getElementById('contributor-filter');
-        const contributorClear = document.getElementById('contributor-clear');
-        contributorFilter.value = '';
-        contributorFilter.dataset.key = '';
-        toggleClearIcon(contributorFilter, contributorClear);
-        displayFilteredContributorOptions('');
-        resetDataAndFetchResults();
-    }
-
-    /**
-     * ========== INFINITE SCROLL & SCROLL-TO-TOP ==========
-     */
-
-    function infiniteScrollHandler() {
-        const container = document.querySelector('.container');
-        if (!container || !SCROLL_THRESHOLD_REACHED(container)) return;
-        loadMoreResults();
-    }
-    document.querySelector('.container')?.addEventListener('scroll', infiniteScrollHandler);
-    document.querySelector('.main-content')?.addEventListener('scroll', infiniteScrollHandler);
-
-    const scrollToTopButton = document.getElementById('scroll-to-top');
-    scrollToTopButton.addEventListener('click', () => {
-        const scrollableContainer = document.querySelector('.container');
-        if (scrollableContainer) {
-            scrollableContainer.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-    });
-    // Show or hide Scroll to Top button
-    const scrollableContainer = document.querySelector('.container');
-    if (scrollableContainer) {
-        scrollableContainer.addEventListener('scroll', () => {
-            scrollToTopButton.style.display = (scrollableContainer.scrollTop > 200) ? 'block' : 'none';
-        });
-    }
-
-    /**
-     * ========== INITIALIZATION (RUN ON DOM READY) ==========
-     */
-    const typeFilter = document.getElementById('type-filter');
-    const dateFilter = document.getElementById('date-filter');
-
-    // Parse query params
-    const params = getQueryParams();
-    searchText = params.searchText || '';
-    if (!searchText) {
-        log.warn('No searchText parameter received in results URL');
-    }
-    baseUrl = sanitiseBaseUrl(params.baseUrl || '');
-
-    // Derive domain name from baseUrl
-    try {
-        domainName = new URL(baseUrl).hostname;
-    } catch (e) {
-        console.error('Invalid baseUrl:', baseUrl);
-    }
-
-    // Update document title
-    document.title = `Search results for '${escapeHtml(searchText)}' on ${domainName}`;
-    // Update page header
-    const pageTitleElem = document.getElementById('page-title');
-    if (pageTitleElem) {
-        pageTitleElem.textContent = `Enhanced Search Results for Confluence (${domainName})`;
-    }
-
-    // Load user preferences
-    chrome.storage.sync.get(['darkMode', 'resultsPerRequest', 'enableSummaries', 'openaiApiKey'], (data) => {
-        const isDark = Boolean(data.darkMode);
-        if (data.resultsPerRequest && Number.isInteger(data.resultsPerRequest)) {
-            RESULTS_PER_REQUEST = data.resultsPerRequest;
-            log.debug('RESULTS_PER_REQUEST set from storage:', RESULTS_PER_REQUEST);
-        } else {
-            log.debug('Using default RESULTS_PER_REQUEST:', RESULTS_PER_REQUEST);
-        }
-
-        document.body.classList.toggle('dark-mode', isDark);
-
-        window.ENABLE_SUMMARIES = data.enableSummaries !== false && !!data.openaiApiKey;
-
-        if (searchText) {
-            performNewSearch(searchText);
-        }
-    });
-
-    // React to darkMode setting changes from other parts of the extension
-    chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'sync') {
-            if (changes.darkMode) {
-                document.body.classList.toggle('dark-mode', changes.darkMode.newValue);
-            }
-            if (changes.showTooltips) {
-                tooltipSettings.showTooltips = changes.showTooltips.newValue !== false;
-                if (tooltipSettings.showTooltips) {
-                    attachTooltipListeners();
-                } else {
-                    detachTooltipListeners();
-                }
-            }
-
-            if ('enableSummaries' in changes || 'openaiApiKey' in changes) {
-                chrome.storage.sync.get(['enableSummaries', 'openaiApiKey'], (data) => {
-                    const enabled = data.enableSummaries === true && !!data.openaiApiKey;
-                    window.ENABLE_SUMMARIES = enabled;
-
-                    // Re-render to apply summary button visibility
-                    updateTableHtml(filteredResults);
-                    updateTreeHtml(filteredResults);
-                    addEventListeners();
-                });
-            }
-        }
-    });
-
-    // New search elements
-    const newSearchInput = document.getElementById('new-search-input');
-    const newSearchButton = document.getElementById('new-search-button');
-    const mainSearchClear = document.getElementById('main-search-clear');
-
-    if (newSearchInput && newSearchButton && mainSearchClear) {
-        newSearchInput.value = searchText;
-        toggleClearIcon(newSearchInput, mainSearchClear);
-
-        newSearchInput.addEventListener('input', () => {
-            toggleClearIcon(newSearchInput, mainSearchClear);
-        });
-
-        newSearchInput.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter') {
-                event.preventDefault();
-                performNewSearch(newSearchInput.value.trim());
-            }
-        });
-
-        newSearchButton.addEventListener('click', () => {
-            performNewSearch(newSearchInput.value.trim());
-        });
-
-        mainSearchClear.addEventListener('click', () => {
-            newSearchInput.value = '';
-            toggleClearIcon(newSearchInput, mainSearchClear);
-            newSearchInput.focus();
-        });
-    }
-
-    // By default, show tree container
-    document.getElementById('tree-container').style.display = 'block';
-
-    // Perform initial search if we have searchText
-    if (searchText) {
-        performNewSearch(searchText);
-    }
-
-    const optionsBtn = document.getElementById('open-options');
-    if (optionsBtn) {
-        optionsBtn.addEventListener('click', () => {
-            if (chrome.runtime.openOptionsPage) {
-                chrome.runtime.openOptionsPage();
-            } else {
-                window.open(chrome.runtime.getURL('options/options.html'));
-            }
-        });
-    }
-
-    async function fetchConfluenceBodyById(contentId) {
-        if (confluenceBodyCache.has(contentId)) {
-            log.debug(`[Cache] Returning cached body for contentId: ${contentId}`);
-            return confluenceBodyCache.get(contentId);
-        }
-
-        const apiUrl = `${baseUrl}/rest/api/content/${contentId}?expand=body.storage`;
         try {
-            const response = await fetch(apiUrl, {
-                method: 'GET',
-                headers: { 'Accept': 'application/json' },
-                credentials: 'include'
-            });
-
-            if (!response.ok) {
-                throw new Error(`Failed to fetch body: ${response.statusText}`);
-            }
-
-            const data = await response.json();
-            const bodyHtml = data.body?.storage?.value || '(No content)';
-            confluenceBodyCache.set(contentId, bodyHtml);
-            log.debug(`[Cache] Fetched and cached body for contentId: ${contentId}`);
-            return bodyHtml;
-        } catch (error) {
-            console.error('[DEBUG] Error in fetchConfluenceBodyById:', error);
-            throw error;
-        }
+            const { openaiApiKey, customApiEndpoint } = await new Promise(res => chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
+            const result = await sendOpenAIRequest({ apiKey: openaiApiKey, apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o', messages });
+            const answer = result.choices?.[0]?.message?.content || '[No response]';
+            messages.push({ role: 'assistant', content: answer });
+            storeConversation(contentId, baseUrl, messages);
+            typingBubble.remove();
+            const reply = document.createElement('div');
+            reply.className = 'qa-entry assistant';
+            reply.dir = detectDirection(answer);
+            reply.innerHTML = answer;
+            threadEl.appendChild(reply);
+            requestAnimationFrame(() => reply.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+        } catch (err) {
+            log.error('[QA] Error:', err);
+            alert('Failed to get answer.');
+            const bubble = threadEl.querySelector('.typing-bubble');
+            if (bubble) bubble.remove();
+        } finally { submitBtn.disabled = false; }
     }
-
-    // Handle summarize button clicks (tree and table view)
-    document.body.addEventListener('click', async (e) => {
-        const btn = e.target.closest('.summarize-button');
-        if (!btn) return;
-
-        const contentId = btn.dataset.id;
-        const allButtons = document.querySelectorAll(`.summarize-button[data-id="${contentId}"]`);
-        const pageData = allResults.find(r => r.id === contentId);
-        if (!pageData) {
-            console.warn('Content not found for summarization');
-            return;
-        }
-
-        allButtons.forEach(b => {
-            b.textContent = 'Summarizing...';
-            b.classList.add('loading');
-            b.disabled = true;
+    function handleClearConversation(contentId, threadEl, userPrompt, summaryText) {
+        showConfirmationDialog('<h2>Are you sure you want to clear this conversation?</h2>', () => {
+            triggerPoofEffect();
+            const newConversation = [{ role: 'system', content: qaSystemPrompt }, { role: 'user', content: userPrompt }, { role: 'assistant', content: summaryText }];
+            conversationHistories.set(contentId, newConversation);
+            storeConversation(contentId, baseUrl, newConversation);
+            renderConversationThread(threadEl, newConversation);
         });
-
-        let bodyHtml = await fetchConfluenceBodyById(contentId);
-        bodyHtml = sanitizeHtmlWithDOM(bodyHtml);
-
-        try {
-            const stored = await getStoredSummary(contentId, baseUrl);
-            if (stored && stored.summaryHtml) {
-                log.debug(`[DB] Loaded summary from IndexedDB for contentId: ${contentId}`);
-                summaryCache.set(contentId, stored.summaryHtml);
-                showSummaryModal(stored.summaryHtml, pageData, bodyHtml);
+    }
+    async function handleResummarize(pageData, bodyHtml) {
+        showConfirmationDialog('<h2>Are you sure you want to regenerate the summary?</h2>This will replace the current summary and reset the conversation.', async () => {
+            const contentId = pageData.id;
+            const overlay = document.getElementById('resummarize-loading-overlay');
+            const allButtons = document.querySelectorAll(`.summarize-button[data-id="${contentId}"]`);
+            overlay.style.display = 'flex';
+            resetSummaryButtons(allButtons, 'Re-summarizing...');
+            allButtons.forEach(b => {
+                b.disabled = true;
+                b.classList.add('loading');
+            });
+            try {
+                const userPrompt = await getUserPrompt(pageData);
+                const { openaiApiKey: apiKey, customApiEndpoint } = await new Promise(res => chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
+                const result = await sendOpenAIRequest({ apiKey, apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o', messages: [{ role: 'system', content: summarySystemPrompt }, { role: 'user', content: userPrompt }] });
+                const newSummary = result.choices[0].message.content;
+                summaryCache.set(contentId, newSummary);
+                await storeSummary({ contentId, baseUrl, title: pageData.title, summaryHtml: newSummary, bodyHtml });
+                const newConversation = [{ role: 'system', content: qaSystemPrompt }, { role: 'user', content: userPrompt }, { role: 'assistant', content: newSummary }];
+                conversationHistories.set(contentId, newConversation);
+                await storeConversation(contentId, baseUrl, newConversation);
+                showSummaryModal(newSummary, pageData, bodyHtml);
                 resetSummaryButtons(allButtons, '✅ Summary Available!');
-                return;
+            } catch (err) {
+                log.error('Re-summarize failed:', err);
+                alert('Failed to regenerate summary.');
+                resetSummaryButtons(allButtons, '🧠 Summarize');
+            } finally {
+                overlay.style.display = 'none';
+                document.getElementById('qa-submit').disabled = false;
+                document.getElementById('qa-clear').disabled = false;
+                document.getElementById('qa-resummarize').disabled = false;
             }
-
-            chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], (syncData) => {
-                chrome.storage.local.get(['customUserPrompt'], async () => {
-                    const apiKey = syncData.openaiApiKey;
-                    if (!apiKey) {
-                        alert('OpenAI API key not set. Please enter it in the extension options.');
-                        return;
-                    }
-
-                    if (stored && stored.summaryHtml) {
-                        log.debug(`[DB] Loaded summary from IndexedDB for contentId: ${contentId}`);
-                        summaryCache.set(contentId, stored.summaryHtml);
-                        showSummaryModal(stored.summaryHtml);
-                        resetSummaryButtons(allButtons, '✅ Summary Available!');
-                        return;
-                    }
-
-                    const userPrompt = await getUserPrompt(pageData);
-                    const apiEndpoint = syncData.customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions';
-                    const aiModel = 'gpt-4o';
-
-                    log.debug('[Summary] Model:', aiModel);
-                    log.debug('[Summary] User prompt length:', userPrompt.length);
-                    log.debug('[Summary] System prompt length:', summarySystemPrompt.length);
-
-                    const combinedLength = summarySystemPrompt.length + userPrompt.length;
-                    if (combinedLength > 500000) {
-                        alert('The content is too large to summarize with the AI model (token limit exceeded). Try summarizing a shorter page.');
-                        resetSummaryButtons(allButtons, '🧠 Summarize');
-                        return;
-                    }
-
-                    try {
-                        const result = await sendOpenAIRequest({
-                            apiKey,
-                            apiUrl: apiEndpoint,
-                            model: aiModel,
-                            messages: [
-                                { role: 'system', content: summarySystemPrompt },
-                                { role: 'user', content: userPrompt }
-                            ]
-                        });
-
-                        const summary = result.choices[0].message.content;
-                        summaryCache.set(contentId, summary);
-                        await storeSummary({
-                            contentId,
-                            baseUrl,
-                            title: pageData.title,
-                            summaryHtml: summary,
-                            bodyHtml: bodyHtml
-                        });
-                        showSummaryModal(summary, pageData, bodyHtml);
-                        resetSummaryButtons(allButtons, '✅ Summary Available!');
-                    } catch (err) {
-                        console.error('[Summary] Error:', err);
-                        alert('Failed to get summary from OpenAI. See console for details.');
-                        resetSummaryButtons(allButtons, '🧠 Summarize');
-                    }
-                });
-            });
-        } catch (e) {
-            console.error('[Summary] Failed to summarize content:', e);
-            alert('Failed to summarize content. See console for details.');
-            resetSummaryButtons(allButtons, '🧠 Summarize');
-        }
-    });
-
+        });
+    }
+    function setupTextareaResizer(textarea) {
+        const resizer = document.getElementById('qa-resizer');
+        if (!resizer) return;
+        resizer.ondblclick = () => {
+            textarea.style.height = '60px';
+            sessionStorage.removeItem('qaInputHeight');
+        };
+        resizer.onmousedown = (e) => {
+            let isResizing = true;
+            const startY = e.clientY;
+            const startHeight = parseInt(window.getComputedStyle(textarea).height, 10);
+            document.body.style.cursor = 'ns-resize';
+            const move = (ev) => {
+                if (!isResizing) return;
+                const newHeight = Math.max(60, startHeight - (ev.clientY - startY));
+                textarea.style.height = `${newHeight}px`;
+                sessionStorage.setItem('qaInputHeight', newHeight);
+            };
+            const stop = () => {
+                isResizing = false;
+                document.body.style.cursor = '';
+                window.removeEventListener('mousemove', move);
+                window.removeEventListener('mouseup', stop);
+            };
+            window.addEventListener('mousemove', move);
+            window.addEventListener('mouseup', stop);
+        };
+    }
     async function showSummaryModal(summaryText, pageData, bodyHtml) {
-        const modal = document.getElementById('summary-modal');
+        log.debug('Showing summary modal for', pageData.id);
         const modalBody = document.getElementById('modal-body');
         const closeBtn = document.getElementById('modal-close');
+        const summaryTitle = document.getElementById('summary-title');
 
-        // Split into paragraphs and list items, detect direction, and wrap
+        // Reset scroll position immediately
+        modalBody.scrollTop = 0;
+
+        // Set title
+        summaryTitle.innerHTML = `<strong>🧠 AI Summary</strong><br><a href="${buildConfluenceUrl(pageData._links.webui)}" target="_blank" title="${escapeHtml(pageData.title)}">${escapeHtml(pageData.title)}</a>`;
+
+        // Prepare summary content
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = summaryText;
-
-        tempDiv.querySelectorAll('p, li, h2, h3, h4, h5, h6').forEach(el => {
-            const dir = detectDirection(el.textContent);
-            el.setAttribute('dir', dir);
-        });
+        tempDiv.querySelectorAll('p, li, h2, h3').forEach(el => el.setAttribute('dir', detectDirection(el.textContent)));
 
         const summaryDiv = document.createElement('div');
         summaryDiv.id = 'summary-content';
         summaryDiv.innerHTML = tempDiv.innerHTML;
 
-        const summaryTitle = document.getElementById('summary-title');
-        if (summaryTitle) {
-            const pageUrl = buildConfluenceUrl(pageData._links.webui);
-            summaryTitle.innerHTML = `<strong>🧠 AI Summary</strong><br><a href="${pageUrl}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(pageData.title)}">${escapeHtml(pageData.title)}</a>`;
-        }
+        // Render modal content
+        modalBody.innerHTML = `
+        <div id="summary-thread-wrapper" style="display: flex; flex-direction: column; gap: 12px;">
+            ${summaryDiv.outerHTML}
+            <h3 class="conversation-title">💬 Follow-Up Questions</h3>
+            <div id="qa-thread"></div>
+            <button id="qa-scroll-top" title="Scroll to summary" style="display: none; align-self: flex-end;">⬆</button>
+        </div>`;
 
-        modalBody.innerHTML = '';
+        const modalContent = summaryModal.querySelector('.modal-content');
+        let qaInputArea = modalContent.querySelector('#qa-input-area');
+        if (qaInputArea) qaInputArea.remove();
 
-        const summaryAndThreadWrapper = document.createElement('div');
-        summaryAndThreadWrapper.id = 'summary-thread-wrapper';
-        summaryAndThreadWrapper.style.display = 'flex';
-        summaryAndThreadWrapper.style.flexDirection = 'column';
-        summaryAndThreadWrapper.style.gap = '12px';
-
-        summaryAndThreadWrapper.appendChild(summaryDiv);
-
-        const qaTitle = document.createElement('h3');
-        qaTitle.textContent = '💬 Follow-Up Questions';
-        qaTitle.className = 'conversation-title';
-        summaryAndThreadWrapper.appendChild(qaTitle);
-
-        const qaThread = document.createElement('div');
-        qaThread.id = 'qa-thread';
-        summaryAndThreadWrapper.appendChild(qaThread);
-
-        const scrollBtn = document.createElement('button');
-        scrollBtn.id = 'qa-scroll-top';
-        scrollBtn.textContent = '⬆';
-        scrollBtn.title = 'Scroll to summary';
-        scrollBtn.style.alignSelf = 'flex-end';
-        scrollBtn.style.display = 'none';
-        summaryAndThreadWrapper.appendChild(scrollBtn);
-
-        modalBody.appendChild(summaryAndThreadWrapper);
-
-        // Add the input area for follow-up questions
-        const modalContent = modal.querySelector('.modal-content');
-        const existingInputArea = modalContent.querySelector('#qa-input-area');
-        if (existingInputArea) existingInputArea.remove();
-        const qaInputArea = document.createElement('div');
+        qaInputArea = document.createElement('div');
         qaInputArea.id = 'qa-input-area';
         qaInputArea.innerHTML = `
-            <div class="qa-input-wrapper">
-                <div class="textarea-resizer" id="qa-resizer"></div>
-                <textarea id="qa-input" placeholder="Ask a follow-up question..."></textarea>
-            </div>
-            <div class="qa-button-row">
-                <button id="qa-submit">❓ Ask A Question</button>
-                <button id="qa-resummarize">🧠 Re-summarize</button>
-                <button id="qa-clear">🧹 Clear Conversation</button>
-            </div>
-            <div id="qa-loading" style="display: none;">Answering...</div>
-            <div id="resummarize-loading-overlay">
-                <div class="loader small-loader"></div>
-                Regenerating summary...
-            </div>
-        `;
-
+        <div class="qa-input-wrapper">
+            <div class="textarea-resizer" id="qa-resizer"></div>
+            <textarea id="qa-input" placeholder="Ask a follow-up question..."></textarea>
+        </div>
+        <div class="qa-button-row">
+            <button id="qa-submit">❓ Ask</button>
+            <button id="qa-resummarize">🧠 Re-summarize</button>
+            <button id="qa-clear">🧹 Clear</button>
+        </div>
+        <div id="resummarize-loading-overlay">
+            <div class="loader small-loader"></div>
+            Regenerating...
+        </div>`;
         modalContent.appendChild(qaInputArea);
 
+        // Cache elements
+        const qaThread = document.getElementById('qa-thread');
         const qaInput = document.getElementById('qa-input');
-
-        // Restore saved height for qa-input
-        const savedHeight = sessionStorage.getItem('qaInputHeight');
-        if (savedHeight) {
-            qaInput.style.height = `${savedHeight}px`;
-        }
-
         const qaSubmit = document.getElementById('qa-submit');
+        const qaClear = document.getElementById('qa-clear');
+        const qaResummarize = document.getElementById('qa-resummarize');
+        const qaScrollBtn = document.getElementById('qa-scroll-top');
 
+        // Restore input height
+        qaInput.style.height = `${sessionStorage.getItem('qaInputHeight') || 60}px`;
+        setupTextareaResizer(qaInput);
+
+        // Prepare conversation state
         const contentId = pageData.id;
-        const storedConv = await getStoredConversation(contentId, baseUrl);
         const userPrompt = await getUserPrompt(pageData);
+        const storedConv = await getStoredConversation(contentId, baseUrl);
         const conversation = storedConv?.messages || [
             { role: 'system', content: qaSystemPrompt },
             { role: 'user', content: userPrompt },
@@ -2213,365 +1054,342 @@ document.addEventListener('DOMContentLoaded', () => {
         ];
         conversationHistories.set(contentId, conversation);
         storeConversation(contentId, baseUrl, conversation);
+        renderConversationThread(qaThread, conversation);
 
-        // Render the conversation into the DOM (skip system prompt)
-        for (const msg of conversation.slice(3)) {
-            const div = document.createElement('div');
-            div.className = `qa-entry ${msg.role}`;
-            const dir = detectDirection(msg.content);
-            div.setAttribute('dir', dir);
-            div.style.textAlign = dir === 'rtl' ? 'right' : 'left';
-
-            if (msg.role === 'assistant') {
-                div.innerHTML = msg.content;
-            } else {
-                div.textContent = msg.content;
-            }
-
-            qaThread.appendChild(div);
-        }
-
-        function submitQuestion() {
-            const question = qaInput.value.trim();
-            if (!question) return;
-
-            const messages = conversationHistories.get(contentId);
-            messages.push({ role: 'user', content: question });
-
-            const userMsg = document.createElement('div');
-            userMsg.className = 'qa-entry user';
-            const userDir = detectDirection(question);
-            userMsg.setAttribute('dir', userDir);
-            userMsg.style.textAlign = userDir === 'rtl' ? 'right' : 'left';
-            userMsg.textContent = question;
-            qaThread.appendChild(userMsg);
-            qaSubmit.disabled = true;
-            // Add typing bubble
-            const typingBubble = document.createElement('div');
-            typingBubble.className = 'qa-entry assistant typing-bubble';
-            typingBubble.innerHTML = `
-                <span class="typing-dots">
-                    <span class="dot"></span>
-                    <span class="dot"></span>
-                    <span class="dot"></span>
-                </span>
-            `;
-
-            const typingDir = detectDirection('...');
-            typingBubble.setAttribute('dir', typingDir);
-            typingBubble.style.textAlign = typingDir === 'rtl' ? 'right' : 'left';
-            qaThread.appendChild(typingBubble);
-
-            const modalBody = document.getElementById('modal-body');
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    modalBody.scrollTo({ top: modalBody.scrollHeight, behavior: 'smooth' });
-                });
-            });
-
-            qaThread.scrollTop = qaThread.scrollHeight;
-            qaInput.value = '';
-
-            chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], async (data) => {
-                const apiKey = data.openaiApiKey;
-                const endpoint = data.customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions';
-                const aiModel = 'gpt-4o';
-                try {
-                    const result = await sendOpenAIRequest({
-                        apiKey,
-                        apiUrl: endpoint,
-                        model: aiModel,
-                        messages
-                    });
-
-                    const answer = result.choices?.[0]?.message?.content || '[No response]';
-                    messages.push({ role: 'assistant', content: answer });
-                    storeConversation(contentId, baseUrl, messages);
-
-                    const reply = document.createElement('div');
-                    reply.className = 'qa-entry assistant';
-                    const assistantDir = detectDirection(answer);
-                    reply.setAttribute('dir', assistantDir);
-                    reply.style.textAlign = assistantDir === 'rtl' ? 'right' : 'left';
-                    reply.innerHTML = answer;
-                    qaThread.appendChild(reply);
-                    requestAnimationFrame(() => {
-                        reply.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    });
-
-                } catch (err) {
-                    console.error('[QA] Error:', err);
-                    alert('Failed to get answer from OpenAI.');
-                } finally {
-                    qaSubmit.disabled = false;
-                    const oldTyping = document.querySelector('.typing-bubble');
-                    if (oldTyping) oldTyping.remove();
-                }
-            });
-        }
-
-        qaSubmit.onclick = submitQuestion;
-
-        // Custom textarea resizer
-        const qaResizer = document.getElementById('qa-resizer');
-
-        // Double-click to reset height
-        qaResizer.addEventListener('dblclick', () => {
-            qaInput.style.height = '60px';
-            sessionStorage.removeItem('qaInputHeight');
-        });
-
-        let isResizing = false;
-        let startY, startHeight;
-
-        qaResizer.addEventListener('mousedown', e => {
-            isResizing = true;
-            startY = e.clientY;
-            startHeight = parseInt(window.getComputedStyle(qaInput).height, 10);
-            document.body.style.cursor = 'ns-resize';
-            document.addEventListener('mousemove', resizeMouseMove);
-            document.addEventListener('mouseup', stopResize);
-        });
-
-        function resizeMouseMove(e) {
-            if (!isResizing) return;
-            const dy = e.clientY - startY;
-            const newHeight = Math.max(60, startHeight - dy);
-            qaInput.style.height = `${newHeight}px`;
-            sessionStorage.setItem('qaInputHeight', newHeight);
-        }
-
-        function stopResize() {
-            isResizing = false;
-            document.body.style.cursor = '';
-            document.removeEventListener('mousemove', resizeMouseMove);
-            document.removeEventListener('mouseup', stopResize);
-        }
-
-        qaInput.addEventListener('keydown', (e) => {
+        // Attach listeners
+        qaSubmit.onclick = () => handleQaSubmit(contentId, qaInput, qaThread, qaSubmit);
+        qaInput.onkeydown = (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                submitQuestion();
+                handleQaSubmit(contentId, qaInput, qaThread, qaSubmit);
+            }
+        };
+        qaInput.oninput = () => qaInput.setAttribute('dir', detectDirection(qaInput.value));
+        qaClear.onclick = () => handleClearConversation(contentId, qaThread, userPrompt, summaryText);
+        qaResummarize.onclick = () => handleResummarize(pageData, bodyHtml);
+        qaScrollBtn.onclick = () => modalBody.scrollTo({ top: 0, behavior: 'smooth' });
 
-                qaInput.setAttribute('dir', 'ltr');
+        modalBody.onscroll = () => {
+            qaScrollBtn.style.display = modalBody.scrollTop > 100 ? 'inline-block' : 'none';
+        };
+
+        // Force scroll-to-top button to hide if scrolling is not needed
+        requestAnimationFrame(() => {
+            if (modalBody.scrollHeight <= modalBody.clientHeight) {
+                qaScrollBtn.style.display = 'none';
             }
         });
 
-        // Dynamically update input direction based on text
-        qaInput.addEventListener('input', () => {
-            const direction = detectDirection(qaInput.value);
-            qaInput.setAttribute('dir', direction);
-        });
-
-        const qaClear = document.getElementById('qa-clear');
-        const qaResummarize = document.getElementById('qa-resummarize');
-        const resummarizeOverlay = document.getElementById('resummarize-loading-overlay');
-
-        qaResummarize.onclick = async () => {
-            showConfirmationDialog('<h2>Are you sure you want to regenerate the summary?</h2>This will replace the current <b>summary</b> and reset the <b>follow-up conversation</b>.', async () => {
-                qaSubmit.disabled = true;
-                qaClear.disabled = true;
-                qaResummarize.disabled = true;
-                resummarizeOverlay.style.display = 'flex';
-
-                const allButtons = document.querySelectorAll(`.summarize-button[data-id="${contentId}"]`);
-                allButtons.forEach(b => {
-                    b.textContent = 'Re-summarizing...';
-                    b.classList.add('loading');
-                    b.disabled = true;
-                });
-
-                await new Promise(requestAnimationFrame); // allow DOM to update
-
-                try {
-                    const userPrompt = await getUserPrompt(pageData);
-                    const { openaiApiKey: apiKey, customApiEndpoint } = await new Promise(res =>
-                        chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
-                    const endpoint = customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions';
-                    const model = 'gpt-4o';
-
-                    const result = await sendOpenAIRequest({
-                        apiKey,
-                        apiUrl: endpoint,
-                        model,
-                        messages: [
-                            { role: 'system', content: summarySystemPrompt },
-                            { role: 'user', content: userPrompt }
-                        ]
-                    });
-
-                    const newSummary = result.choices[0].message.content;
-                    summaryCache.set(contentId, newSummary);
-
-                    await storeSummary({
-                        contentId,
-                        baseUrl,
-                        title: pageData.title,
-                        summaryHtml: newSummary,
-                        bodyHtml
-                    });
-
-                    const newConversation = [
-                        { role: 'system', content: qaSystemPrompt },
-                        { role: 'user', content: userPrompt },
-                        { role: 'assistant', content: newSummary }
-                    ];
-
-                    conversationHistories.set(contentId, newConversation);
-                    await storeConversation(contentId, baseUrl, newConversation);
-
-                    resummarizeOverlay.style.display = 'none';
-                    showSummaryModal(newSummary, pageData, bodyHtml);
-                    resetSummaryButtons(allButtons, '✅ Summary Available!');
-                    return;
-                } catch (err) {
-                    console.error('Re-summarize failed:', err);
-                    alert('Failed to regenerate summary.');
-                    resummarizeOverlay.style.display = 'none';
-                    resetSummaryButtons(allButtons, '🧠 Summarize');
-                } finally {
-                    qaSubmit.disabled = false;
-                    qaClear.disabled = false;
-                    qaResummarize.disabled = false;
-                }
-            });
-        };
-
-        scrollBtn.onclick = () => {
-            modalBody.scrollTo({ top: 0, behavior: 'smooth' });
-        };
-
-        modalBody.addEventListener('scroll', () => {
-            scrollBtn.style.display = modalBody.scrollTop > 100 ? 'inline-block' : 'none';
-        });
-
-        qaClear.onclick = () => {
-            showConfirmationDialog('<h2>Are you sure you want to clear this conversation?</h2>', () => {
-                triggerPoofEffect();
-                // Reset conversation to initial state
-                const newConversation = [
-                    { role: 'system', content: qaSystemPrompt },
-                    { role: 'user', content: userPrompt },
-                    { role: 'assistant', content: summaryText }
-                ];
-                conversationHistories.set(contentId, newConversation);
-                storeConversation(contentId, baseUrl, newConversation);
-
-                // Clear and re-render conversation thread
-                qaThread.innerHTML = '';
-                for (const msg of newConversation.slice(3)) {
-                    const div = document.createElement('div');
-                    div.className = `qa-entry ${msg.role}`;
-                    const dir = detectDirection(msg.content);
-                    div.setAttribute('dir', dir);
-                    div.style.textAlign = dir === 'rtl' ? 'right' : 'left';
-                    if (msg.role === 'assistant') {
-                        div.innerHTML = msg.content;
-                    } else {
-                        div.textContent = msg.content;
-                    }
-                    qaThread.appendChild(div);
-                }
-            });
-        };
-
-        modal.style.display = 'flex';
-
-        // Close on 'x'
-        closeBtn.onclick = () => modal.style.display = 'none';
-
-        // Close on click outside
-        window.onclick = (e) => {
-            if (e.target === modal) {
-                modal.style.display = 'none';
-            }
-        };
-
-        // Close on ESC
-        document.onkeydown = (e) => {
-            if (e.key === 'Escape') {
-                modal.style.display = 'none';
-            }
-        };
+        summaryModal.style.display = 'flex';
+        closeBtn.onclick = () => summaryModal.style.display = 'none';
+        window.onclick = (e) => { if (e.target === summaryModal) summaryModal.style.display = 'none'; };
+        document.onkeydown = (e) => { if (e.key === 'Escape') summaryModal.style.display = 'none'; };
     }
 
-    chrome.runtime.onMessage.addListener((message) => {
-        if (message.action === 'summariesCleared') {
-            summaryCache.clear();
-            document.querySelectorAll('.summarize-button').forEach(btn => {
-                btn.textContent = '🧠 Summarize';
-                btn.classList.remove('loading');
-                btn.disabled = false;
-            });
-            log.debug('[Summaries] Cleared cache and reset summarize buttons.');
-        }
-    });
-
-    const modal = document.getElementById('resizable-modal');
-    const modalResizerRight = document.getElementById('modal-resizer');
-
-    const savedWidth = sessionStorage.getItem('modalWidth');
-    if (savedWidth && modal) {
-        modal.style.width = `${savedWidth}px`;
-    }
-
-    if (modalResizerRight && modal) {
-        modalResizerRight.addEventListener('mousedown', (e) => {
+    function setupModalResizers() {
+        const resizerRight = document.getElementById('modal-resizer');
+        const resizerLeft = document.getElementById('modal-resizer-left');
+        if (!resizableModal || !resizerRight || !resizerLeft) return;
+        const savedWidth = sessionStorage.getItem('modalWidth');
+        if (savedWidth) resizableModal.style.width = `${savedWidth}px`;
+        const startResize = (e, direction) => {
             e.preventDefault();
-            const startX = e.clientX;
-            const startWidth = modal.offsetWidth;
-
-            const onMouseMove = (moveEvent) => {
-                const delta = moveEvent.clientX - startX;
-                const newWidth = Math.max(300, startWidth + 2 * delta); // double for symmetric
-                modal.style.width = `${newWidth}px`;
-                sessionStorage.setItem('modalWidth', newWidth);
-            };
-
-            const onMouseUp = () => {
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
-            };
-
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
-        });
-    }
-
-    modalResizerRight.addEventListener('dblclick', () => {
-        modal.style.width = '600px';
-        sessionStorage.removeItem('modalWidth');
-    });
-
-    const modalResizerLeft = document.getElementById('modal-resizer-left');
-    if (modalResizerLeft && modal) {
-        modalResizerLeft.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            const startX = e.clientX;
-            const startWidth = modal.offsetWidth;
-
-            const onMouseMove = (moveEvent) => {
-                const delta = startX - moveEvent.clientX; // Inverse direction
+            const startX = e.clientX, startWidth = resizableModal.offsetWidth;
+            const move = (ev) => {
+                const delta = (direction === 'right' ? ev.clientX - startX : startX - ev.clientX);
                 const newWidth = Math.max(300, startWidth + 2 * delta);
-                modal.style.width = `${newWidth}px`;
+                resizableModal.style.width = `${newWidth}px`;
                 sessionStorage.setItem('modalWidth', newWidth);
             };
-
-            const onMouseUp = () => {
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
+            const stop = () => {
+                document.removeEventListener('mousemove', move);
+                document.removeEventListener('mouseup', stop);
             };
+            document.addEventListener('mousemove', move);
+            document.addEventListener('mouseup', stop);
+        };
+        resizerRight.onmousedown = (e) => startResize(e, 'right');
+        resizerLeft.onmousedown = (e) => startResize(e, 'left');
+        resizerRight.ondblclick = resizerLeft.ondblclick = () => {
+            resizableModal.style.width = '600px';
+            sessionStorage.removeItem('modalWidth');
+        };
+    }
+    // =========================================================
+    //                    EVENT HANDLERS
+    // =========================================================
+    function handleSortClick(event) {
+        if (event.target.classList.contains('th-resizer')) return;
 
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
+        const column = event.currentTarget.dataset.column;
+
+        if (currentSortColumn === column) {
+            if (currentSortOrder === 'asc') {
+                currentSortOrder = 'desc';
+            } else if (currentSortOrder === 'desc') {
+                currentSortOrder = '';
+                currentSortColumn = '';
+            } else {
+                currentSortOrder = 'asc';
+            }
+        } else {
+            currentSortColumn = column;
+            currentSortOrder = 'asc';
+        }
+
+        updateSortIcons();
+        filterResults(true);
+    }
+
+    function handleTreeArrowClick(event) {
+        const arrow = event.target.closest('.arrow');
+        if (!arrow || arrow.classList.contains('empty')) return;
+        const li = arrow.closest('li');
+        const childrenDiv = li?.querySelector('.children');
+        if (!childrenDiv) return;
+        const isCollapsed = childrenDiv.style.display === 'none';
+        childrenDiv.style.display = isCollapsed ? 'block' : 'none';
+        arrow.classList.toggle('collapsed', !isCollapsed);
+        arrow.classList.toggle('expanded', isCollapsed);
+        if (li?.id) { isCollapsed ? collapsedNodes.delete(li.id) : collapsedNodes.add(li.id); }
+    }
+    async function handleSummarizeClick(event) {
+        const btn = event.target.closest('.summarize-button');
+        if (!btn) return;
+        const contentId = btn.dataset.id;
+        const pageData = allResults.find(r => r.id === contentId);
+        if (!pageData) return log.warn('Content not found for summarization', contentId);
+        const allButtons = document.querySelectorAll(`.summarize-button[data-id="${contentId}"]`);
+        resetSummaryButtons(allButtons, 'Summarizing...');
+        allButtons.forEach(b => {
+            b.disabled = true;
+            b.classList.add('loading');
+        });
+        try {
+            const bodyHtml = await fetchConfluenceBodyById(contentId).then(sanitizeHtmlWithDOM);
+            const stored = await getStoredSummary(contentId, baseUrl);
+            if (stored?.summaryHtml) {
+                log.debug(`[DB] Using cached summary for ${contentId}`);
+                summaryCache.set(contentId, stored.summaryHtml);
+                showSummaryModal(stored.summaryHtml, pageData, bodyHtml);
+                resetSummaryButtons(allButtons, '✅ Summary Available!');
+            } else {
+                log.debug(`[AI] Requesting new summary for ${contentId}`);
+                const { openaiApiKey, customApiEndpoint } = await new Promise(res => chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
+                if (!openaiApiKey) {
+                    alert('OpenAI API key not set.');
+                    resetSummaryButtons(allButtons);
+                    return;
+                }
+                const userPrompt = await getUserPrompt(pageData);
+                const result = await sendOpenAIRequest({ apiKey: openaiApiKey, apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o', messages: [{ role: 'system', content: summarySystemPrompt }, { role: 'user', content: userPrompt }] });
+                const summary = result.choices[0].message.content;
+                summaryCache.set(contentId, summary);
+                await storeSummary({ contentId, baseUrl, title: pageData.title, summaryHtml: summary, bodyHtml });
+                showSummaryModal(summary, pageData, bodyHtml);
+                resetSummaryButtons(allButtons, '✅ Summary Available!');
+            }
+        } catch (err) {
+            log.error('[Summary] Failed to summarize:', err);
+            alert(`Failed to summarize content: ${err.message}`);
+            resetSummaryButtons(allButtons, '🧠 Summarize');
+        }
+    }
+    function switchToTreeView() {
+        const treeBtn = document.getElementById('tree-view-btn');
+        const isTreeActive = treeBtn.classList.contains('active');
+        if (isTreeActive) {
+            allExpanded = !allExpanded;
+            log.debug('Toggling Tree View expand state to:', allExpanded);
+            document.querySelectorAll('.children').forEach(div => div.style.display = allExpanded ? 'block' : 'none');
+            document.querySelectorAll('.arrow:not(.empty)').forEach(arrow => {
+                arrow.classList.toggle('collapsed', !allExpanded);
+                arrow.classList.toggle('expanded', allExpanded);
+            });
+        } else {
+            log.debug('Switching to Tree View');
+            treeContainer.style.display = 'block';
+            tableContainer.style.display = 'none';
+            treeBtn.classList.add('active');
+            document.getElementById('table-view-btn').classList.remove('active');
+            allExpanded = true;
+        }
+    }
+    function switchToTableView() {
+        log.debug('Switching to Table View');
+        treeContainer.style.display = 'none';
+        tableContainer.style.display = 'block';
+        document.getElementById('tree-view-btn').classList.remove('active');
+        document.getElementById('table-view-btn').classList.add('active');
+    }
+    function onTypeFilterChange() {
+        log.debug('[Filter] Type changed:', typeFilter.value);
+        resetDataAndFetchResults();
+    }
+    function onDateFilterChange() {
+        log.debug('[Filter] Date changed:', dateFilter.value);
+        resetDataAndFetchResults();
+    }
+    function addOptionListeners(container, inputId) {
+        container.querySelectorAll('.option').forEach(option => {
+            option.onclick = () => {
+                const input = document.getElementById(inputId);
+                const clearIcon = document.getElementById(`${inputId.split('-')[0]}-clear`);
+                input.value = option.textContent.trim();
+                input.dataset.key = option.dataset.key;
+                container.style.display = 'none';
+                if (clearIcon) toggleClearIcon(input, clearIcon);
+                resetDataAndFetchResults();
+            };
+        });
+    }
+    function clearSpaceFilter(evt) {
+        evt.stopPropagation();
+        log.debug('[Filter] Space filter cleared');
+        spaceFilterInput.value = '';
+        spaceFilterInput.dataset.key = '';
+        toggleClearIcon(spaceFilterInput, document.getElementById('space-clear'));
+        displayFilteredSpaceOptions('');
+        resetDataAndFetchResults();
+    }
+    function clearContributorFilter(evt) {
+        evt.stopPropagation();
+        log.debug('[Filter] Contributor filter cleared');
+        contributorFilterInput.value = '';
+        contributorFilterInput.dataset.key = '';
+        toggleClearIcon(contributorFilterInput, document.getElementById('contributor-clear'));
+        displayFilteredContributorOptions('');
+        resetDataAndFetchResults();
+    }
+    function infiniteScrollHandler() {
+        if (!scrollableContainer) return;
+        const reached = scrollableContainer.scrollTop + scrollableContainer.clientHeight >= scrollableContainer.scrollHeight - SCROLL_THRESHOLD_PX;
+        if (reached) loadMoreResults();
+    }
+    function addEventListeners() {
+        log.debug('Attaching/Re-attaching event listeners...');
+        const debouncedFilter = debounce(filterResults, 250);
+        newSearchButton.onclick = () => performNewSearch(newSearchInput.value.trim());
+        newSearchInput.onkeydown = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                performNewSearch(newSearchInput.value.trim());
+            }
+        };
+        newSearchInput.oninput = () => toggleClearIcon(newSearchInput, mainSearchClear);
+        mainSearchClear.onclick = () => {
+            newSearchInput.value = '';
+            toggleClearIcon(newSearchInput, mainSearchClear);
+            newSearchInput.focus();
+        };
+        document.getElementById('tree-view-btn').onclick = switchToTreeView;
+        document.getElementById('table-view-btn').onclick = switchToTableView;
+        treeContainer.removeEventListener('click', handleTreeArrowClick);
+        treeContainer.addEventListener('click', handleTreeArrowClick);
+        document.body.removeEventListener('click', handleSummarizeClick);
+        document.body.addEventListener('click', handleSummarizeClick);
+        textFilterInput.oninput = () => {
+            debouncedFilter();
+            toggleClearIcon(textFilterInput, document.getElementById('filter-text-clear'));
+        };
+        document.getElementById('filter-text-clear').onclick = () => {
+            textFilterInput.value = '';
+            toggleClearIcon(textFilterInput, document.getElementById('filter-text-clear'));
+            filterResults(true);
+            textFilterInput.focus();
+        };
+        dateFilter.onchange = onDateFilterChange;
+        typeFilter.onchange = onTypeFilterChange;
+        const setupFilterInput = (input, optionsContainer, displayFn, clearBtn) => {
+            input.oninput = evt => {
+                displayFn(sanitizeInput(evt.target.value));
+                optionsContainer.style.display = 'block';
+                toggleClearIcon(input, clearBtn);
+            };
+            input.onfocus = evt => {
+                displayFn(evt.target.value);
+                optionsContainer.style.display = 'block';
+            };
+        };
+        setupFilterInput(spaceFilterInput, spaceOptionsContainer, displayFilteredSpaceOptions, document.getElementById('space-clear'));
+        setupFilterInput(contributorFilterInput, contributorOptionsContainer, displayFilteredContributorOptions, document.getElementById('contributor-clear'));
+        document.getElementById('space-clear').onclick = clearSpaceFilter;
+        document.getElementById('contributor-clear').onclick = clearContributorFilter;
+        document.onclick = evt => {
+            if (!evt.target.closest('#space-filter-container')) spaceOptionsContainer.style.display = 'none';
+            if (!evt.target.closest('#contributor-filter-container')) contributorOptionsContainer.style.display = 'none';
+        };
+        scrollToTopButton.onclick = () => scrollableContainer?.scrollTo({ top: 0, behavior: 'smooth' });
+        document.getElementById('open-options').onclick = () => { chrome.runtime.openOptionsPage ? chrome.runtime.openOptionsPage() : window.open(chrome.runtime.getURL('options/options.html')); };
+        scrollableContainer?.removeEventListener('scroll', infiniteScrollHandler);
+        scrollableContainer?.addEventListener('scroll', infiniteScrollHandler);
+        scrollableContainer?.addEventListener('scroll', () => { scrollToTopButton.style.display = (scrollableContainer.scrollTop > 200) ? 'block' : 'none'; });
+        setupModalResizers();
+        // Initial state for clear icons after potential init value setting
+        toggleClearIcon(textFilterInput, document.getElementById('filter-text-clear'));
+        toggleClearIcon(spaceFilterInput, document.getElementById('space-clear'));
+        toggleClearIcon(contributorFilterInput, document.getElementById('contributor-clear'));
+        toggleClearIcon(newSearchInput, mainSearchClear);
+
+        chrome.runtime.onMessage.addListener((message) => {
+            if (message.action === 'summariesCleared') {
+                summaryCache.clear();
+                document.querySelectorAll('.summarize-button').forEach(btn => {
+                    btn.textContent = '🧠 Summarize';
+                    btn.disabled = false;
+                    btn.classList.remove('loading');
+                });
+                log.info('[UI] Summary cache cleared and summarize buttons reset.');
+            }
         });
     }
 
-    modalResizerLeft.addEventListener('dblclick', () => {
-        modal.style.width = '600px';
-        sessionStorage.removeItem('modalWidth');
-    });
-
-    // Attach global event listeners
-    addEventListeners();
+    // =========================================================
+    //                    INITIALIZATION
+    // =========================================================
+    async function init() {
+        log.info(`Initializing Enhanced Search Results page (DB_VERSION: ${DB_VERSION})...`);
+        const params = getQueryParams();
+        searchText = (params.searchText || '').trim();
+        baseUrl = sanitiseBaseUrl(params.baseUrl || window.location.origin);
+        domainName = baseUrl ? new URL(baseUrl).hostname : 'Unknown';
+        if (!searchText) log.warn('No searchText parameter received!');
+        if (!baseUrl) {
+            log.error('Invalid or missing baseUrl! Extension may not function correctly.');
+            return;
+        }
+        document.title = `Search: '${escapeHtml(searchText)}' on ${domainName}`;
+        document.getElementById('page-title').textContent = `Results (${domainName})`;
+        newSearchInput.value = searchText;
+        try {
+            const data = await new Promise(res => chrome.storage.sync.get(['darkMode', 'resultsPerRequest', 'enableSummaries', 'openaiApiKey'], res));
+            document.body.classList.toggle('dark-mode', Boolean(data.darkMode));
+            RESULTS_PER_REQUEST = Number.isInteger(data.resultsPerRequest) ? data.resultsPerRequest : 75;
+            window.ENABLE_SUMMARIES = data.enableSummaries !== false && !!data.openaiApiKey;
+            log.debug('Settings loaded:', { perRequest: RESULTS_PER_REQUEST, summaries: window.ENABLE_SUMMARIES });
+        } catch (error) { log.error('Failed to load settings:', error); }
+        chrome.storage.onChanged.addListener((changes, area) => {
+            if (area !== 'sync') return;
+            if (changes.darkMode) document.body.classList.toggle('dark-mode', changes.darkMode.newValue);
+            if (changes.showTooltips) {
+                tooltipSettings.showTooltips = changes.showTooltips.newValue !== false;
+                updateTooltipState();
+            }
+            if ('enableSummaries' in changes || 'openaiApiKey' in changes) {
+                chrome.storage.sync.get(['enableSummaries', 'openaiApiKey'], (data) => {
+                    window.ENABLE_SUMMARIES = data.enableSummaries === true && !!data.openaiApiKey;
+                    renderResults();
+                });
+            }
+        });
+        addEventListeners(); // Call once after DOM elements are certain
+        document.getElementById('tree-container').style.display = 'block'; // Default view
+        if (searchText && baseUrl) performNewSearch(searchText);
+        else {
+            showNoResultsMessage();
+            showLoadingIndicator(false);
+        }
+        log.info('Initialization complete.');
+    }
+    init().catch(err => log.error('Initialization failed:', err));
 });
