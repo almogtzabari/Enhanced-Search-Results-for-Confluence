@@ -414,10 +414,6 @@ li .children li:last-child::before {
 
 /* Table Styles */
 
-th {
-    position: relative;
-}
-
 /* Column-resizer — light theme baseline */
 .th-resizer {
     position: absolute;
@@ -444,11 +440,11 @@ th {
 }
 
 .th-resizer:hover::before {
-    background-color: rgba(0, 123, 255, 0.6);
+    background-color: #999;
 }
 
 .th-resizer:hover {
-    background: linear-gradient(to right, transparent 0%, rgba(0, 123, 255, 0.6) 50%, transparent 100%);
+    background: none;
 }
 
 /* Dark-mode override — give the grab-zone a subtle light tint */
@@ -457,8 +453,9 @@ body.dark-mode .th-resizer::before {
 }
 
 body.dark-mode .th-resizer:hover::before {
-    background-color: rgba(102, 191, 255, 0.8);
+    background-color: #bbb;
 }
+
 
 .tree-container,
 .table-container {
@@ -475,7 +472,7 @@ table {
     min-width: 100%;
     /* never smaller than the container */
     border-collapse: collapse;
-    margin-bottom: 20px;
+    margin-bottom: 1px;
     box-shadow: 0 2px 4px var(--shadow-color);
     border-radius: var(--border-radius);
     overflow: hidden;
@@ -493,11 +490,23 @@ td {
 }
 
 th {
+    position: relative;
     background-color: var(--table-header-background);
     font-weight: 500;
     position: sticky;
     top: 0;
     z-index: 1;
+    cursor: pointer;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+th:hover {
+    background-color: #f8f8f8;
+    color: inherit;
+}
+
+body.dark-mode th:hover {
+    background-color: var(--table-row-hover);
 }
 
 tbody tr {
@@ -1587,4 +1596,26 @@ body.dark-mode .modal-resizer:hover::before {
 #modal-resizer-left {
     left: 0;
     border-radius: 0 4px 4px 0;
+}
+
+.table-header-wrapper {
+    overflow: hidden;
+    background-color: var(--table-header-background);
+    z-index: 10;
+    padding-right: 10px;
+    position: sticky;
+    top: 0;
+}
+
+.table-body-wrapper {
+    overflow-y: auto;
+    max-height: 100%;
+    margin-top: 0px;
+}
+
+.table-body-wrapper table,
+.table-header-wrapper table {
+    table-layout: fixed;
+    width: 100%;
+    border-collapse: collapse;
 }

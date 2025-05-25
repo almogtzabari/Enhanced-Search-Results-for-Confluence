@@ -1,401 +1,252 @@
 /**
  * options.js
- * Handles the options/settings page for the Enhanced Search Results for Confluence extension.
- * Users can configure domain-specific search input IDs and toggle dark mode.
+ * Updated for Enhanced Search Results for Confluence
+ * Compatible with DB_VERSION = 3 and store names 'summaries', 'conversations'
  */
 
-const DEBUG = false;
-const log = {
-    debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
-    info: (...args) => console.info('[INFO]', ...args),
-    warn: (...args) => console.warn('[WARN]', ...args),
-    error: (...args) => console.error('[ERROR]', ...args)
-};
+const DB_NAME = 'ConfluenceSummariesDB';
+const DB_VERSION = 3;
+const SUMMARY_STORE = 'summaries';
+const CONVERSATION_STORE = 'conversations';
 
 document.addEventListener('DOMContentLoaded', () => {
-    const clearSummariesButton = document.getElementById('clearSummaries');
-    const clearConversationsButton = document.getElementById('clearConversations');
-    clearConversationsButton.addEventListener('click', () => {
-        showConfirmationDialog('<h2>Are you sure you want to delete all saved conversation history?</h2>This cannot be undone.', () => {
-            triggerPoofEffect();
-            const request = indexedDB.open('ConfluenceSummariesDB', 2);
+    const $ = id => document.getElementById(id);
+    const saveBtn = $('save');
+    const addDomainBtn = $('addDomain');
+    const domainContainer = $('domainSettings');
+    const darkModeToggle = $('darkModeToggle');
+    const tooltipToggle = $('tooltipToggle');
+    const enableSummariesToggle = $('enableSummariesToggle');
+    const openaiApiKeyInput = $('openaiApiKey');
+    const customApiEndpointInput = $('customApiEndpoint');
+    const resultsPerRequestSelect = $('resultsPerRequest');
+    const userPromptInput = $('customUserPrompt');
+    const status = $('status');
+    const clearSummaries = $('clearSummaries');
+    const clearConversations = $('clearConversations');
 
-            request.onsuccess = () => {
-                const db = request.result;
-                if (!db.objectStoreNames.contains('conversations')) {
-                    return;
-                }
+    const showStatus = (msg, type) => {
+        status.textContent = msg;
+        status.className = `status ${type}`;
+    };
 
-                const tx = db.transaction('conversations', 'readwrite');
-                const store = tx.objectStore('conversations');
-                const clearRequest = store.clear();
+    const isValidDomain = domain =>
+        /^(?!:\/\/)([a-zA-Z0-9-_]+\.)*[a-zA-Z0-9][a-zA-Z0-9-_]+\.[a-zA-Z]{2,11}?$/.test(domain);
 
-                clearRequest.onerror = () => {
-                    console.error('[ERROR] Failed to clear conversation history:', clearRequest.error);
-                    alert('Failed to clear conversation history.', 'error');
-                };
-            };
+    const isValidInputId = id => /^[a-zA-Z0-9-_]+$/.test(id);
 
-            request.onerror = () => {
-                console.error('[ERROR] Failed to open database:', request.error);
-                alert('Could not access conversation store.', 'error');
-            };
+    const applyDir = input => {
+        const rtl = /[\u0590-\u05FF\u0600-\u06FF]/;
+        input.setAttribute('dir', rtl.test(input.value) ? 'rtl' : 'ltr');
+    };
+
+    const addDomainEntry = (domain = '', id = '') => {
+        const div = document.createElement('div');
+        div.className = 'domain-entry';
+
+        const domainInput = document.createElement('input');
+        domainInput.className = 'domain-input';
+        domainInput.placeholder = 'Domain (e.g., example.com)';
+        domainInput.value = domain;
+        domainInput.addEventListener('input', () => {
+            applyDir(domainInput);
+            saveBtn.disabled = false;
         });
-    });
+        applyDir(domainInput);
 
-    clearSummariesButton.addEventListener('click', () => {
-        showConfirmationDialog('<h2>Are you sure you want to delete all cached AI summaries?</h2>This will remove both <b>summaries</b> and <b>follow-up conversations</b>. This cannot be undone.', () => {
-            triggerPoofEffect();
-            const request = indexedDB.open('ConfluenceSummariesDB', 2);
+        const idInput = document.createElement('input');
+        idInput.className = 'search-input-id-input';
+        idInput.placeholder = 'Search input ID';
+        idInput.value = id;
+        idInput.addEventListener('input', () => (saveBtn.disabled = false));
 
-            request.onsuccess = () => {
-                const db = request.result;
-                const tx = db.transaction(['summaries', 'conversations'], 'readwrite');
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'remove-domain';
+        removeBtn.innerHTML = '&times;';
+        removeBtn.onclick = () => {
+            domainContainer.removeChild(div);
+            saveBtn.disabled = false;
+        };
 
-                const summariesStore = tx.objectStore('summaries');
-                const conversationsStore = tx.objectStore('conversations');
+        div.append(domainInput, idInput, removeBtn);
+        domainContainer.appendChild(div);
+    };
 
-                const clearSummaries = summariesStore.clear();
-                const clearConversations = conversationsStore.clear();
-
-                let cleared = 0;
-                const done = () => {
-                    if (++cleared === 2) {
-                        chrome.runtime.sendMessage({ action: 'summariesCleared' });
-                    }
-                };
-                const fail = (label, error) => {
-                    console.error(`[ERROR] Failed to clear ${label}:`, error);
-                    alert(`Failed to clear ${label}.`, 'error');
-                };
-
-                clearSummaries.onsuccess = done;
-                clearConversations.onsuccess = done;
-                clearSummaries.onerror = () => fail('summaries', clearSummaries.error);
-                clearConversations.onerror = () => fail('conversations', clearConversations.error);
-
-            };
-
-            request.onerror = () => {
-                console.error('[ERROR] Failed to open database:', request.error);
-                alert('Could not access summary cache.', 'error');
-            };
-        });
-    });
-
-    const domainSettingsContainer = document.getElementById('domainSettings');
-    const addDomainButton = document.getElementById('addDomain');
-    const saveButton = document.getElementById('save');
-    const statusDiv = document.getElementById('status');
-    const darkModeToggle = document.getElementById('darkModeToggle');
-    const tooltipToggle = document.getElementById('tooltipToggle');
-
-    // === Load and Apply Saved Settings ===
-    const resultsPerRequestSelect = document.getElementById('resultsPerRequest');
-    chrome.storage.sync.get(['domainSettings', 'darkMode', 'showTooltips', 'enableSummaries', 'resultsPerRequest', 'openaiApiKey', 'customApiEndpoint'], (syncData) => {
-        chrome.storage.local.get(['customUserPrompt'], (localData) => {
-            const data = { ...syncData, ...localData };
-
-            const domainSettings = data.domainSettings || [];
-
-            if (data.resultsPerRequest && ['50', '75', '100', '125', '150', '200'].includes(String(data.resultsPerRequest))) {
-                resultsPerRequestSelect.value = String(data.resultsPerRequest);
-            }
-
-            if (domainSettings.length > 0) {
-                domainSettings.forEach(entry => addDomainEntry(entry.domain, entry.searchInputId));
-            } else {
-                // Show at least one blank entry if no settings saved
-                addDomainEntry('', '');
-            }
-
-            darkModeToggle.checked = Boolean(data.darkMode);
-            const tooltipEnabled = data.showTooltips !== false;
-            tooltipToggle.checked = tooltipEnabled;
-
-            const enableSummariesToggle = document.getElementById('enableSummariesToggle');
-            enableSummariesToggle.checked = data.enableSummaries !== false;
-            enableSummariesToggle.addEventListener('change', () => {
-                const enabled = enableSummariesToggle.checked;
-                chrome.storage.sync.set({ enableSummaries: enabled }, () => {
-                    log.debug('Enable summaries setting saved:', enabled);
-                });
-            });
-            if (!('showTooltips' in data)) {
-                chrome.storage.sync.set({ showTooltips: true });
-            }
-
-            const customApiEndpointInput = document.getElementById('customApiEndpoint');
-            if (customApiEndpointInput) {
-                customApiEndpointInput.value = data.customApiEndpoint || '';
-                customApiEndpointInput.addEventListener('input', () => {
-                    chrome.storage.sync.set({ customApiEndpoint: customApiEndpointInput.value.trim() }, () => {
-                        log.debug('Saved custom API endpoint');
-                    });
-                });
-            }
-
-            if (darkModeToggle.checked) {
-                document.body.classList.add('dark-mode');
-            }
-
-            const openaiApiKeyInput = document.getElementById('openaiApiKey');
-            if (openaiApiKeyInput) {
-                openaiApiKeyInput.value = data.openaiApiKey || '';
-                openaiApiKeyInput.addEventListener('input', () => {
-                    chrome.storage.sync.set({ openaiApiKey: openaiApiKeyInput.value.trim() }, () => {
-                        log.debug('Saved OpenAI API key');
-                    });
-                });
-            }
-
-            const customUserPromptInput = document.getElementById('customUserPrompt');
-            if (customUserPromptInput) {
-                if (!customUserPromptInput.value) {
-                    customUserPromptInput.value = data.customUserPrompt || '';
-                }
-
-                const savePrompt = (() => {
-                    let timeout;
-                    return () => {
-                        clearTimeout(timeout);
-                        timeout = setTimeout(() => {
-                            const trimmed = customUserPromptInput.value.trim();
-                            chrome.storage.local.set({ customUserPrompt: trimmed }, () => {
-                                if (chrome.runtime.lastError) {
-                                    console.error('[ERROR] Failed to save prompt:', chrome.runtime.lastError.message);
-                                } else {
-                                    console.log('[DEBUG] Saved custom user prompt');
-                                }
-                            });
-                        }, 300);
-                    };
-                })();
-
-                applyInputDirection(customUserPromptInput);
-                customUserPromptInput.addEventListener('input', () => {
-                    applyInputDirection(customUserPromptInput);
-                    savePrompt();
-                });
-            }
-        });
-    });
-
-    // === Event: Add Domain Entry ===
-    addDomainButton.addEventListener('click', () => {
-        addDomainEntry('', '');
-        saveButton.disabled = false;
-    });
-
-    // === Event: Toggle Dark Mode ===
-    darkModeToggle.addEventListener('change', () => {
-        const isDark = darkModeToggle.checked;
-        document.body.classList.toggle('dark-mode', isDark);
-        chrome.storage.sync.set({ darkMode: isDark }, () => {
-            log.debug('Dark mode setting saved:', isDark);
-        });
-    });
-
-    tooltipToggle.addEventListener('change', () => {
-        const show = tooltipToggle.checked;
-        chrome.storage.sync.set({ showTooltips: show }, () => {
-            log.debug('Tooltip setting saved:', show);
-        });
-    });
-
-    // === Event: Save Settings ===
-    resultsPerRequestSelect.addEventListener('change', () => {
-        const value = parseInt(resultsPerRequestSelect.value, 10);
-        chrome.storage.sync.set({ resultsPerRequest: value }, () => {
-            log.debug('Saved resultsPerRequest:', value);
-        });
-    });
-    saveButton.addEventListener('click', () => {
-        const domainEntries = domainSettingsContainer.querySelectorAll('.domain-entry');
+    const saveDomains = () => {
+        const entries = domainContainer.querySelectorAll('.domain-entry');
         const domainSettings = [];
-        const domains = [];
 
-        for (const entry of domainEntries) {
-            const domainInput = entry.querySelector('.domain-input');
-            const searchInputIdInput = entry.querySelector('.search-input-id-input');
+        for (const entry of entries) {
+            const domain = entry.querySelector('.domain-input').value.trim();
+            const id = entry.querySelector('.search-input-id-input').value.trim() || 'search-filter-input';
 
-            const domain = domainInput.value.trim();
-            const searchInputId = searchInputIdInput.value.trim() || 'search-filter-input';
-
-            if (isValidDomain(domain) && isValidInputId(searchInputId)) {
-                domainSettings.push({ domain, searchInputId });
-                domains.push(domain);
-            } else {
-                log.warn('Invalid domain or input ID detected. Ignoring entry.');
-                showStatus('Invalid input. Please check your domain and search input ID.', 'error');
+            if (!isValidDomain(domain) || !isValidInputId(id)) {
+                showStatus('Invalid domain or input ID.', 'error');
                 return;
             }
-        }
-
-        if (domainSettings.length === 0) {
-            chrome.storage.sync.set({ domainSettings: [] }, () => {
-                showStatus('No domains configured. Extension will not auto-inject.', 'success');
-                saveButton.disabled = true;
-            });
-            return;
+            domainSettings.push({ domain, searchInputId: id });
         }
 
         const isFirefox = typeof InstallTrigger !== 'undefined';
-
-        if (isFirefox) {
-            // Firefox: assume permission declared in manifest
+        const save = () => {
             chrome.storage.sync.set({ domainSettings }, () => {
-                log.info('Saved domain settings:', domainSettings);
-                showStatus('Settings saved (permissions assumed granted in Firefox).', 'success');
-                saveButton.disabled = true;
+                showStatus('Settings saved.', 'success');
+                saveBtn.disabled = true;
             });
-        } else if (chrome.permissions && typeof chrome.permissions.request === 'function') {
-            const origins = domains.map(domain => `*://${domain}/*`);
-            chrome.permissions.request({ origins }, (granted) => {
-                if (granted) {
-                    chrome.storage.sync.set({ domainSettings }, () => {
-                        log.info('Saved domain settings:', domainSettings);
-                        showStatus('Settings saved and permissions granted!', 'success');
-                        saveButton.disabled = true;
-                    });
-                } else {
-                    if (chrome.runtime.lastError) {
-                        console.error(chrome.runtime.lastError);
-                        showStatus(`Permissions denied: ${chrome.runtime.lastError.message}`, 'error');
-                    } else {
-                        log.warn('User denied permissions for domains:', origins);
-                        showStatus('Permissions denied.', 'error');
-                    }
-                }
-            });
-        } else {
-            // Fallback (shouldn't happen in Chrome or Firefox)
-            chrome.storage.sync.set({ domainSettings }, () => {
-                showStatus('Settings saved (no permission API).', 'success');
-                saveButton.disabled = true;
-            });
-        }
-    });
+        };
 
-    // === Helper: Add Domain Entry to DOM ===
-    function addDomainEntry(domainValue, searchInputIdValue) {
-        const entryDiv = document.createElement('div');
-        entryDiv.className = 'domain-entry';
+        if (isFirefox || !chrome.permissions?.request) return save();
 
-        const domainInput = document.createElement('input');
-        domainInput.type = 'text';
-        domainInput.placeholder = 'Domain (e.g., example.com)';
-        domainInput.className = 'domain-input';
-        domainInput.value = domainValue;
-        domainInput.addEventListener('input', () => {
-            saveButton.disabled = false;
-            applyInputDirection(domainInput);
+        const origins = domainSettings.map(d => `*://${d.domain}/*`);
+        chrome.permissions.request({ origins }, granted => {
+            if (granted) return save();
+            showStatus('Permission denied for some domains.', 'error');
         });
-        applyInputDirection(domainInput);
+    };
 
-        const searchInputIdInput = document.createElement('input');
-
-        searchInputIdInput.type = 'text';
-        searchInputIdInput.placeholder = 'Search input ID (e.g., search-filter-input)';
-        searchInputIdInput.className = 'search-input-id-input';
-        searchInputIdInput.value = searchInputIdValue;
-        searchInputIdInput.addEventListener('input', () => {
-            saveButton.disabled = false;
+    const openDb = () =>
+        new Promise((resolve, reject) => {
+            const req = indexedDB.open(DB_NAME, DB_VERSION);
+            req.onerror = () => reject(req.error);
+            req.onsuccess = () => resolve(req.result);
+            req.onupgradeneeded = e => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(SUMMARY_STORE))
+                    db.createObjectStore(SUMMARY_STORE, { keyPath: ['contentId', 'baseUrl'] });
+                if (!db.objectStoreNames.contains(CONVERSATION_STORE))
+                    db.createObjectStore(CONVERSATION_STORE, { keyPath: ['contentId', 'baseUrl'] });
+            };
         });
 
-        const removeButton = document.createElement('button');
-        removeButton.className = 'remove-domain';
-        removeButton.innerHTML = '&times;';
-        removeButton.setAttribute('aria-label', 'Remove domain');
-        removeButton.title = 'Remove domain';
-        removeButton.addEventListener('click', () => {
-            domainSettingsContainer.removeChild(entryDiv);
-            saveButton.disabled = false;
-        });
+    const clearStores = (stores, onDone) => {
+        openDb()
+            .then(db => {
+                const tx = db.transaction(stores, 'readwrite');
+                let done = 0;
+                stores.forEach(storeName => {
+                    const req = tx.objectStore(storeName).clear();
+                    req.onsuccess = () => { if (++done === stores.length) onDone(); };
+                    req.onerror = () => showStatus(`Failed to clear ${storeName}`, 'error');
+                });
+            })
+            .catch(() => showStatus('Failed to open DB.', 'error'));
+    };
 
-        entryDiv.appendChild(domainInput);
-        entryDiv.appendChild(searchInputIdInput);
-        entryDiv.appendChild(removeButton);
-        domainSettingsContainer.appendChild(entryDiv);
-    }
-
-    // === Helper: Show Status Message ===
-    function showStatus(message, type) {
-        statusDiv.textContent = message;
-        statusDiv.className = `status ${type}`;
-    }
-
-    // === Helper: Domain Format Validation ===
-    function isValidDomain(domain) {
-        const regex = /^(?!:\/\/)([a-zA-Z0-9-_]+\.)*[a-zA-Z0-9][a-zA-Z0-9-_]+\.[a-zA-Z]{2,11}?$/;
-        return regex.test(domain);
-    }
-
-    // === Toggle Advanced Settings Section ===
-    const advToggle = document.getElementById('advancedSettingsToggle');
-    const advContent = document.getElementById('advancedSettingsContent');
-    advToggle.addEventListener('click', () => {
-        const isVisible = advContent.style.display === 'block';
-        advContent.style.display = isVisible ? 'none' : 'block';
-        advToggle.textContent = `Advanced Settings ${isVisible ? '▸' : '▾'}`;
-    });
-
-    // === Helper: Input ID Validation ===
-    function isValidInputId(inputId) {
-        const regex = /^[a-zA-Z0-9-_]+$/;
-        return regex.test(inputId);
-    }
-
-    // === Helper: Auto-detect and apply RTL or LTR direction ===
-    function applyInputDirection(input) {
-        const rtlChars = /[\u0590-\u05FF\u0600-\u06FF]/; // Hebrew + Arabic
-        const direction = rtlChars.test(input.value) ? 'rtl' : 'ltr';
-        input.setAttribute('dir', direction);
-    }
-
-    function showConfirmationDialog(messageHtml, onConfirm) {
-        const overlay = document.getElementById('dialog-overlay');
-        const message = document.getElementById('dialog-message');
-        const closeBtn = document.getElementById('dialog-close');
-        const cancelBtn = document.getElementById('dialog-cancel');
-        const confirmBtn = document.getElementById('dialog-confirm');
-
-        message.innerHTML = messageHtml;
+    const confirm = (msg, cb) => {
+        const overlay = $('dialog-overlay');
+        const msgBox = $('dialog-message');
+        msgBox.innerHTML = msg;
         overlay.style.display = 'flex';
+        const cleanup = () => (overlay.style.display = 'none');
+        $('dialog-confirm').onclick = () => { cleanup(); cb(); };
+        $('dialog-cancel').onclick = cleanup;
+        $('dialog-close').onclick = cleanup;
+        overlay.onclick = e => { if (e.target === overlay) cleanup(); };
+    };
 
-        function cleanup() {
-            overlay.style.display = 'none';
-            closeBtn.removeEventListener('click', hide);
-            cancelBtn.removeEventListener('click', hide);
-            confirmBtn.removeEventListener('click', confirm);
-            overlay.removeEventListener('click', onOverlayClick);
+    const poof = () => {
+        const audio = $('poof-audio');
+        if (audio) audio.play().catch(() => {});
+    };
+
+    addDomainBtn.onclick = () => {
+        addDomainEntry();
+        saveBtn.disabled = false;
+    };
+
+    saveBtn.onclick = saveDomains;
+
+    darkModeToggle.onchange = () => {
+        const isDark = darkModeToggle.checked;
+        document.body.classList.toggle('dark-mode', isDark);
+        chrome.storage.sync.set({ darkMode: isDark });
+    };
+
+    tooltipToggle.onchange = () => {
+        chrome.storage.sync.set({ showTooltips: tooltipToggle.checked });
+    };
+
+    enableSummariesToggle.onchange = () => {
+        chrome.storage.sync.set({ enableSummaries: enableSummariesToggle.checked });
+    };
+
+    openaiApiKeyInput.oninput = () => {
+        chrome.storage.sync.set({ openaiApiKey: openaiApiKeyInput.value.trim() });
+    };
+
+    customApiEndpointInput.oninput = () => {
+        chrome.storage.sync.set({ customApiEndpoint: customApiEndpointInput.value.trim() });
+    };
+
+    userPromptInput.oninput = (() => {
+        let t;
+        return () => {
+            clearTimeout(t);
+            t = setTimeout(() => {
+                chrome.storage.local.set({ customUserPrompt: userPromptInput.value.trim() });
+            }, 300);
+        };
+    })();
+
+    resultsPerRequestSelect.onchange = () => {
+        const val = parseInt(resultsPerRequestSelect.value, 10);
+        chrome.storage.sync.set({ resultsPerRequest: val });
+    };
+
+    clearSummaries.onclick = () => {
+        confirm(
+            '<h2>Delete ALL AI summaries and conversations?</h2>This cannot be undone.',
+            () => {
+                poof();
+                clearStores([SUMMARY_STORE, CONVERSATION_STORE], () => {
+                    showStatus('All summaries and conversations cleared.', 'success');
+                    chrome.runtime.sendMessage({ action: 'summariesCleared' });
+                });
+            }
+        );
+    };
+
+    clearConversations.onclick = () => {
+        confirm(
+            '<h2>Delete saved follow-up Q&A only?</h2>This cannot be undone.',
+            () => {
+                poof();
+                clearStores([CONVERSATION_STORE], () => {
+                    showStatus('Conversations cleared.', 'success');
+                });
+            }
+        );
+    };
+
+    $('advancedSettingsToggle').onclick = () => {
+        const content = $('advancedSettingsContent');
+        const shown = content.style.display === 'block';
+        content.style.display = shown ? 'none' : 'block';
+        $('advancedSettingsToggle').textContent = `Advanced Settings ${shown ? '▸' : '▾'}`;
+    };
+
+    chrome.storage.sync.get(
+        ['domainSettings', 'darkMode', 'showTooltips', 'enableSummaries', 'openaiApiKey', 'customApiEndpoint', 'resultsPerRequest'],
+        data => {
+            chrome.storage.local.get(['customUserPrompt'], local => {
+                const merged = { ...data, ...local };
+                if (merged.domainSettings?.length) {
+                    merged.domainSettings.forEach(({ domain, searchInputId }) => addDomainEntry(domain, searchInputId));
+                } else {
+                    addDomainEntry();
+                }
+                darkModeToggle.checked = !!merged.darkMode;
+                tooltipToggle.checked = merged.showTooltips !== false;
+                enableSummariesToggle.checked = merged.enableSummaries !== false;
+                openaiApiKeyInput.value = merged.openaiApiKey || '';
+                customApiEndpointInput.value = merged.customApiEndpoint || '';
+                userPromptInput.value = merged.customUserPrompt || '';
+                applyDir(userPromptInput);
+                if (merged.resultsPerRequest) {
+                    resultsPerRequestSelect.value = String(merged.resultsPerRequest);
+                }
+                if (merged.darkMode) document.body.classList.add('dark-mode');
+            });
         }
-
-        function hide() {
-            cleanup();
-        }
-
-        function confirm() {
-            cleanup();
-            onConfirm();
-        }
-
-        function onOverlayClick(e) {
-            if (e.target === overlay) hide();
-        }
-
-        closeBtn.addEventListener('click', hide);
-        cancelBtn.addEventListener('click', hide);
-        confirmBtn.addEventListener('click', confirm);
-        overlay.addEventListener('click', onOverlayClick);
-    }
-
-    function triggerPoofEffect() {
-        const audio = document.getElementById('poof-audio');
-
-        if (audio) {
-            audio.currentTime = 0;
-            audio.play().catch(e => console.warn('Poof sound error:', e));
-        }
-    }
+    );
 });
