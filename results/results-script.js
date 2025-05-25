@@ -15,8 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // =========================================================
 
     // --- Configuration ---
-    const DEBUG = true; // Toggle verbose DEBUG logging
-    const USE_LOCAL_PROXY = true; // Use local proxy for OpenAI requests
+    const DEBUG = false; // Toggle verbose DEBUG logging
+    const USE_LOCAL_PROXY = false; // Use local proxy for OpenAI requests
     const DB_NAME = 'ConfluenceSummariesDB';
     const DB_VERSION = 3; // << INCREMENTED DB VERSION to fix store creation issues
     const SUMMARY_STORE_NAME = 'summaries';
