@@ -149,6 +149,15 @@ body.dark-mode button:disabled {
 .status {
     text-align: center;
     font-weight: bold;
+    margin-top: 12px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 14px;
+    line-height: 1.4;
+    display: inline-block;
+    max-width: 100%;
+    word-wrap: break-word;
+    width: 100%;
 }
 
 .status.success {
@@ -156,14 +165,28 @@ body.dark-mode button:disabled {
     /* Green for success */
 }
 
-.status.error {
-    color: #d32f2f;
-    /* Red for errors */
+.status.success {
+    background-color: #e6f4ea;
+    color: #2e7d32;
+    border: 1px solid #c8e6c9;
 }
 
-.collapsible-heading {
-    cursor: pointer;
-    user-select: none;
+.status.error {
+    background-color: #fdecea;
+    color: #d32f2f;
+    border: 1px solid #f5c6cb;
+}
+
+body.dark-mode .status.success {
+    background-color: #1b3c26;
+    color: #81c784;
+    border: 1px solid #388e3c;
+}
+
+body.dark-mode .status.error {
+    background-color: #3b1f1f;
+    color: #e57373;
+    border: 1px solid #e53935;
 }
 
 /* Dark Theme Styles */
@@ -177,6 +200,7 @@ body.dark-mode .container {
 }
 
 
+body.dark-mode .container h1,
 body.dark-mode .container h2 {
     color: #ffffff;
 }

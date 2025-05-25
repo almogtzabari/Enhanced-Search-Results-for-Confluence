@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
         You are a helpful AI assistant answering follow-up questions about a Confluence document and its summary.
         Respond clearly, accurately, and in plain text. Avoid reiterating the full summary format.
         Answer as a helpful peer who understands the document’s purpose and key details.
-        Output only valid, clean and nicely formatted HTML (no Markdown or code blocks, and no \`\`\`html)
+        Important: Output only valid, clean and nicely formatted HTML (no Markdown or code blocks, and no \`\`\`html)
     `;
 
     // --- Global State ---
@@ -76,11 +76,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const tooltipBoundNodes = new WeakMap();
     let lastTextFilter = '', lastSpaceKey = '', lastContributorKey = '';
     let colWidths = [...DEFAULT_COL_WIDTHS];
+    let currentScrollTarget = null;
 
     // --- DOM Elements (Cached) ---
     const treeContainer = document.getElementById('tree-container');
     const tableContainer = document.getElementById('table-container');
-    const loadingIndicator = document.getElementById('loading-indicator');
     const spaceOptionsContainer = document.getElementById('space-options');
     const contributorOptionsContainer = document.getElementById('contributor-options');
     const spaceFilterInput = document.getElementById('space-filter');
@@ -92,7 +92,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const newSearchButton = document.getElementById('new-search-button');
     const mainSearchClear = document.getElementById('main-search-clear');
     const scrollToTopButton = document.getElementById('scroll-to-top');
-    const scrollableContainer = document.querySelector('.container');
     const summaryModal = document.getElementById('summary-modal');
     const resizableModal = document.getElementById('resizable-modal');
 
@@ -171,7 +170,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return doc.body.innerHTML;
     }
     function toggleClearIcon(inputElem, clearIcon) { clearIcon.style.display = inputElem.value.trim() ? 'inline' : 'none'; } // Using trim for accuracy
-    function showLoadingIndicator(show) { loadingIndicator.style.display = show ? 'flex' : 'none'; }
+    function showLoadingIndicator(show) {
+        const overlay = document.getElementById('global-loading-overlay');
+        if (overlay) overlay.style.display = show ? 'flex' : 'none';
+    }
     function showNoResultsMessage() {
         const message = '<p>No results found.</p>';
         treeContainer.innerHTML = message;
@@ -343,7 +345,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function resetDataAndFetchResults() {
         log.debug('[Search] Resetting data and fetching fresh results');
-        scrollableContainer?.removeEventListener('scroll', infiniteScrollHandler);
         nodeMap = {};
         roots = [];
         searchResultIds = new Set();
@@ -428,7 +429,13 @@ document.addEventListener('DOMContentLoaded', () => {
             showLoadingIndicator(false);
             loading = false;
             isFetching = false;
-            if (!allResultsLoaded) scrollableContainer?.addEventListener('scroll', infiniteScrollHandler);
+            if (!allResultsLoaded && currentScrollTarget) {
+                attachScrollListener(currentScrollTarget);
+                // Slightly scroll up to break "at bottom" state
+                requestAnimationFrame(() => {
+                    currentScrollTarget.scrollTop -= 1;
+                });
+            }
         }
     }
 
@@ -440,7 +447,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentBatch = allResults.slice(Math.max(0, start - RESULTS_PER_REQUEST)); // Process only the newly fetched batch
 
         currentBatch.forEach(pageData => {
-            if (pageData.space?.key && !fullSpaceList.find(s => s.key === pageData.space.key)) {
+            if (pageData.space?.key && !fullSpaceList.find(s => s.key === pageData.space.key) && !newSpaces.find(s => s.key === pageData.space.key)) {
                 const iconUrl = pageData.space.icon?.path ? `${baseUrl}${pageData.space.icon.path}` : `${baseUrl}/images/logo/default-space-logo.svg`;
                 newSpaces.push({ key: pageData.space.key, name: pageData.space.name, iconUrl });
                 pageData.space.iconUrl = iconUrl; // Cache for table view
@@ -448,7 +455,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const creator = pageData.history?.createdBy;
             if (creator) {
                 const key = creator.username || creator.userKey || creator.accountId;
-                if (key && !fullContributorList.find(c => c.key === key)) {
+                if (key && !fullContributorList.find(c => c.key === key) && !newContributors.find(c => c.key === key)) {
                     const avatarUrl = `${baseUrl}${creator.profilePicture?.path || '/images/icons/profilepics/default.png'}`;
                     newContributors.push({ key, name: creator.displayName, avatarUrl });
                     creator.avatarUrl = avatarUrl; // Cache for table view
@@ -550,7 +557,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (filteredResults.length === 0 && allResultsLoaded && allResults.length > 0) { // Check allResults to ensure it's not an initial empty load
             showNoResultsMessage();
         } else {
+            const prevScrollTop = document.querySelector('.table-body-wrapper')?.scrollTop || 0;
             updateTableHtml(filteredResults);
+            document.querySelector('.table-body-wrapper')?.scrollTo({ top: prevScrollTop });
             updateTreeHtml(filteredResults);
             addEventListeners(); // Re-attach for new elements
         }
@@ -566,7 +575,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const tooltipAttrs = isResult ? ` data-title="${escapeHtml(node.title)}" data-contributor="${escapeHtml(node.contributor)}" data-modified="${escapeHtml(node.modified)}" data-type="${node.type}"` : '';
             const icon = typeIcons[node.type] || '📄';
             html += `<li id="${id}" class="${isResult ? 'search-result' : 'ancestor'}"${tooltipAttrs}>`;
-            html += `<span class="arrow ${arrowClass}"></span> <a href="${node.url}" class="tree-node" target="_blank">${icon}&nbsp;&nbsp;${escapeHtml(node.title)}</a>`;
+            html += `<span class="arrow ${arrowClass}"></span> <a href="${node.url}" class="tree-node" target="_blank">${isResult ? `${icon}&nbsp;&nbsp;` : ''}${escapeHtml(node.title)}</a>`;
             if (isResult && window.ENABLE_SUMMARIES) {
                 const btnText = summaryCache.has(node.id) ? '✅ Summary Available!' : '🧠 Summarize';
                 html += `<div><button class="summarize-button" data-id="${node.id}">${btnText}</button></div>`;
@@ -577,7 +586,15 @@ document.addEventListener('DOMContentLoaded', () => {
         html += '</ul>';
         return html;
     }
-    function updateTreeHtml(results) { // FIX 1: Logic based on original script for tree building
+    function updateTreeHtml(results) {
+        // Preserve collapsed state before rebuilding
+        const currentCollapsed = document.querySelectorAll('.arrow.collapsed');
+        collapsedNodes.clear();
+        currentCollapsed.forEach(arrow => {
+            const li = arrow.closest('li');
+            if (li?.id) collapsedNodes.add(li.id);
+        });
+
         nodeMap = {};
         roots = []; // Reset before build
 
@@ -722,6 +739,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tableContainer.appendChild(headerWrapper);
         tableContainer.appendChild(bodyWrapper);
         updateSortIcons();
+        syncTableHorizontalScroll();
     }
 
     function attachColResizer(resizerEl, idx, headerColGroup, bodyColGroup, minWidth = 60) {
@@ -760,6 +778,41 @@ document.addEventListener('DOMContentLoaded', () => {
             colWidths[idx] = DEFAULT_COL_WIDTHS[idx];
             syncWidths();
         });
+    }
+
+    function syncTableHorizontalScroll() {
+        const tableBodyWrapper = document.querySelector('.table-body-wrapper');
+        const tableHeaderWrapper = document.querySelector('.table-header-wrapper');
+        if (tableBodyWrapper && tableHeaderWrapper) {
+            if (tableBodyWrapper.dataset.syncScrollAttached === 'true') {
+                log.debug('Table scroll synchronization already set up.');
+                return;
+            }
+
+            log.debug('Setting up table scroll synchronization');
+            tableBodyWrapper.addEventListener('scroll', () => {
+                tableHeaderWrapper.scrollLeft = tableBodyWrapper.scrollLeft;
+            });
+            tableBodyWrapper.dataset.syncScrollAttached = 'true';
+        } else {
+            log.warn('Table scroll synchronization not set up: tableBodyWrapper or tableHeaderWrapper is missing.');
+        }
+    }
+
+    function attachScrollListener(target) {
+        if (!target || target === currentScrollTarget) return;
+        if (currentScrollTarget) {
+            currentScrollTarget.removeEventListener('scroll', infiniteScrollHandler);
+            currentScrollTarget.removeEventListener('scroll', handleScrollToTopVisibility);
+        }
+        currentScrollTarget = target;
+        currentScrollTarget.addEventListener('scroll', infiniteScrollHandler);
+        currentScrollTarget.addEventListener('scroll', handleScrollToTopVisibility);
+    }
+
+    function handleScrollToTopVisibility() {
+        if (!currentScrollTarget) return;
+        scrollToTopButton.style.display = currentScrollTarget.scrollTop > 200 ? 'block' : 'none';
     }
 
     // =========================================================
@@ -848,7 +901,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const bodyHtml = sanitizeHtmlWithDOM(bodyHtmlRaw);
         const localData = await new Promise(resolve => chrome.storage.local.get(['customUserPrompt'], resolve));
         const userPrompt = (localData.customUserPrompt || '').trim();
-        const contentDetails = `--- Content Details ---\nTitle: ${pageData.title}\nContributor: ${pageData.history?.createdBy?.displayName || 'Unknown'}\nCreated: ${pageData.history.createdDate || 'N/A'}\nModified: ${pageData.version?.when ? formatDate(pageData.version.when) : 'N/A'}\nType: ${pageData.type}\nSpace: ${pageData.space?.name || 'N/A'}\nParent Title: ${pageData.parentTitle || 'N/A'}\nURL: ${buildConfluenceUrl(pageData._links.webui)}\nContent (HTML): ${bodyHtml}`.trim();
+        const contentDetails = `
+            --- Content Details ---\n
+            Title: ${pageData.title}\n
+            Contributor: ${pageData.history?.createdBy?.displayName || 'Unknown'}\n
+            Created: ${pageData.history.createdDate || 'N/A'}\n
+            Modified: ${pageData.version?.when ? formatDate(pageData.version.when) : 'N/A'}\n
+            SpaceIcon: ${pageData.space?.icon?.path ? `${baseUrl}${pageData.space.icon.path}` : `${baseUrl}/images/logo/default-space-logo.svg`}\n
+            Type: ${pageData.type}\nSpace: ${pageData.space?.name || 'N/A'}\n
+            Parent Title: ${pageData.parentTitle || 'N/A'}\n
+            URL: ${buildConfluenceUrl(pageData._links.webui)}\n
+            Content (HTML): ${bodyHtml}`.trim();
         return (userPrompt ? `${userPrompt}\n\n` : '') + contentDetails;
     }
     function renderConversationThread(container, conversation) {
@@ -1214,6 +1277,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('table-view-btn').classList.remove('active');
             allExpanded = true;
         }
+        attachScrollListener(document.querySelector('.container'));
     }
     function switchToTableView() {
         log.debug('Switching to Table View');
@@ -1221,6 +1285,8 @@ document.addEventListener('DOMContentLoaded', () => {
         tableContainer.style.display = 'block';
         document.getElementById('tree-view-btn').classList.remove('active');
         document.getElementById('table-view-btn').classList.add('active');
+        syncTableHorizontalScroll();
+        attachScrollListener(document.querySelector('.table-body-wrapper'));
     }
     function onTypeFilterChange() {
         log.debug('[Filter] Type changed:', typeFilter.value);
@@ -1262,8 +1328,8 @@ document.addEventListener('DOMContentLoaded', () => {
         resetDataAndFetchResults();
     }
     function infiniteScrollHandler() {
-        if (!scrollableContainer) return;
-        const reached = scrollableContainer.scrollTop + scrollableContainer.clientHeight >= scrollableContainer.scrollHeight - SCROLL_THRESHOLD_PX;
+        if (!currentScrollTarget) return;
+        const reached = currentScrollTarget.scrollTop + currentScrollTarget.clientHeight >= currentScrollTarget.scrollHeight - SCROLL_THRESHOLD_PX;
         if (reached) loadMoreResults();
     }
     function addEventListeners() {
@@ -1319,11 +1385,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!evt.target.closest('#space-filter-container')) spaceOptionsContainer.style.display = 'none';
             if (!evt.target.closest('#contributor-filter-container')) contributorOptionsContainer.style.display = 'none';
         };
-        scrollToTopButton.onclick = () => scrollableContainer?.scrollTo({ top: 0, behavior: 'smooth' });
+        scrollToTopButton.onclick = () => {
+            currentScrollTarget?.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+
+        const isTreeView = document.getElementById('tree-view-btn').classList.contains('active');
+        const initialScrollTarget = isTreeView
+            ? document.querySelector('.container')
+            : document.querySelector('.table-body-wrapper');
+        attachScrollListener(initialScrollTarget);
+
         document.getElementById('open-options').onclick = () => { chrome.runtime.openOptionsPage ? chrome.runtime.openOptionsPage() : window.open(chrome.runtime.getURL('options/options.html')); };
-        scrollableContainer?.removeEventListener('scroll', infiniteScrollHandler);
-        scrollableContainer?.addEventListener('scroll', infiniteScrollHandler);
-        scrollableContainer?.addEventListener('scroll', () => { scrollToTopButton.style.display = (scrollableContainer.scrollTop > 200) ? 'block' : 'none'; });
         setupModalResizers();
         // Initial state for clear icons after potential init value setting
         toggleClearIcon(textFilterInput, document.getElementById('filter-text-clear'));
