@@ -81,7 +81,7 @@ input:checked+.slider:before {
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
-.container h2 {
+.container h1{
     text-align: center;
     color: #333333;
     margin-bottom: 30px;
@@ -120,7 +120,7 @@ button {
     padding: 14px;
     background-color: #1a73e8;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     color: #ffffff;
     font-size: 16px;
     cursor: pointer;
@@ -135,6 +135,11 @@ button:hover:enabled {
 button:disabled {
     background-color: #cccccc;
     cursor: not-allowed;
+}
+
+body.dark-mode button:disabled {
+    background-color: #555555;
+    color: #aaa;
 }
 
 .status-container {
@@ -222,86 +227,116 @@ body.dark-mode input:checked+.slider:before {
 
 .domain-entry {
     display: flex;
-    align-items: stretch;
-    gap: 10px;
-    margin-bottom: 10px;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background-color: #ffffff;
+    margin-bottom: 14px;
+    transition: box-shadow 0.2s ease-in-out, background-color 0.2s;
+}
+
+.domain-entry:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .domain-entry .domain-input {
-    padding: 0 12px;
+    padding: 8px 12px;
     font-size: 14px;
-    line-height: 1.2;
     height: 36px;
     margin-top: 10px;
     border: 1px solid #cccccc;
     border-radius: 4px;
     box-sizing: border-box;
-    flex: 1;
+    background-color: #fff;
+    color: #000;
+    flex: 2;
+    min-width: 0;
 }
 
 .domain-entry .search-input-id-input {
-    padding: 0 12px;
+    padding: 8px 12px;
     font-size: 14px;
-    line-height: 1.2;
     height: 36px;
     max-width: 200px;
     margin-top: 10px;
     border: 1px solid #cccccc;
     border-radius: 4px;
     box-sizing: border-box;
-    flex: 1;
-}
-
-#addDomain:hover {
-    background-color: #1669c1;
-}
-
-/* Add styles for the domain settings */
-#domainSettings {
-    margin-bottom: 20px;
+    background-color: #fff;
+    color: #000;
+    flex: 1.2;
+    min-width: 0;
 }
 
 .domain-entry .remove-domain {
-    background-color: #d32f2f;
-    color: #ffffff;
+    background-color: #e53935;
+    color: #fff;
     border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-    line-height: 1.2;
+    border-radius: 6px;
+    font-size: 20px;
     height: 36px;
-    width: 80px;
-    padding: 0 16px;
+    width: 36px;
+    padding: 0;
     box-sizing: border-box;
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: background-color 0.2s, transform 0.2s;
 }
 
+.domain-entry .remove-domain:hover {
+    background-color: #d32f2f;
+    transform: scale(1.1);
+}
+
+body.dark-mode .domain-entry .remove-domain {
+    background-color: #ef5350;
+}
+
+body.dark-mode .domain-entry .remove-domain:hover {
+    background-color: #e53935;
+}
+
+/* Add Domain button */
 #addDomain {
     background-color: #1a73e8;
     color: #ffffff;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
     padding: 10px 16px;
     margin-top: 10px;
+    transition: background-color 0.3s ease;
 }
 
-/* Adjust Dark Mode styles */
+#addDomain:hover {
+    background-color: #1669c1;
+    transform: scale(1.05);
+    transition: background-color 0.2s, transform 0.2s;
+}
+
+/* --- Dark Mode Adjustments --- */
+body.dark-mode .domain-entry {
+    background-color: #2b2b2b;
+    border: 1px solid #444;
+}
+
 body.dark-mode .domain-entry .domain-input,
 body.dark-mode .domain-entry .search-input-id-input {
     background-color: #2b2b2b;
-    border: 1px solid #555555;
+    border: 1px solid #555;
     color: #ffffff;
 }
 
 body.dark-mode .domain-entry .remove-domain {
-    background-color: #e57373;
+    background-color: #ef5350;
 }
 
 body.dark-mode .domain-entry .remove-domain:hover {
-    background-color: #ef5350;
+    background-color: #e53935;
 }
 
 body.dark-mode #addDomain {
@@ -311,6 +346,7 @@ body.dark-mode #addDomain {
 body.dark-mode #addDomain:hover {
     background-color: #336fcb;
 }
+
 
 .section-heading {
     margin-top: 40px;
@@ -415,7 +451,7 @@ body.dark-mode .openai-api-input {
     min-height: 100px;
     padding: 12px;
     font-size: 14px;
-    border-radius: 4px;
+    border-radius: 6px;
     border: 1px solid #cccccc;
     resize: vertical;
     width: 100%;
@@ -438,19 +474,21 @@ body.dark-mode #advancedSettingsContent textarea#customUserPrompt {
     /* Red for destructive action */
     color: #ffffff;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
     padding: 10px 16px;
     margin-top: 10px;
-    height: 40px;
+    height: 55px;
     font-size: 14px;
     min-width: 100px;
-    width: 40%
+    width: 25%
 }
 
 #clearConversations:hover,
 #clearSummaries:hover {
     background-color: #d32f2f;
+    transform: scale(1.02);
+    transition: background-color 0.2s, transform 0.2s;
 }
 
 body.dark-mode #clearConversations,
@@ -548,4 +586,53 @@ body.dark-mode #clearSummaries:hover {
     cursor: pointer;
     transition: background-color 0.2s, transform 0.2s;
     max-width: 160px;
+}
+
+/* Optional: better alignment in narrow views */
+
+.domain-controls {
+    display: flex;
+    justify-content: center;
+    margin-top: 0px;
+    margin-bottom: 20px;
+}
+
+#addDomain {
+    background-color: #1a73e8;
+    margin-top: 0;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 24px;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+#addDomain:hover {
+    background-color: #1669c1;
+    transform: scale(1.05);
+}
+
+body.dark-mode #addDomain {
+    background-color: #3a86ff;
+}
+
+body.dark-mode #addDomain:hover {
+    background-color: #336fcb;
+}
+
+.save-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 10px;
+}
+
+#save {
+    width: auto;
+    min-width: 20%;
 }

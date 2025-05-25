@@ -1,94 +1,177 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // ========== INDEXEDDB UTILITIES ==========
+    // ---------- IndexedDB configuration ----------
     const DB_NAME = 'ConfluenceSummariesDB';
     const DB_VERSION = 2;
     const STORE_NAME = 'summaries';
 
+    /**
+     * Open (or create/upgrade) the IndexedDB database.
+     * @returns {Promise<IDBDatabase>} Resolved database instance on success.
+     */
     function openDb() {
+        log.debug('Opening IndexedDB', { DB_NAME, DB_VERSION });
+
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => resolve(request.result);
+
+            request.onerror = () => {
+                log.error('IndexedDB open error', request.error);
+                reject(request.error);
+            };
+
+            request.onsuccess = () => {
+                log.info('IndexedDB connection opened', { version: DB_VERSION });
+                resolve(request.result);
+            };
+
             request.onupgradeneeded = () => {
                 const db = request.result;
+                log.info('IndexedDB upgrade Needed → Initialising object stores', {
+                    oldVersion: request.oldVersion,
+                    newVersion: DB_VERSION
+                });
+
                 if (!db.objectStoreNames.contains(STORE_NAME)) {
+                    log.debug(`Creating object store: ${STORE_NAME}`);
                     db.createObjectStore(STORE_NAME, { keyPath: ['contentId', 'baseUrl'] });
                 }
                 if (!db.objectStoreNames.contains('conversations')) {
+                    log.debug('Creating object store: conversations');
                     db.createObjectStore('conversations', { keyPath: ['contentId', 'baseUrl'] });
                 }
             };
         });
     }
 
+    /**
+     * Retrieve a cached summary (if present) for a given Confluence contentId.
+     * @param {string|number} contentId
+     * @param {string} baseUrl
+     * @returns {Promise<object|null>} Cached entry or null.
+     */
     async function getStoredSummary(contentId, baseUrl) {
         const db = await openDb();
+        log.debug('Fetching stored summary', { contentId, baseUrl });
+
         return new Promise((resolve, reject) => {
             const tx = db.transaction(STORE_NAME, 'readonly');
             const store = tx.objectStore(STORE_NAME);
             const request = store.get([contentId, baseUrl]);
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
+
+            request.onsuccess = () => {
+                log.info('Summary fetched', { key: [contentId, baseUrl], hit: !!request.result });
+                resolve(request.result);
+            };
+
+            request.onerror = () => {
+                log.error('Error reading summary from IndexedDB', request.error);
+                reject(request.error);
+            };
         });
     }
 
+    /**
+     * Persist a summary to IndexedDB.
+     * @param {{contentId:string|number, baseUrl:string, title:string, summaryHtml:string, bodyHtml:string}} entry
+     */
     async function storeSummary({ contentId, baseUrl, title, summaryHtml, bodyHtml }) {
         const db = await openDb();
+        const entry = { contentId, baseUrl, title, summaryHtml, bodyHtml, timestamp: Date.now() };
+        log.debug('Storing summary', entry);
+
         return new Promise((resolve, reject) => {
             const tx = db.transaction(STORE_NAME, 'readwrite');
             const store = tx.objectStore(STORE_NAME);
-            const entry = {
-                contentId,
-                baseUrl,
-                title,
-                summaryHtml,
-                bodyHtml,
-                timestamp: Date.now()
-            };
             const request = store.put(entry);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
+
+            request.onsuccess = () => {
+                log.info('Summary stored', { key: [contentId, baseUrl] });
+                resolve();
+            };
+
+            request.onerror = () => {
+                log.error('Failed to store summary', request.error);
+                reject(request.error);
+            };
         });
     }
 
+    /**
+     * Persist a conversation message history.
+     * @param {string|number} contentId
+     * @param {string} baseUrl
+     * @param {Array<object>} messages Chat history for follow‑up Q&A.
+     */
     async function storeConversation(contentId, baseUrl, messages) {
         const db = await openDb();
+        const entry = { contentId, baseUrl, messages, timestamp: Date.now() };
+        log.debug('Storing conversation', { contentId, baseUrl, messagesCount: messages.length });
+
         return new Promise((resolve, reject) => {
             const tx = db.transaction('conversations', 'readwrite');
             const store = tx.objectStore('conversations');
-            const entry = {
-                contentId,
-                baseUrl,
-                messages,
-                timestamp: Date.now()
-            };
             const request = store.put(entry);
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
+
+            request.onsuccess = () => {
+                log.info('Conversation stored', { key: [contentId, baseUrl] });
+                resolve();
+            };
+
+            request.onerror = () => {
+                log.error('Failed to store conversation', request.error);
+                reject(request.error);
+            };
         });
     }
 
+    /**
+     * Retrieve a stored conversation.
+     */
     async function getStoredConversation(contentId, baseUrl) {
         const db = await openDb();
+        log.debug('Fetching stored conversation', { contentId, baseUrl });
+
         return new Promise((resolve, reject) => {
             const tx = db.transaction('conversations', 'readonly');
             const store = tx.objectStore('conversations');
             const request = store.get([contentId, baseUrl]);
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
+
+            request.onsuccess = () => {
+                log.info('Conversation fetched', { key: [contentId, baseUrl], hit: !!request.result });
+                resolve(request.result);
+            };
+
+            request.onerror = () => {
+                log.error('Error reading conversation from IndexedDB', request.error);
+                reject(request.error);
+            };
         });
     }
 
+    // ======================= CONSTANTS & GLOBALS ========================
+    //  The following configuration & runtime state is used throughout
+    //  the content‑browser UI.  Only key additions are annotated here;
+    //  unchanged constants are left as‑is for brevity.
+    // --------------------------------------------------------------------
 
-    /**
-     * ========== CONSTANTS & GLOBALS ==========
-     */
-    // Load more only when scrolled to exact bottom
+    // Trigger additional fetch when user is scrolled to container bottom.
     const SCROLL_THRESHOLD_REACHED = (el) =>
         el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-    let RESULTS_PER_REQUEST = 75; // default value, overridden from storage
+
+    // Default page size (overridable from chrome.storage).
+    let RESULTS_PER_REQUEST = 75;
+
+    // Master flag to toggle verbose DEBUG logging without recompiling.
     const DEBUG = false;
 
+    // Master flag to toggle whether to use the local proxy server
+    const USE_LOCAL_PROXY = false;
+
+    /**
+     * Lightweight logging shim that attaches a namespace and honours the
+     * global DEBUG flag for noisy messages.  Replace with your favourite
+     * logger (pino, loglevel) if desired.
+     */
     const log = {
         debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
         info: (...args) => console.info('[INFO]', ...args),
@@ -183,144 +266,271 @@ document.addEventListener('DOMContentLoaded', () => {
     `;
 
 
-    /**
-     * ========== UTILITY FUNCTIONS ==========
-     */
+    /* =========================================================
+     *                    UTILITY FUNCTIONS
+     * =========================================================*/
 
-    // PROXY SERVER!
-    async function sendOpenAIRequest({ apiKey, apiUrl, model, messages }) {
-        log.debug('[Summary] Sending OpenAI request to:', apiUrl);
+    function triggerPoofEffect() {
+        const audio = document.getElementById('poof-audio');
+
+        if (audio) {
+            audio.currentTime = 0;
+            audio.play().catch(e => console.warn('Poof sound error:', e));
+        }
+    }
+
+    /**
+     * Send a completion / chat request to OpenAI **via the local proxy**.
+     *
+     * @param {Object} opts
+     * @param {string} opts.apiKey   – Raw OpenAI key (never logged!)
+     * @param {string} opts.apiUrl   – OpenAI REST endpoint (v1/chat/completions, etc.)
+     * @param {string} opts.model    – Model name (gpt-4o-mini, gpt-3.5-turbo-1106, …)
+     * @param {Array<Object>} opts.messages – OpenAI chat message array
+     * @returns {Promise<Object>} Parsed JSON response from OpenAI
+     * @throws {Error} If the fetch fails or returns non-2xx
+     */
+    async function sendOpenAIRequestViaLocalProxy({ apiKey, apiUrl, model, messages }) {
+        log.info('[OpenAI] → POST', apiUrl);
+        log.debug('[OpenAI] Payload:', { model, msgCount: messages.length });
+
         const response = await fetch('http://localhost:3000/proxy', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                apiKey,
-                apiUrl,
-                model,
-                messages
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apiKey, apiUrl, model, messages })
         });
 
+        // ——— Error handling ———
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('[OpenAI] API error response:', errorText);
+            log.error('[OpenAI] HTTP', response.status, errorText.slice(0, 200));
             throw new Error(`OpenAI request failed: ${response.statusText}`);
         }
 
+        // ——— Success path ———
         const result = await response.json();
-        log.debug('[Summary] Received response from OpenAI.');
-        log.debug('[Summary] Response structure:', {
-            usage: result.usage,
+        log.info('[OpenAI] ✓ Response OK');
+        log.debug('[OpenAI] Meta:', {
             model: result.model,
-            choicesLength: result.choices?.length
+            tokens: result.usage,
+            choices: result.choices?.length
         });
 
         return result;
     }
 
+    /**
+     * Fire a direct request to OpenAI’s REST endpoint (no local proxy).
+     *
+     * @param {Object} opts
+     * @param {string} opts.apiKey   – Secret Bearer token.
+     * @param {string} opts.apiUrl   – Full URL, e.g. "https://api.openai.com/v1/chat/completions".
+     * @param {string} opts.model    – Model id, e.g. "gpt-4o-mini".
+     * @param {Array<Object>} opts.messages – OpenAI chat message array.
+     * @returns {Promise<Object>}    Parsed JSON payload.
+     * @throws {Error}               If the fetch fails or returns non-2xx.
+     *
+     * The helper prints:
+     *   • log.info  – one-liners for the request / success path.
+     *   • log.debug – verbose payload & response meta (only when DEBUG === true).
+     */
+    async function sendOpenAIRequestDirect({ apiKey, apiUrl, model, messages }) {
+        log.info('[OpenAI] → POST', apiUrl);
+        log.debug('[OpenAI] Payload:', { model, msgCount: messages.length });
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ model, messages })
+        });
+
+        /* ---------- Error handling ---------- */
+        if (!response.ok) {
+            const errorText = await response.text();
+            log.error('[OpenAI] HTTP', response.status, errorText.slice(0, 200));
+            throw new Error(`OpenAI request failed: ${response.statusText}`);
+        }
+
+        /* ---------- Success path ---------- */
+        const result = await response.json();
+        log.info('[OpenAI] ✓ Response OK');
+        log.debug('[OpenAI] Meta:', {
+            model: result.model,
+            tokens: result.usage,
+            choices: result.choices?.length
+        });
+
+        return result;
+    }
+
+    async function sendOpenAIRequest({ apiKey, apiUrl, model, messages }) {
+        if (USE_LOCAL_PROXY) {
+            return sendOpenAIRequestViaLocalProxy({ apiKey, apiUrl, model, messages });
+        } else {
+            return sendOpenAIRequestDirect({ apiKey, apiUrl, model, messages });
+        }
+    }
+
+
+    /**
+     * Show a modal confirmation dialog with Cancel / Confirm buttons.
+     *
+     * @param {string}   message   – HTML or text displayed in the dialog body.
+     * @param {Function} onConfirm – Callback executed only if user clicks **Confirm**.
+     */
     function showConfirmationDialog(message, onConfirm) {
+        log.debug('[Dialog] Creating confirmation dialog');
+
+        // Remove any stale overlay first
         const existing = document.getElementById('dialog-overlay');
         if (existing) existing.remove();
 
+        // Build overlay HTML
         const dialog = document.createElement('div');
         dialog.id = 'dialog-overlay';
         dialog.className = 'dialog-overlay';
         dialog.innerHTML = `
-            <div class="dialog-content">
-                <span class="dialog-close" id="dialog-close">&times;</span>
-                <p>${message}</p>
-                <div class="dialog-actions">
-                    <button id="dialog-cancel">Cancel</button>
-                    <button id="dialog-confirm">Confirm</button>
-                </div>
+        <div class="dialog-content">
+            <span class="dialog-close" id="dialog-close">&times;</span>
+            <p>${message}</p>
+            <div class="dialog-actions">
+                <button id="dialog-cancel">Cancel</button>
+                <button id="dialog-confirm">Confirm</button>
             </div>
-        `;
+        </div>
+    `;
         document.body.appendChild(dialog);
 
-        function remove() {
+        /** Helper that removes the dialog from DOM */
+        const remove = () => {
+            log.debug('[Dialog] Closed / removed');
             dialog.remove();
-        }
+        };
 
+        // Wire up events ---------------------------------------------------------
         document.getElementById('dialog-close').onclick = remove;
         document.getElementById('dialog-cancel').onclick = remove;
         document.getElementById('dialog-confirm').onclick = () => {
             remove();
+            log.info('[Dialog] ✔ User confirmed');
             onConfirm();
         };
-
         dialog.addEventListener('click', (e) => {
+            // Allow click outside content area to dismiss
             if (e.target === dialog) remove();
         });
     }
 
+    /**
+     * Reset a batch of “Summarize” buttons back to their idle state.
+     *
+     * @param {HTMLButtonElement[]} buttons – NodeList / Array of buttons to reset.
+     * @param {string} [label='🧠 Summarize'] – InnerText to restore.
+     */
     function resetSummaryButtons(buttons, label = '🧠 Summarize') {
-        buttons.forEach(b => {
-            b.textContent = label;
-            b.classList.remove('loading');
-            b.disabled = false;
+        buttons.forEach(btn => {
+            btn.textContent = label;
+            btn.classList.remove('loading');
+            btn.disabled = false;
         });
+        log.debug('[UI] Reset', buttons.length, 'summary button(s)');
     }
 
+    /**
+     * Build the full prompt that will be sent to OpenAI when summarizing a page.
+     * It concatenates the (optional) saved user prompt with rich contextual data
+     * about the Confluence page.
+     *
+     * @param {Object} pageData – Raw page record from Confluence REST
+     * @returns {Promise<string>} Full, multi-line prompt ready for the LLM
+     */
     async function getUserPrompt(pageData) {
+        log.debug('[Prompt] Building user prompt for page', pageData.id);
+
         const bodyHtmlRaw = await fetchConfluenceBodyById(pageData.id);
         const bodyHtml = sanitizeHtmlWithDOM(bodyHtmlRaw);
 
-        const localData = await new Promise((resolve) => {
-            chrome.storage.local.get(['customUserPrompt'], resolve);
-        });
-
+        // Retrieve any custom prompt saved in extension storage
+        const localData = await new Promise(resolve =>
+            chrome.storage.local.get(['customUserPrompt'], resolve)
+        );
         const userPrompt = typeof localData.customUserPrompt === 'string'
             ? localData.customUserPrompt.trim()
             : '';
 
-        let fullUserPrompt = userPrompt;
+        // Compose contextual “content details” section
         const contentDetails = `
-            --- Content Details ---
-            Title: ${pageData.title}
-            Contributor: ${pageData.history?.createdBy?.displayName || 'Unknown'}
-            Created: ${pageData.history.createdDate || 'N/A'}
-            Modified: ${pageData.version?.when ? formatDate(pageData.version.when) : 'N/A'}
-            Type: ${pageData.type}
-            Space: ${pageData.space?.name || 'N/A'}
-            Parent Title: ${pageData.parentTitle || 'N/A'}
-            URL: ${buildConfluenceUrl(pageData._links.webui)}
-            Content (HTML): ${bodyHtml}
-        `.trim();
+        --- Content Details ---
+        Title: ${pageData.title}
+        Contributor: ${pageData.history?.createdBy?.displayName || 'Unknown'}
+        Created: ${pageData.history.createdDate || 'N/A'}
+        Modified: ${pageData.version?.when ? formatDate(pageData.version.when) : 'N/A'}
+        Type: ${pageData.type}
+        Space: ${pageData.space?.name || 'N/A'}
+        Parent Title: ${pageData.parentTitle || 'N/A'}
+        URL: ${buildConfluenceUrl(pageData._links.webui)}
+        Content (HTML): ${bodyHtml}
+    `.trim();
 
-        fullUserPrompt += (fullUserPrompt ? '\n\n' : '') + contentDetails;
+        const finalPrompt = (userPrompt ? userPrompt + '\n\n' : '') + contentDetails;
+        log.debug('[Prompt] Final prompt length:', finalPrompt.length, 'chars');
 
-        return fullUserPrompt;
+        return finalPrompt;
     }
 
-
+    /**
+     * Very small helper that guesses writing direction (LTR / RTL)
+     * by looking for any Hebrew or Arabic Unicode blocks.
+     *
+     * @param {string} text
+     * @returns {'ltr' | 'rtl'}
+     */
     function detectDirection(text) {
-        const rtlChars = /[\u0590-\u05FF\u0600-\u06FF]/; // Hebrew + Arabic
-        return rtlChars.test(text) ? 'rtl' : 'ltr';
+        const rtlChars = /[\u0590-\u05FF\u0600-\u06FF]/; // Hebrew + Arabic blocks
+        const dir = rtlChars.test(text) ? 'rtl' : 'ltr';
+        log.debug('[Dir] Detected', dir);
+        return dir;
     }
 
+    /**
+     * Sanitise raw HTML by stripping `<script>`, `<style>`, `<iframe>` and **all** comments.
+     *
+     * @param {string} htmlString – Unsafe HTML
+     * @returns {string} Clean innerHTML
+     */
     function sanitizeHtmlWithDOM(htmlString) {
         const parser = new DOMParser();
         const doc = parser.parseFromString(htmlString, 'text/html');
 
-        const forbiddenTags = ['script', 'style', 'iframe'];
-        forbiddenTags.forEach(tag => {
-            const elements = doc.querySelectorAll(tag);
-            elements.forEach(el => el.remove());
+        // Remove potentially unsafe elements completely
+        ['script', 'style', 'iframe'].forEach(tag => {
+            doc.querySelectorAll(tag).forEach(el => el.remove());
         });
 
-        // Remove comments
-        const treeWalker = document.createTreeWalker(doc, NodeFilter.SHOW_COMMENT, null);
+        // Strip HTML comments
+        const walker = document.createTreeWalker(doc, NodeFilter.SHOW_COMMENT, null);
         let comment;
-        while ((comment = treeWalker.nextNode())) {
+        let removed = 0;
+        while ((comment = walker.nextNode())) {
             comment.parentNode.removeChild(comment);
+            removed++;
         }
+        log.debug('[Sanitize] Removed', removed, 'comments from HTML');
 
         return doc.body.innerHTML;
     }
 
-    // Debounce utility
+    /**
+     * Debounce wrapper: returns a function that delays invocation of `fn`
+     * until `delay` ms have passed since the last call.
+     *
+     * @param {Function} fn
+     * @param {number} delay – Milliseconds
+     * @returns {Function}
+     */
     function debounce(fn, delay) {
         let timeout;
         return (...args) => {
@@ -329,46 +539,65 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // Get URL parameters
+    /**
+     * Parse window.location.search into a plain object.
+     *
+     * @returns {Record<string,string>}
+     */
     function getQueryParams() {
         const params = {};
-        const searchParams = new URLSearchParams(window.location.search);
-        for (const [key, value] of searchParams.entries()) {
-            params[key] = value;
-        }
+        const sp = new URLSearchParams(window.location.search);
+        for (const [key, value] of sp.entries()) params[key] = value;
+        log.debug('[Query] Params:', params);
         return params;
     }
 
+    /**
+     * Escape HTML special characters so the string can be safely injected
+     * into the DOM using `innerHTML`.
+     *
+     * @param {string} text
+     * @returns {string}
+     */
     function escapeHtml(text) {
-        const map = {
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            '\'': '&#039;'
-        };
+        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#039;' };
         return text.replace(/[&<>"']/g, m => map[m]);
     }
 
+    /**
+     * Quick client-side validation for free-text search inputs.
+     * Alphanumeric + basic punctuation and quoted phrases.
+     *
+     * @param {string} input
+     * @returns {boolean}
+     */
     function isValidInput(input) {
-        // Allow letters, numbers, spaces, -_.@ and double quotes for quoted phrases
         const regex = /^[\p{L}\p{N}\s\-_.@"']*$/u;
         return regex.test(input);
     }
 
+    /**
+     * Strip any character *not* allowed by `isValidInput`.
+     *
+     * @param {string} input
+     * @returns {string}
+     */
     function sanitizeInput(input) {
-        // Allow letters, numbers, spaces, -_.@, double quotes, and single quotes
         return input.replace(/[^\p{L}\p{N}\s\-_.@"']/gu, '');
     }
 
+    /**
+     * Format an ISO date string as `DD/MM/YYYY at HH:MM`.
+     *
+     * @param {string|number|Date} dateString
+     * @returns {string}
+     */
     function formatDate(dateString) {
         const date = new Date(dateString);
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0'); // months are zero-based
-        const year = date.getFullYear();
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        return `${day}/${month}/${year} at ${hours}:${minutes}`;
+        const pad = n => String(n).padStart(2, '0');
+        const out = `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`
+            + ` at ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        return out;
     }
 
     // ---- URL-security helpers ---------------------------------------------
@@ -2139,8 +2368,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const resummarizeOverlay = document.getElementById('resummarize-loading-overlay');
 
         qaResummarize.onclick = async () => {
-            showConfirmationDialog('<b>Are you sure you want to regenerate the summary?</b><br>This will replace the current summary and reset the conversation.', async () => {
-
+            showConfirmationDialog('<h2>Are you sure you want to regenerate the summary?</h2>This will replace the current <b>summary</b> and reset the <b>follow-up conversation</b>.', async () => {
                 qaSubmit.disabled = true;
                 qaClear.disabled = true;
                 qaResummarize.disabled = true;
@@ -2218,7 +2446,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         qaClear.onclick = () => {
-            showConfirmationDialog('<b>Are you sure you want to clear this conversation?</b>', () => {
+            showConfirmationDialog('<h2>Are you sure you want to clear this conversation?</h2>', () => {
+                triggerPoofEffect();
                 // Reset conversation to initial state
                 const newConversation = [
                     { role: 'system', content: qaSystemPrompt },
