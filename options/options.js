@@ -26,7 +26,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const clearConversations = $('clearConversations');
 
     const showStatus = (msg, type) => {
-        status.textContent = msg;
+        const icon = type === 'success' ? '✅' : '⚠️';
+        status.innerHTML = `${icon} ${msg}`;
         status.className = `status ${type}`;
     };
 
@@ -146,7 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const poof = () => {
         const audio = $('poof-audio');
-        if (audio) audio.play().catch(() => {});
+        if (audio) audio.play().catch(() => { });
     };
 
     addDomainBtn.onclick = () => {
@@ -195,7 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     clearSummaries.onclick = () => {
         confirm(
-            '<h2>Delete ALL AI summaries and conversations?</h2>This cannot be undone.',
+            '<h2>Are you sure you want to delete all AI summaries and conversations?</h2>This cannot be undone.',
             () => {
                 poof();
                 clearStores([SUMMARY_STORE, CONVERSATION_STORE], () => {
@@ -208,7 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     clearConversations.onclick = () => {
         confirm(
-            '<h2>Delete saved follow-up Q&A only?</h2>This cannot be undone.',
+            '<h2>Are you sure you want to delete all saved follow-up Q&A?</h2>This cannot be undone.',
             () => {
                 poof();
                 clearStores([CONVERSATION_STORE], () => {
