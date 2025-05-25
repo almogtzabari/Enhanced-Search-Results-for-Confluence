@@ -12,117 +12,123 @@
         <img id="page-title-image" src="../logo.png" alt="" />
     </div>
     <div class="container">
-        <h2>Extension Settings</h2>
+        <h1>Extension Settings</h1>
         <div class="form-group">
-            <label>Domains and Search Input IDs:</label>
-            <div id="domainSettings">
+            <h3 class="section-heading">Domain Options</h3>
+            <div id="domainSettings"></div>
+
+            <div class="domain-controls">
+                <button id="addDomain" title="Add Domain">+</button>
             </div>
-            <button id="addDomain">Add Domain</button>
-        </div>
-        <div>
-            <button id="save" disabled>Save</button>
+
+            <div class="save-container">
+                <button id="save" disabled>💾 Save Domain Settings</button>
+            </div>
+
             <div class="status-container">
                 <div id="status" class="status"></div>
             </div>
+        </div>
 
-            <h3 class="section-heading">Options</h3>
-            <div class="toggle-group">
-                <div class="toggle-row">
-                    <div class="toggle-label-col">
-                        <label for="darkModeToggle" class="toggle-label">Dark Mode</label>
-                        <p class="toggle-desc">Enable dark theme for low-light environments.</p>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="darkModeToggle">
-                        <span class="slider round"></span>
-                    </label>
+        <h3 class="section-heading">General Options</h3>
+        <div class="toggle-group">
+            <div class="toggle-row">
+                <div class="toggle-label-col">
+                    <label for="darkModeToggle" class="toggle-label">Dark Mode</label>
+                    <p class="toggle-desc">Enable dark theme for low-light environments.</p>
                 </div>
-
-                <div class="toggle-row">
-                    <div class="toggle-label-col">
-                        <label for="tooltipToggle" class="toggle-label">Show Tooltips in Tree View</label>
-                        <p class="toggle-desc">Display title, type, contributor, and last modified date on hover.</p>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="tooltipToggle">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-                <h3 class="section-heading">AI Options</h3>
-                <div class="toggle-row">
-                    <div class="toggle-label-col">
-                        <label for="enableSummariesToggle" class="toggle-label">Enable AI Summary</label>
-                        <p class="toggle-desc">Show summarize buttons in search results. Requires an OpenAI API key
-                            below.</p>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="enableSummariesToggle">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-                <div class="toggle-row">
-                    <div class="toggle-label-col">
-                        <label for="openaiApiKey" class="toggle-label">OpenAI API Key</label>
-                        <p class="toggle-desc">Used to request AI analysis of search results.</p>
-                    </div>
-                    <input type="password" id="openaiApiKey" class="openai-api-input"
-                        placeholder="Paste your key here...">
-                </div>
-                <div class="toggle-row">
-                    <div class="toggle-label-col">
-                        <label for="customUserPrompt" class="toggle-label">Custom User Prompt</label>
-                        <p class="toggle-desc">Optional prompt text that will be used instead of the default when
-                            generating summaries. Leave empty to use the default.</p>
-                    </div>
-                </div>
-                <textarea id="customUserPrompt" placeholder="Optional custom prompt..."></textarea>
-                <div class="toggle-row">
-                    <div class="toggle-label-col">
-                        <label for="customApiEndpoint" class="toggle-label">Custom API Endpoint</label>
-                        <p class="toggle-desc">Optional override for OpenAI API endpoint. Default is
-                            "https://api.openai.com/v1/chat/completions".</p>
-                    </div>
-                    <input type="text" id="customApiEndpoint" class="openai-api-input"
-                        placeholder="https://your-api-endpoint..." />
-                </div>
-                <div class="toggle-row">
-                    <div class="toggle-label-col">
-                        <label for="clearSummaries" class="toggle-label">Clear Cached Summaries</label>
-                        <p class="toggle-desc">Delete all locally stored AI-generated summaries.</p>
-                    </div>
-                    <button id="clearSummaries">Clear</button>
-                </div>
-                <div class="toggle-row">
-                    <div class="toggle-label-col">
-                        <label for="clearConversations" class="toggle-label">Clear Conversation History</label>
-                        <p class="toggle-desc">Delete all locally stored AI conversation history.</p>
-                    </div>
-                    <button id="clearConversations">Clear</button>
-                </div>
+                <label class="switch">
+                    <input type="checkbox" id="darkModeToggle">
+                    <span class="slider round"></span>
+                </label>
             </div>
 
-            <h3 class="section-heading collapsible-heading" id="advancedSettingsToggle">
-                Advanced Settings ▸
-            </h3>
-            <div class="toggle-group collapsible-content" id="advancedSettingsContent" style="display: none;">
-                <div class="toggle-row">
-                    <div class="toggle-label-col">
-                        <label for="resultsPerRequest" class="toggle-label">Results per Batch</label>
-                        <p class="toggle-desc">Control how many search results are loaded at a time.</p>
-                    </div>
-                    <select id="resultsPerRequest" class="filter-dropdown">
-                        <option value="50">50</option>
-                        <option value="75" selected>75</option>
-                        <option value="100">100</option>
-                        <option value="125">125</option>
-                        <option value="150">150</option>
-                        <option value="200">200</option>
-                    </select>
+            <div class="toggle-row">
+                <div class="toggle-label-col">
+                    <label for="tooltipToggle" class="toggle-label">Show Tooltips in Tree View</label>
+                    <p class="toggle-desc">Display title, type, contributor, and last modified date on hover.</p>
                 </div>
+                <label class="switch">
+                    <input type="checkbox" id="tooltipToggle">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+
+            <h3 class="section-heading">AI Options</h3>
+
+            <div class="toggle-row">
+                <div class="toggle-label-col">
+                    <label for="enableSummariesToggle" class="toggle-label">Enable AI Summary</label>
+                    <p class="toggle-desc">Show summarize buttons in search results. Requires an OpenAI API key below.</p>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="enableSummariesToggle">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row">
+                <div class="toggle-label-col">
+                    <label for="openaiApiKey" class="toggle-label">OpenAI API Key</label>
+                    <p class="toggle-desc">Used to request AI analysis of search results.</p>
+                </div>
+                <input type="password" id="openaiApiKey" class="openai-api-input"
+                    placeholder="Paste your key here...">
+            </div>
+
+            <div class="toggle-row">
+                <div class="toggle-label-col">
+                    <label for="customApiEndpoint" class="toggle-label">Custom API Endpoint</label>
+                    <p class="toggle-desc">Optional override for OpenAI API endpoint. Default is
+                        "https://api.openai.com/v1/chat/completions".</p>
+                </div>
+                <input type="text" id="customApiEndpoint" class="openai-api-input"
+                    placeholder="https://your-api-endpoint..." />
+            </div>
+
+            <div class="toggle-row">
+                <div class="toggle-label-col">
+                    <label for="clearSummaries" class="toggle-label">Clear Cached AI-Generated Content</label>
+                    <p class="toggle-desc">Delete all locally stored AI-generated content.</p>
+                </div>
+                <button id="clearSummaries">Summaries &amp; Follow-up Conversations</button>
+                <button id="clearConversations">Follow-up Conversations Only</button>
+            </div>
+
+            <div class="toggle-row">
+                <div class="toggle-label-col">
+                    <label for="customUserPrompt" class="toggle-label">Custom User Prompt</label>
+                    <p class="toggle-desc">Optional prompt text that will be used instead of the default when
+                        generating summaries. Leave empty to use the default.</p>
+                </div>
+            </div>
+            <textarea id="customUserPrompt" placeholder="Optional custom prompt..."></textarea>
+        </div>
+
+        <h3 class="section-heading collapsible-heading" id="advancedSettingsToggle">
+            Advanced Settings ▸
+        </h3>
+        <div class="toggle-group collapsible-content" id="advancedSettingsContent" style="display: none;">
+            <div class="toggle-row">
+                <div class="toggle-label-col">
+                    <label for="resultsPerRequest" class="toggle-label">Results per Batch</label>
+                    <p class="toggle-desc">Control how many search results are loaded at a time.</p>
+                </div>
+                <select id="resultsPerRequest" class="filter-dropdown">
+                    <option value="50">50</option>
+                    <option value="75" selected>75</option>
+                    <option value="100">100</option>
+                    <option value="125">125</option>
+                    <option value="150">150</option>
+                    <option value="200">200</option>
+                </select>
             </div>
         </div>
     </div>
+
+    <audio id="poof-audio" src="../sounds/swoosh.mp3" preload="auto"></audio>
     <script src="options.js"></script>
+
     <div id="dialog-overlay" class="dialog-overlay" style="display: none;">
         <div class="dialog-content">
             <span class="dialog-close" id="dialog-close">&times;</span>

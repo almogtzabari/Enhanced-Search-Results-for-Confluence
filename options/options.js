@@ -16,13 +16,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const clearSummariesButton = document.getElementById('clearSummaries');
     const clearConversationsButton = document.getElementById('clearConversations');
     clearConversationsButton.addEventListener('click', () => {
-        showConfirmationDialog('<b>Are you sure you want to delete all saved conversation history?</b>', () => {
+        showConfirmationDialog('<h2>Are you sure you want to delete all saved conversation history?</h2>This cannot be undone.', () => {
+            triggerPoofEffect();
             const request = indexedDB.open('ConfluenceSummariesDB', 2);
 
             request.onsuccess = () => {
                 const db = request.result;
                 if (!db.objectStoreNames.contains('conversations')) {
-                    showStatus('No conversation history found.', 'success');
                     return;
                 }
 
@@ -30,24 +30,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 const store = tx.objectStore('conversations');
                 const clearRequest = store.clear();
 
-                clearRequest.onsuccess = () => {
-                    showStatus('Conversation history cleared.', 'success');
-                };
                 clearRequest.onerror = () => {
                     console.error('[ERROR] Failed to clear conversation history:', clearRequest.error);
-                    showStatus('Failed to clear conversation history.', 'error');
+                    alert('Failed to clear conversation history.', 'error');
                 };
             };
 
             request.onerror = () => {
                 console.error('[ERROR] Failed to open database:', request.error);
-                showStatus('Could not access conversation store.', 'error');
+                alert('Could not access conversation store.', 'error');
             };
         });
     });
 
     clearSummariesButton.addEventListener('click', () => {
-        showConfirmationDialog('<b>Are you sure you want to delete all cached AI summaries?</b><br>This will remove all conversation history as well, and cannot be undone.', () => {
+        showConfirmationDialog('<h2>Are you sure you want to delete all cached AI summaries?</h2>This will remove both <b>summaries</b> and <b>follow-up conversations</b>. This cannot be undone.', () => {
+            triggerPoofEffect();
             const request = indexedDB.open('ConfluenceSummariesDB', 2);
 
             request.onsuccess = () => {
@@ -63,13 +61,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 let cleared = 0;
                 const done = () => {
                     if (++cleared === 2) {
-                        showStatus('Cached summaries and conversations cleared.', 'success');
                         chrome.runtime.sendMessage({ action: 'summariesCleared' });
                     }
                 };
                 const fail = (label, error) => {
                     console.error(`[ERROR] Failed to clear ${label}:`, error);
-                    showStatus(`Failed to clear ${label}.`, 'error');
+                    alert(`Failed to clear ${label}.`, 'error');
                 };
 
                 clearSummaries.onsuccess = done;
@@ -81,7 +78,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             request.onerror = () => {
                 console.error('[ERROR] Failed to open database:', request.error);
-                showStatus('Could not access summary cache.', 'error');
+                alert('Could not access summary cache.', 'error');
             };
         });
     });
@@ -308,7 +305,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const removeButton = document.createElement('button');
         removeButton.className = 'remove-domain';
-        removeButton.textContent = 'Remove';
+        removeButton.innerHTML = '&times;';
+        removeButton.setAttribute('aria-label', 'Remove domain');
+        removeButton.title = 'Remove domain';
         removeButton.addEventListener('click', () => {
             domainSettingsContainer.removeChild(entryDiv);
             saveButton.disabled = false;
@@ -389,5 +388,14 @@ document.addEventListener('DOMContentLoaded', () => {
         cancelBtn.addEventListener('click', hide);
         confirmBtn.addEventListener('click', confirm);
         overlay.addEventListener('click', onOverlayClick);
+    }
+
+    function triggerPoofEffect() {
+        const audio = document.getElementById('poof-audio');
+
+        if (audio) {
+            audio.currentTime = 0;
+            audio.play().catch(e => console.warn('Poof sound error:', e));
+        }
     }
 });
