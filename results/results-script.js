@@ -129,6 +129,31 @@ document.addEventListener('DOMContentLoaded', () => {
         log.debug('[Query] Params:', params);
         return params;
     }
+    function updateUrlParams(params) {
+        const url = new URL(window.location.href);
+        for (const key in params) {
+            if (params[key]) url.searchParams.set(key, params[key]);
+            else url.searchParams.delete(key);
+        }
+        history.replaceState(null, '', url.toString());
+    }
+    function populateFiltersFromUrlParams(params) {
+        textFilterInput.value = params.text || '';
+        const [spaceKey, spaceLabel] = (params.space || '').split(':');
+        spaceFilterInput.dataset.key = spaceKey || '';
+        spaceFilterInput.value = spaceLabel || spaceKey || '';
+
+        const [contribKey, contribLabel] = (params.contributor || '').split(':');
+        contributorFilterInput.dataset.key = contribKey || '';
+        contributorFilterInput.value = contribLabel || contribKey || '';
+        dateFilter.value = params.date || 'any';
+        typeFilter.value = params.type || '';
+
+        // Update UI clear icons for filters
+        toggleClearIcon(textFilterInput, document.getElementById('filter-text-clear'));
+        toggleClearIcon(spaceFilterInput, document.getElementById('space-clear'));
+        toggleClearIcon(contributorFilterInput, document.getElementById('contributor-clear'));
+    }
     function escapeHtml(text = '') {
         const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#039;' };
         return text.replace(/[&<>"']/g, m => map[m]);
@@ -347,6 +372,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function resetDataAndFetchResults() {
         log.debug('[Search] Resetting data and fetching fresh results');
+        const encodeLabel = (input) => {
+            const key = input.dataset.key || '';
+            const val = input.value?.trim() || '';
+            return key ? `${key}:${val}` : '';
+        };
+
+        updateUrlParams({
+            searchText,
+            baseUrl,
+            text: textFilterInput.value.trim(),
+            space: encodeLabel(spaceFilterInput),
+            contributor: encodeLabel(contributorFilterInput),
+            date: dateFilter.value,
+            type: typeFilter.value
+        });
         nodeMap = {};
         roots = [];
         searchResultIds = new Set();
@@ -1359,6 +1399,12 @@ document.addEventListener('DOMContentLoaded', () => {
         textFilterInput.oninput = () => {
             debouncedFilter();
             toggleClearIcon(textFilterInput, document.getElementById('filter-text-clear'));
+            // Update URL with current text filter after debounce
+            debounce(() => {
+                const currentParams = getQueryParams();
+                currentParams.text = textFilterInput.value.trim();
+                updateUrlParams(currentParams);
+            }, 300)();
         };
         document.getElementById('filter-text-clear').onclick = () => {
             textFilterInput.value = '';
@@ -1427,6 +1473,7 @@ document.addEventListener('DOMContentLoaded', () => {
         searchText = (params.searchText || '').trim();
         baseUrl = sanitiseBaseUrl(params.baseUrl || window.location.origin);
         domainName = baseUrl ? new URL(baseUrl).hostname : 'Unknown';
+        populateFiltersFromUrlParams(params);
         if (!searchText) log.warn('No searchText parameter received!');
         if (!baseUrl) {
             log.error('Invalid or missing baseUrl! Extension may not function correctly.');
