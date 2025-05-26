@@ -44,10 +44,12 @@ document.addEventListener('DOMContentLoaded', () => {
         Output only valid, clean and nicely formatted HTML (no Markdown or code blocks, and no \`\`\`html). Use this format (unless user prompt requests otherwise):
 
         1. <h3> What is this [content type] about?</h3> followed by a paragraph summarizing content, with context:
-        - Page: "This page, from the <b>[space]</b> space, covers..."
-        - Blog post: "...published in..."
-        - Comment: "...posted on the page titled..."
-        - Attachment: "...uploaded to..."
+        - Page: "This page, from the [space_link] space, covers..."
+        - Blog post: "...published in the [space_link] space..."
+        - Comment: "...posted on the page titled _X_ in the [space_link] space..."
+        - Attachment: "...uploaded to the [space_link] space..."
+        Use [space_link] as: <b><a href='[space_url]' target='_blank'>[space]</a></b> if space_url is available, or <b>[space]</b> otherwise.
+        For example, "This page, from the <b><a href="[space_url]">[space]</a></b> space, covers...".
         2. <h3> Main points</h3> followed by a <ul><li> list
         3. Keep tone concise, neutral, and useful. Avoid repeating title. Omit internal field names or Confluence-specific terms.
 

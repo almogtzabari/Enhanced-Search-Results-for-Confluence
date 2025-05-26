@@ -182,6 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
     userPromptInput.oninput = (() => {
         let t;
         return () => {
+            applyDir(userPromptInput);
             clearTimeout(t);
             t = setTimeout(() => {
                 chrome.storage.local.set({ customUserPrompt: userPromptInput.value.trim() });
