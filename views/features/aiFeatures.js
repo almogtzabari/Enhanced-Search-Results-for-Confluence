@@ -103,7 +103,7 @@ export async function handleQaSubmit(contentId, inputEl, threadEl, submitBtn) {
 }
 
 export function handleClearConversation(contentId, threadEl, userPrompt, summaryText) {
-    showConfirmationDialog('<h2>Are you sure you want to clear this conversation?</h2>', () => {
+    showConfirmationDialog('<h2>Are you sure you want to clear this conversation?</h2>This will not clear the summary.', () => {
         triggerPoofEffect(); // From uiUtils, needs to be imported or passed
         const newConversation = [{ role: 'system', content: qaSystemPrompt }, { role: 'user', content: userPrompt }, { role: 'assistant', content: summaryText }];
         state.conversationHistories.set(contentId, newConversation);

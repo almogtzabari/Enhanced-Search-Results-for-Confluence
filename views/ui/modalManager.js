@@ -110,7 +110,7 @@ export async function showSummaryModal(summaryText, pageData, bodyHtml) {
         <div class="qa-button-row">
             <button id="qa-submit">❓ Ask</button>
             <button id="qa-resummarize">🧠 Re-summarize</button>
-            <button id="qa-clear">🧹 Clear</button>
+            <button id="qa-clear">🧹 Clear Conversation</button>
         </div>
         <div id="resummarize-loading-overlay" style="display: none;">
             <div class="loader small-loader"></div>
