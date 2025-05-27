@@ -97,7 +97,6 @@ export function updateTreeHtml(resultsToDisplay) {
     updateTooltipDisplayState();
 }
 
-
 export function handleTreeArrowClick(event) {
     const arrow = event.target.closest('.arrow');
     if (!arrow || arrow.classList.contains('empty')) return;

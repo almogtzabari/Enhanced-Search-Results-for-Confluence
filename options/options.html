@@ -59,7 +59,8 @@
             <div class="toggle-row">
                 <div class="toggle-label-col">
                     <label for="enableSummariesToggle" class="toggle-label">Enable AI Summary</label>
-                    <p class="toggle-desc">Show summarize buttons in search results. Requires an OpenAI API key below.</p>
+                    <p class="toggle-desc">Show summarize buttons in search results. Requires an OpenAI API key below.
+                    </p>
                 </div>
                 <label class="switch">
                     <input type="checkbox" id="enableSummariesToggle">
@@ -69,11 +70,21 @@
 
             <div class="toggle-row">
                 <div class="toggle-label-col">
+                    <label for="autoOpenSummaryToggle" class="toggle-label">Auto-Open Summary</label>
+                    <p class="toggle-desc">Automatically open the summary once it's available.</p>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="autoOpenSummaryToggle">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row">
+                <div class="toggle-label-col">
                     <label for="openaiApiKey" class="toggle-label">OpenAI API Key</label>
                     <p class="toggle-desc">Used to request AI analysis of search results.</p>
                 </div>
-                <input type="password" id="openaiApiKey" class="openai-api-input"
-                    placeholder="Paste your key here...">
+                <input type="password" id="openaiApiKey" class="openai-api-input" placeholder="Paste your key here...">
             </div>
 
             <div class="toggle-row">

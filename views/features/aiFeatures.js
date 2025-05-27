@@ -43,7 +43,7 @@ export function renderConversationThread(container, conversation) {
     });
     requestAnimationFrame(() => {
         if (container.parentElement) {
-             container.parentElement.scrollTo({ top: container.parentElement.scrollHeight, behavior: 'smooth' });
+            container.parentElement.scrollTo({ top: container.parentElement.scrollHeight, behavior: 'smooth' });
         }
     });
 }
@@ -145,9 +145,9 @@ export async function handleResummarize(pageData, bodyHtml) {
             const qaSubmitBtn = document.getElementById('qa-submit');
             const qaClearBtn = document.getElementById('qa-clear');
             const qaResummarizeBtn = document.getElementById('qa-resummarize');
-            if(qaSubmitBtn) qaSubmitBtn.disabled = false;
-            if(qaClearBtn) qaClearBtn.disabled = false;
-            if(qaResummarizeBtn) qaResummarizeBtn.disabled = false;
+            if (qaSubmitBtn) qaSubmitBtn.disabled = false;
+            if (qaClearBtn) qaClearBtn.disabled = false;
+            if (qaResummarizeBtn) qaResummarizeBtn.disabled = false;
         }
     });
 }
@@ -188,8 +188,14 @@ export async function handleSummarizeClick(event) {
             const summary = result.choices[0].message.content;
             state.summaryCache.set(contentId, summary);
             await storeSummary({ contentId, baseUrl: state.baseUrl, title: pageData.title, summaryHtml: summary, bodyHtml });
-            showSummaryModal(summary, pageData, bodyHtml);
             resetSummaryButtons(allButtons, '✅ Summary Available!');
+
+            // Show the modal if auto-open summary is enabled
+            chrome.storage.sync.get(['autoOpenSummary'], ({ autoOpenSummary }) => {
+                if (autoOpenSummary === true) {
+                    showSummaryModal(summary, pageData, bodyHtml);
+                }
+            });
         }
     } catch (err) {
         log.error('[Summary] Failed to summarize:', err);

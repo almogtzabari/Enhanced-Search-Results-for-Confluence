@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const darkModeToggle = $('darkModeToggle');
     const tooltipToggle = $('tooltipToggle');
     const enableSummariesToggle = $('enableSummariesToggle');
+    const autoOpenSummaryToggle = $('autoOpenSummaryToggle');
     const openaiApiKeyInput = $('openaiApiKey');
     const customApiEndpointInput = $('customApiEndpoint');
     const resultsPerRequestSelect = $('resultsPerRequest');
@@ -171,6 +172,10 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.sync.set({ enableSummaries: enableSummariesToggle.checked });
     };
 
+    autoOpenSummaryToggle.onchange = () => {
+        chrome.storage.sync.set({ autoOpenSummary: autoOpenSummaryToggle.checked });
+    };
+
     openaiApiKeyInput.oninput = () => {
         chrome.storage.sync.set({ openaiApiKey: openaiApiKeyInput.value.trim() });
     };
@@ -228,7 +233,8 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     chrome.storage.sync.get(
-        ['domainSettings', 'darkMode', 'showTooltips', 'enableSummaries', 'openaiApiKey', 'customApiEndpoint', 'resultsPerRequest'],
+        ['domainSettings', 'darkMode', 'showTooltips', 'enableSummaries', 'autoOpenSummary', 'openaiApiKey', 'customApiEndpoint', 'resultsPerRequest'],
+
         data => {
             chrome.storage.local.get(['customUserPrompt'], local => {
                 const merged = { ...data, ...local };
@@ -240,6 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 darkModeToggle.checked = !!merged.darkMode;
                 tooltipToggle.checked = merged.showTooltips !== false;
                 enableSummariesToggle.checked = merged.enableSummaries !== false;
+                autoOpenSummaryToggle.checked = merged.autoOpenSummary === true;
                 openaiApiKeyInput.value = merged.openaiApiKey || '';
                 customApiEndpointInput.value = merged.customApiEndpoint || '';
                 userPromptInput.value = merged.customUserPrompt || '';
