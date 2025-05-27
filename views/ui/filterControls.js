@@ -77,7 +77,7 @@ function displayFilteredSpaceOptionsUI(filterValue) {
 }
 
 function displayFilteredContributorOptionsUI(filterValue) {
-     if (!dom.contributorOptionsContainer || !dom.contributorFilterInput) return;
+    if (!dom.contributorOptionsContainer || !dom.contributorFilterInput) return;
     dom.contributorOptionsContainer.innerHTML = '';
     const filtered = state.fullContributorList.filter(c => c.name.toLowerCase().includes(filterValue.toLowerCase()) || c.key.toLowerCase().includes(filterValue.toLowerCase()));
     filtered.forEach(contributor => {
@@ -104,26 +104,32 @@ function onDateFilterChange() {
 
 function addFilterOptionListeners(container, inputId) {
     if (!container) return;
-    container.querySelectorAll('.option').forEach(option => {
+    const options = container.querySelectorAll('.option');
+    options.forEach((option, index) => {
+        option.dataset.index = index;
         option.onclick = () => {
-            const input = document.getElementById(inputId);
-            const clearIconId = `${inputId.split('-')[0]}-clear`;
-            const clearIcon = document.getElementById(clearIconId);
-            if (input) {
-                input.value = option.textContent.trim();
-                input.dataset.key = option.dataset.key;
-            }
-            if (container) container.style.display = 'none';
-            if (clearIcon && input) toggleClearIcon(input, clearIcon);
-            resetDataAndFetchResults();
+            selectOption(option, inputId, container);
         };
     });
+}
+
+function selectOption(option, inputId, container) {
+    const input = document.getElementById(inputId);
+    const clearIconId = `${inputId.split('-')[0]}-clear`;
+    const clearIcon = document.getElementById(clearIconId);
+    if (input) {
+        input.value = option.textContent.trim();
+        input.dataset.key = option.dataset.key;
+    }
+    if (container) container.style.display = 'none';
+    if (clearIcon && input) toggleClearIcon(input, clearIcon);
+    resetDataAndFetchResults();
 }
 
 function clearSpaceFilter(evt) {
     evt.stopPropagation();
     log.debug('[Filter] Space filter cleared');
-    if(dom.spaceFilterInput) {
+    if (dom.spaceFilterInput) {
         dom.spaceFilterInput.value = '';
         dom.spaceFilterInput.dataset.key = '';
         toggleClearIcon(dom.spaceFilterInput, dom.spaceClear);
@@ -135,7 +141,7 @@ function clearSpaceFilter(evt) {
 function clearContributorFilter(evt) {
     evt.stopPropagation();
     log.debug('[Filter] Contributor filter cleared');
-     if(dom.contributorFilterInput) {
+    if (dom.contributorFilterInput) {
         dom.contributorFilterInput.value = '';
         dom.contributorFilterInput.dataset.key = '';
         toggleClearIcon(dom.contributorFilterInput, dom.contributorClear);
@@ -184,14 +190,41 @@ export function setupFilterInputEventListeners() {
                 displayFn(evt.target.value);
                 if (optionsContainer) optionsContainer.style.display = 'block';
             };
+
+            input.onkeydown = evt => {
+                const options = optionsContainer?.querySelectorAll('.option');
+                if (!options || options.length === 0) return;
+
+                let current = optionsContainer.querySelector('.option.highlighted');
+                let index = current ? parseInt(current.dataset.index) : -1;
+
+                if (evt.key === 'ArrowDown') {
+                    evt.preventDefault();
+                    if (index < options.length - 1) index++;
+                } else if (evt.key === 'ArrowUp') {
+                    evt.preventDefault();
+                    if (index > 0) index--;
+                } else if (evt.key === 'Enter') {
+                    evt.preventDefault();
+                    if (current) selectOption(current, input.id, optionsContainer);
+                    return;
+                }
+
+                options.forEach(o => o.classList.remove('highlighted'));
+                if (index >= 0 && index < options.length) {
+                    options[index].classList.add('highlighted');
+                    options[index].scrollIntoView({ block: 'nearest' });
+                }
+            };
         }
     };
+
 
     setupDropdownFilter(dom.spaceFilterInput, dom.spaceOptionsContainer, displayFilteredSpaceOptionsUI, dom.spaceClear);
     setupDropdownFilter(dom.contributorFilterInput, dom.contributorOptionsContainer, displayFilteredContributorOptionsUI, dom.contributorClear);
 
-    if(dom.spaceClear) dom.spaceClear.onclick = clearSpaceFilter;
-    if(dom.contributorClear) dom.contributorClear.onclick = clearContributorFilter;
+    if (dom.spaceClear) dom.spaceClear.onclick = clearSpaceFilter;
+    if (dom.contributorClear) dom.contributorClear.onclick = clearContributorFilter;
 
     document.onclick = evt => {
         if (dom.spaceOptionsContainer && !evt.target.closest('#space-filter-container')) dom.spaceOptionsContainer.style.display = 'none';
