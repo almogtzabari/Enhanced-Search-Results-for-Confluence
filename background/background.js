@@ -14,7 +14,7 @@ chrome.runtime.onMessage.addListener(function (request) {
     if (request.action === 'openTab') {
         chrome.tabs.create({ url: request.url });
     } else if (request.action === 'openSearchTab') {
-        const url = `${chrome.runtime.getURL('results/results.html')}?searchText=${encodeURIComponent(request.searchText)}&baseUrl=${encodeURIComponent(request.baseUrl)}`;
+        const url = `${chrome.runtime.getURL('views/index.html')}?searchText=${encodeURIComponent(request.searchText)}&baseUrl=${encodeURIComponent(request.baseUrl)}`;
         chrome.tabs.create({ url });
     }
 });
