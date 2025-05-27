@@ -1132,14 +1132,15 @@ body.dark-mode .qa-entry.user {
 
 #qa-input {
     width: 100%;
-    min-height: 60px;
-    padding: 10px;
+    min-height: 70px;
+    max-height: 500px;
+    padding: 20px;
     font-size: 14px;
     border: 1px solid var(--input-border-color);
     border-radius: 6px;
     resize: none;
     /* Disable native resize */
-    padding-top: 20px;
+    padding-top: 10px;
     /* Space for custom resizer */
     position: relative;
     background-color: var(--input-background-color);
@@ -1281,9 +1282,8 @@ body.dark-mode .textarea-resizer:hover::before {
 }
 
 #qa-input-area {
-    margin-top: 16px;
-    /* border-top: 1px solid var(--input-border-color); */
-    padding-top: 12px;
+    margin-top: 0px;
+    padding-top: 0px;
     display: flex;
     flex-direction: column;
     gap: 10px;
