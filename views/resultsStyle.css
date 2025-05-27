@@ -1614,9 +1614,11 @@ body.dark-mode .modal-resizer:hover::before {
 body ::-webkit-scrollbar {
     width: 12px;
 }
+
 body ::-webkit-scrollbar-track {
     background: #f0f0f0;
 }
+
 body ::-webkit-scrollbar-thumb {
     background-color: #bbb;
     border-radius: 6px;
@@ -1627,9 +1629,11 @@ body ::-webkit-scrollbar-thumb {
 body.dark-mode ::-webkit-scrollbar {
     width: 12px;
 }
+
 body.dark-mode ::-webkit-scrollbar-track {
     background: #1e1e1e;
 }
+
 body.dark-mode ::-webkit-scrollbar-thumb {
     background-color: #555;
     border-radius: 6px;
@@ -1677,4 +1681,9 @@ body.dark-mode #global-loading-overlay {
 
 .results-area {
     min-height: 100px;
+}
+
+.option.highlighted {
+    background-color: var(--button-hover-background);
+    color: #fff;
 }

@@ -2,7 +2,7 @@
 //                    MODAL MANAGER
 // =========================================================
 import { dom } from '../domElements.js';
-import { log, qaSystemPrompt} from '../config.js';
+import { log, qaSystemPrompt } from '../config.js';
 import { detectDirection, escapeHtml, buildConfluenceUrl } from '../utils/generalUtils.js';
 import { getUserPrompt, renderConversationThread, handleQaSubmit, handleClearConversation, handleResummarize } from '../features/aiFeatures.js';
 import { getStoredConversation, storeConversation } from '../services/dbService.js';
@@ -128,7 +128,11 @@ export async function showSummaryModal(summaryText, pageData, bodyHtml) {
     const savedHeight = sessionStorage.getItem('qaInputHeight');
     if (qaInput && savedHeight) qaInput.style.height = `${savedHeight}px`;
     else if (qaInput) qaInput.style.height = '60px';
-    if (qaInput) setupTextareaResizer(qaInput);
+    if (qaInput) {
+        setupTextareaResizer(qaInput);
+        // Always focus the textarea when modal opens
+        setTimeout(() => qaInput.focus(), 50);
+    }
 
     const contentId = pageData.id;
     const userPromptForQA = await getUserPrompt(pageData);
@@ -147,7 +151,7 @@ export async function showSummaryModal(summaryText, pageData, bodyHtml) {
         qaInput.onkeydown = (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                if(qaSubmit) handleQaSubmit(contentId, qaInput, qaThread, qaSubmit);
+                if (qaSubmit) handleQaSubmit(contentId, qaInput, qaThread, qaSubmit);
             }
         };
         qaInput.oninput = () => qaInput.setAttribute('dir', detectDirection(qaInput.value));
@@ -157,12 +161,12 @@ export async function showSummaryModal(summaryText, pageData, bodyHtml) {
     if (qaScrollBtn) qaScrollBtn.onclick = () => dom.modalBody.scrollTo({ top: 0, behavior: 'smooth' });
 
     dom.modalBody.onscroll = () => {
-        if(qaScrollBtn) qaScrollBtn.style.display = dom.modalBody.scrollTop > 100 ? 'inline-block' : 'none';
+        if (qaScrollBtn) qaScrollBtn.style.display = dom.modalBody.scrollTop > 100 ? 'inline-block' : 'none';
     };
 
     requestAnimationFrame(() => {
         if (dom.modalBody.scrollHeight <= dom.modalBody.clientHeight) {
-            if(qaScrollBtn) qaScrollBtn.style.display = 'none';
+            if (qaScrollBtn) qaScrollBtn.style.display = 'none';
         }
     });
 
