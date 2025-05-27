@@ -4,32 +4,35 @@
 <head>
     <meta charset="UTF-8">
     <title>Search Results</title>
-    <!-- Include Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="results-style.css">
-    <link rel="icon" type="image/x-icon" href="../icons/favicon.png">
+    <link rel="stylesheet" href="resultsStyle.css">
+    <link rel="icon" type="image/x-icon" href="../assets/icons/favicon.png">
 </head>
 
 <body>
     <div class="background-wrapper">
         <header class="header">
-            <img id="page-title-image" src="../logo.png" alt="" />
+            <img id="page-title-image" src="../assets/logo.png" alt="" />
             <h2 id="page-title">Enhanced Search Results for Confluence</h2>
             <div class="theme-toggle">
+
                 <button id="open-options" class="settings-icon-button" title="Settings">
-                    <img src="../icons/settings.png" height="30px">
+                    <img src="../assets/icons/settings.png" height="30px">
                 </button>
             </div>
             <div class="controls">
                 <div class="top-controls">
+
                     <div class="row-1">
                         <div class="search-box">
                             <input type="text" id="new-search-input" placeholder="Enter new search query..." />
+
                             <span class="clear-icon" id="main-search-clear">&times;</span>
                             <button id="new-search-button">Search</button>
                         </div>
                     </div>
                 </div>
+
             </div>
         </header>
 
@@ -38,52 +41,64 @@
                 <div class="filter-controls">
                     <h4>Filters</h4>
                     <div class="filter-select" id="text-filter-container">
+
                         <input type="text" id="text-filter" placeholder="🔠  Filter by text" />
                         <span class="clear-icon" id="filter-text-clear">&times;</span>
                     </div>
                     <div class="filter-select" id="space-filter-container">
+
                         <input type="text" id="space-filter" placeholder="🚀  Filter Spaces" />
                         <span class="clear-icon" id="space-clear">&times;</span>
                         <div class="options" id="space-options"></div>
+
                     </div>
                     <div class="filter-select" id="contributor-filter-container">
                         <input type="text" id="contributor-filter" placeholder="👤  Filter Contributors" />
                         <span class="clear-icon" id="contributor-clear">&times;</span>
+
                         <div class="options" id="contributor-options"></div>
                     </div>
                     <div class="filter-select" id="date-filter-container">
                         <select id="date-filter" class="filter-dropdown">
+
                             <option value="any">🕒&nbsp;&nbsp;Any time</option>
                             <option value="1d">The past day</option>
                             <option value="1w">The past week</option>
                             <option value="1m">The past month</option>
+
                             <option value="1y">The past year</option>
                         </select>
                     </div>
                     <div class="filter-select" id="type-filter-container">
+
                         <select id="type-filter" class="filter-dropdown">
                             <option value="">📄&nbsp;&nbsp;All Types</option>
                             <option value="page">📘&nbsp;&nbsp;Page</option>
+
                             <option value="blogpost">📝&nbsp;&nbsp;Blog post</option>
                             <option value="attachment">📎&nbsp;&nbsp;Attachment</option>
                             <option value="comment">💬&nbsp;&nbsp;Comment</option>
                         </select>
+
                     </div>
                 </div>
                 <div class="view-section">
                     <h4>Views</h4>
                     <div class="view-buttons">
+
                         <button id="tree-view-btn" class="active">Tree</button>
                         <button id="table-view-btn">Table</button>
                     </div>
                 </div>
             </aside>
-            <div class="results-area" style="position: relative;">
+            <div class="results-area" style="position: 
+relative;">
                 <div class="container">
                     <div id="tree-container" class="tree-container"></div>
                     <div id="table-container" class="table-container"></div>
                 </div>
                 <div id="global-loading-overlay" style="display: none;">
+
                     <div class="global-loader"></div>
                 </div>
             </div>
@@ -92,26 +107,31 @@
         <button id="scroll-to-top">↑</button>
         <div id="summary-modal" class="modal-overlay" style="display: none;">
             <div class="modal-content" id="resizable-modal">
+
                 <div class="modal-resizer" id="modal-resizer-left"></div>
                 <div class="modal-resizer" id="modal-resizer"></div>
                 <span class="modal-close" id="modal-close">&times;</span>
                 <div id="summary-title"></div>
                 <div id="modal-body" class="modal-body">
                     <div id="summary-content"></div>
+
                     <div id="qa-thread"></div>
                     <div id="qa-input-area">
                         <div class="qa-input-wrapper">
                             <div class="textarea-resizer" id="qa-resizer"></div>
+
                             <textarea id="qa-input" placeholder="Ask a follow-up question..."></textarea>
                         </div>
                         <button id="qa-submit">Ask</button>
+
                         <div id="qa-loading" style="display: none;">Answering...</div>
                     </div>
                 </div>
             </div>
         </div>
-        <audio id="poof-audio" src="../sounds/swoosh.mp3" preload="auto"></audio>
-        <script src="results-script.js"></script>
+        <audio id="poof-audio" src="../assets/sounds/swoosh.mp3" preload="auto"></audio>
+
+        <script type="module" src="init.js"></script>
     </div>
 </body>
 

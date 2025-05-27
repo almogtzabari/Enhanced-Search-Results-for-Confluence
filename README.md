@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="Enhanced Confluence Search Logo" height="100">
+  <img src="assets/logo.png" alt="Enhanced Confluence Search Logo" height="100">
 </p>
 
 # Enhanced Search Results for Confluence Extension
@@ -49,8 +49,8 @@ Enhance your Confluence experience with improved search functionality! This brow
 
 The extension is available on the Chrome Web Store and Firefox Add-ons site:
 
-- <img src="images/chrome.png" width="20" alt="Chrome" align="absmiddle"> **[Chrome Web Store](https://chromewebstore.google.com/detail/enhanced-search-results-f/mmaihfkphcnjjheipeljfjbfkimfhcch)**
-- <img src="images/firefox.png" width="20" alt="Firefox" align="absmiddle"> **[Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/enhanced-confluence-search/)**
+- <img src="assets/images/chrome.png" width="20" alt="Chrome" align="absmiddle"> **[Chrome Web Store](https://chromewebstore.google.com/detail/enhanced-search-results-f/mmaihfkphcnjjheipeljfjbfkimfhcch)**
+- <img src="assets/images/firefox.png" width="20" alt="Firefox" align="absmiddle"> **[Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/enhanced-confluence-search/)**
 
 ## Usage
 
@@ -58,7 +58,7 @@ The extension is available on the Chrome Web Store and Firefox Add-ons site:
    - Click the extension icon → **Options**
    - Add your Confluence domain and the corresponding search input ID
 
-     ![Settings Page](images/settings.png)
+     ![Settings Page](assets/images/settings.png)
 
 2. **Search in Confluence**:
    - Use the regular Confluence search input and either press **Enter** or click the new **Enhanced Search** button that appears next to the search box.
@@ -69,8 +69,8 @@ The extension is available on the Chrome Web Store and Firefox Add-ons site:
    - Apply filters as needed (spaces, contributors, date, type)
    - Use the search bar to refine your query further
 
-     ![Tree View](images/tree-view.png)
-     ![Table View](images/table-view.png)
+     ![Tree View](assets/images/tree-view.png)
+     ![Table View](assets/images/table-view.png)
 
 ## Configuration
 
