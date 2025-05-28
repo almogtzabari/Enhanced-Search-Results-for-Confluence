@@ -5,9 +5,12 @@ import { dom } from '../domElements.js';
 import { log } from '../config.js';
 
 export function triggerPoofEffect() {
-    if (dom.poofAudio) {
-        dom.poofAudio.currentTime = 0;
-        dom.poofAudio.play().catch(e => log.warn('Poof sound error:', e));
+    const el = dom.poofAudio || document.getElementById('poof-audio');
+    if (el) {
+        el.currentTime = 0;
+        el.play().catch(e => log.warn('Poof sound error:', e));
+    } else {
+        log.warn('No poof-audio element found.');
     }
 }
 
@@ -19,7 +22,7 @@ export function toggleClearIcon(inputElem, clearIcon) {
 
 export function showLoadingIndicator(show) {
     if (dom.globalLoadingOverlay) {
-      dom.globalLoadingOverlay.style.display = show ? 'flex' : 'none';
+        dom.globalLoadingOverlay.style.display = show ? 'flex' : 'none';
     }
 }
 

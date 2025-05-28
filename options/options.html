@@ -58,12 +58,24 @@
 
             <div class="toggle-row">
                 <div class="toggle-label-col">
-                    <label for="enableSummariesToggle" class="toggle-label">Enable AI Summary</label>
-                    <p class="toggle-desc">Show summarize buttons in search results. Requires an OpenAI API key below.
-                    </p>
+                    <label for="enableSummariesToggle" class="toggle-label">Enable AI Summary in Enhanced Results
+                        Page</label>
+                    <p class="toggle-desc">Show the Summarize button in the enhanced search results interface.</p>
                 </div>
                 <label class="switch">
                     <input type="checkbox" id="enableSummariesToggle">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row">
+                <div class="toggle-label-col">
+                    <label for="enableFloatingSummarizeToggle" class="toggle-label">Enable AI Summary in Confluence
+                        Pages</label>
+                    <p class="toggle-desc">Show the Summarize button on Confluence content pages.</p>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="enableFloatingSummarizeToggle">
                     <span class="slider round"></span>
                 </label>
             </div>

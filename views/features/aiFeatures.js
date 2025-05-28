@@ -48,19 +48,19 @@ export function renderConversationThread(container, conversation) {
     });
 }
 
-export async function handleQaSubmit(contentId, inputEl, threadEl, submitBtn) {
+export async function handleQaSubmit(contentId, inputEl, threadEl, submitBtn, messages = null) {
     const question = inputEl.value.trim();
     if (!question) return;
     inputEl.value = '';
     inputEl.setAttribute('dir', 'ltr');
     submitBtn.disabled = true;
 
-    const messages = state.conversationHistories.get(contentId);
     if (!messages) {
-        log.error('Conversation history not found for contentId:', contentId);
+        log.error('Conversation history not provided.');
         submitBtn.disabled = false;
         return;
     }
+
     messages.push({ role: 'user', content: question });
 
     const userMsg = document.createElement('div');
@@ -134,7 +134,7 @@ export async function handleResummarize(pageData, bodyHtml) {
             const newConversation = [{ role: 'system', content: qaSystemPrompt }, { role: 'user', content: userPrompt }, { role: 'assistant', content: newSummary }];
             state.conversationHistories.set(contentId, newConversation);
             await storeConversation(contentId, state.baseUrl, newConversation);
-            showSummaryModal(newSummary, pageData, bodyHtml); // Re-render the modal
+            showSummaryModal(newSummary, pageData, bodyHtml, state.baseUrl);
             resetSummaryButtons(allButtons, '✅ Summary Available!');
         } catch (err) {
             log.error('Re-summarize failed:', err);
@@ -173,13 +173,13 @@ export async function handleSummarizeClick(event) {
         if (stored?.summaryHtml) {
             log.debug(`[DB] Using cached summary for ${contentId}`);
             state.summaryCache.set(contentId, stored.summaryHtml);
-            showSummaryModal(stored.summaryHtml, pageData, bodyHtml);
+            showSummaryModal(stored.summaryHtml, pageData, bodyHtml, state.baseUrl);
             resetSummaryButtons(allButtons, '✅ Summary Available!');
         } else {
             log.debug(`[AI] Requesting new summary for ${contentId}`);
             const { openaiApiKey, customApiEndpoint } = await new Promise(res => chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
             if (!openaiApiKey) {
-                alert('OpenAI API key not set.');
+                alert('An OpenAI API key is required to generate summaries. Please configure it in the extension options.');
                 resetSummaryButtons(allButtons);
                 return;
             }
@@ -193,7 +193,7 @@ export async function handleSummarizeClick(event) {
             // Show the modal if auto-open summary is enabled
             chrome.storage.sync.get(['autoOpenSummary'], ({ autoOpenSummary }) => {
                 if (autoOpenSummary === true) {
-                    showSummaryModal(summary, pageData, bodyHtml);
+                    showSummaryModal(summary, pageData, bodyHtml, state.baseUrl);
                 }
             });
         }
