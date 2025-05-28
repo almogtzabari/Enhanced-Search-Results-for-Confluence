@@ -1,13 +1,11 @@
 // =========================================================
 //                    MODAL MANAGER
 // =========================================================
-import { dom } from '../domElements.js';
 import { log, qaSystemPrompt } from '../config.js';
 import { detectDirection, escapeHtml, buildConfluenceUrl } from '../utils/generalUtils.js';
 import { getUserPrompt, renderConversationThread, handleQaSubmit, handleClearConversation, handleResummarize } from '../features/aiFeatures.js';
 import { getStoredConversation, storeConversation } from '../services/dbService.js';
 import * as state from '../state.js';
-
 
 export function showConfirmationDialog(messageHtml, onConfirm) {
     log.debug('[Dialog] Showing confirmation');
@@ -71,14 +69,21 @@ export function setupTextareaResizer(textarea) {
 }
 
 
-export async function showSummaryModal(summaryText, pageData, bodyHtml) {
-    if (!dom.summaryModal || !dom.modalBody || !dom.modalClose || !dom.summaryTitle) {
+export async function showSummaryModal(summaryText, pageData, bodyHtml, baseUrl) {
+    const modal = document.getElementById('summary-modal');
+    const modalBody = document.getElementById('modal-body');
+    const modalClose = document.getElementById('modal-close');
+    const summaryTitle = document.getElementById('summary-title');
+
+
+    if (!modal || !modalBody || !modalClose || !summaryTitle) {
+
         log.error('Summary modal DOM elements not found');
         return;
     }
     log.debug('Showing summary modal for', pageData.id);
-    dom.modalBody.scrollTop = 0;
-    dom.summaryTitle.innerHTML = `<strong>🧠 AI Summary</strong><br><a href="${buildConfluenceUrl(pageData._links.webui)}" target="_blank" title="${escapeHtml(pageData.title)}">${escapeHtml(pageData.title)}</a>`;
+    modalBody.scrollTop = 0;
+    summaryTitle.innerHTML = `<strong>🧠 AI Summary</strong><br><a href="${buildConfluenceUrl(pageData._links.webui)}" target="_blank" title="${escapeHtml(pageData.title)}">${escapeHtml(pageData.title)}</a>`;
 
     const tempDiv = document.createElement('div');
     tempDiv.innerHTML = summaryText;
@@ -88,7 +93,7 @@ export async function showSummaryModal(summaryText, pageData, bodyHtml) {
     summaryDiv.id = 'summary-content';
     summaryDiv.innerHTML = tempDiv.innerHTML;
 
-    dom.modalBody.innerHTML = `
+    modalBody.innerHTML = `
         <div id="summary-thread-wrapper" style="display: flex; flex-direction: column; gap: 12px;">
             ${summaryDiv.outerHTML}
             <h3 class="conversation-title">💬 Follow-Up Questions</h3>
@@ -96,7 +101,7 @@ export async function showSummaryModal(summaryText, pageData, bodyHtml) {
             <button id="qa-scroll-top" title="Scroll to summary" style="display: none; align-self: flex-end;">⬆</button>
         </div>`;
 
-    const modalContent = dom.summaryModal.querySelector('.modal-content');
+    const modalContent = modal.querySelector('.modal-content');
     let qaInputArea = modalContent.querySelector('#qa-input-area');
     if (qaInputArea) qaInputArea.remove();
 
@@ -136,50 +141,55 @@ export async function showSummaryModal(summaryText, pageData, bodyHtml) {
 
     const contentId = pageData.id;
     const userPromptForQA = await getUserPrompt(pageData);
-    const storedConv = await getStoredConversation(contentId, state.baseUrl); // Use state.baseUrl
+    const storedConv = await getStoredConversation(contentId, baseUrl);
     const conversation = storedConv?.messages || [
         { role: 'system', content: qaSystemPrompt },
         { role: 'user', content: userPromptForQA },
         { role: 'assistant', content: summaryText }
     ];
     state.conversationHistories.set(contentId, conversation);
-    await storeConversation(contentId, state.baseUrl, conversation); // Use state.baseUrl
+    await storeConversation(contentId, baseUrl, conversation);
     if (qaThread) renderConversationThread(qaThread, conversation);
 
-    if (qaSubmit) qaSubmit.onclick = () => handleQaSubmit(contentId, qaInput, qaThread, qaSubmit);
+    if (qaSubmit) qaSubmit.onclick = () => handleQaSubmit(contentId, qaInput, qaThread, qaSubmit, conversation);
     if (qaInput) {
         qaInput.onkeydown = (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                if (qaSubmit) handleQaSubmit(contentId, qaInput, qaThread, qaSubmit);
+                handleQaSubmit(contentId, qaInput, qaThread, qaSubmit, conversation);
             }
         };
         qaInput.oninput = () => qaInput.setAttribute('dir', detectDirection(qaInput.value));
     }
     if (qaClear) qaClear.onclick = () => handleClearConversation(contentId, qaThread, userPromptForQA, summaryText);
     if (qaResummarize) qaResummarize.onclick = () => handleResummarize(pageData, bodyHtml);
-    if (qaScrollBtn) qaScrollBtn.onclick = () => dom.modalBody.scrollTo({ top: 0, behavior: 'smooth' });
+    if (qaScrollBtn) qaScrollBtn.onclick = () => {
+        const el = document.getElementById('modal-body');
+        if (el) el.scrollTo({ top: 0, behavior: 'smooth' });
+    };
 
-    dom.modalBody.onscroll = () => {
-        if (qaScrollBtn) qaScrollBtn.style.display = dom.modalBody.scrollTop > 100 ? 'inline-block' : 'none';
+    modalBody.onscroll = () => {
+        if (qaScrollBtn) qaScrollBtn.style.display = modalBody.scrollTop > 100 ? 'inline-block' : 'none';
     };
 
     requestAnimationFrame(() => {
-        if (dom.modalBody.scrollHeight <= dom.modalBody.clientHeight) {
+        if (modalBody.scrollHeight <= modalBody.clientHeight) {
+
             if (qaScrollBtn) qaScrollBtn.style.display = 'none';
         }
     });
 
-    dom.summaryModal.style.display = 'flex';
-    dom.modalClose.onclick = () => dom.summaryModal.style.display = 'none';
-    window.onclick = (e) => { if (e.target === dom.summaryModal) dom.summaryModal.style.display = 'none'; };
-    document.onkeydown = (e) => { if (e.key === 'Escape') dom.summaryModal.style.display = 'none'; };
+    modal.style.display = 'flex';
+    modalClose.onclick = () => modal.style.display = 'none';
+    window.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
+    document.onkeydown = (e) => { if (e.key === 'Escape') modal.style.display = 'none'; };
+
 }
 
 export function setupModalResizers() {
-    const resizerRight = dom.modalResizer;
-    const resizerLeft = dom.modalResizerLeft;
-    const resizable = dom.resizableModal;
+    const resizerRight = document.getElementById('modal-resizer');
+    const resizerLeft = document.getElementById('modal-resizer-left');
+    const resizable = document.getElementById('resizable-modal');
 
     if (!resizable || !resizerRight || !resizerLeft) return;
     const savedWidth = sessionStorage.getItem('modalWidth');

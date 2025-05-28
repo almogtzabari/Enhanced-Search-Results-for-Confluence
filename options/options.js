@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tooltipToggle = $('tooltipToggle');
     const enableSummariesToggle = $('enableSummariesToggle');
     const autoOpenSummaryToggle = $('autoOpenSummaryToggle');
+    const enableFloatingSummarizeToggle = $('enableFloatingSummarizeToggle');
     const openaiApiKeyInput = $('openaiApiKey');
     const customApiEndpointInput = $('customApiEndpoint');
     const resultsPerRequestSelect = $('resultsPerRequest');
@@ -176,6 +177,10 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.sync.set({ autoOpenSummary: autoOpenSummaryToggle.checked });
     };
 
+    enableFloatingSummarizeToggle.onchange = () => {
+        chrome.storage.sync.set({ enableFloatingSummarize: enableFloatingSummarizeToggle.checked });
+    };
+
     openaiApiKeyInput.oninput = () => {
         chrome.storage.sync.set({ openaiApiKey: openaiApiKeyInput.value.trim() });
     };
@@ -233,7 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     chrome.storage.sync.get(
-        ['domainSettings', 'darkMode', 'showTooltips', 'enableSummaries', 'autoOpenSummary', 'openaiApiKey', 'customApiEndpoint', 'resultsPerRequest'],
+        ['domainSettings', 'darkMode', 'showTooltips', 'enableSummaries', 'autoOpenSummary', 'enableFloatingSummarize', 'openaiApiKey', 'customApiEndpoint', 'resultsPerRequest'],
 
         data => {
             chrome.storage.local.get(['customUserPrompt'], local => {
@@ -246,6 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 darkModeToggle.checked = !!merged.darkMode;
                 tooltipToggle.checked = merged.showTooltips !== false;
                 enableSummariesToggle.checked = merged.enableSummaries !== false;
+                enableFloatingSummarizeToggle.checked = merged.enableFloatingSummarize !== false;
                 autoOpenSummaryToggle.checked = merged.autoOpenSummary === true;
                 openaiApiKeyInput.value = merged.openaiApiKey || '';
                 customApiEndpointInput.value = merged.customApiEndpoint || '';

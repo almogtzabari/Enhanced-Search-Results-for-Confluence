@@ -1,7 +1,7 @@
 // =========================================================
 //                    INITIALIZATION
 // =========================================================
-import { log, setResultsPerRequest as setGlobalResultsPerRequest } from './config.js';
+import { log, DB_VERSION, setResultsPerRequest as setGlobalResultsPerRequest } from './config.js';
 import * as state from './state.js';
 import { dom, cacheDomElements } from './domElements.js';
 import { getQueryParams, sanitiseBaseUrl, escapeHtml } from './utils/generalUtils.js';
@@ -12,9 +12,10 @@ import { setupGlobalEventListeners } from './eventManager.js';
 import { updateTooltipDisplayState } from './ui/treeView.js';
 import { renderCurrentView } from './core/dataProcessor.js';
 
-
 async function init() {
-    log.info(`Initializing Enhanced Search Results page (DB_VERSION: ${log.DB_VERSION})...`); // Using DB_VERSION from config via log
+    log.info(`Initializing Enhanced Search Results page (DB_VERSION: ${DB_VERSION})...`);
+
+    injectModalStyles();
     cacheDomElements();
 
     const params = getQueryParams();
@@ -33,14 +34,18 @@ async function init() {
     }
 
     document.title = `Search: '${escapeHtml(state.searchText)}' on ${state.domainName}`;
-    if(dom.pageTitle) dom.pageTitle.textContent = `Results (${state.domainName})`;
-    if(dom.newSearchInput) dom.newSearchInput.value = state.searchText;
+    if (dom.pageTitle) dom.pageTitle.textContent = `Results (${state.domainName})`;
+    if (dom.newSearchInput) dom.newSearchInput.value = state.searchText;
 
     try {
         const data = await new Promise(res => chrome.storage.sync.get(['darkMode', 'resultsPerRequest', 'enableSummaries', 'openaiApiKey', 'showTooltips'], res));
-        document.body.classList.toggle('dark-mode', Boolean(data.darkMode));
+        if (data.darkMode) {
+            document.body.classList.add('dark-mode');
+        } else {
+            document.body.classList.remove('dark-mode');
+        }
         setGlobalResultsPerRequest(Number.isInteger(data.resultsPerRequest) ? data.resultsPerRequest : 75);
-        state.setEnableSummaries(data.enableSummaries !== false && !!data.openaiApiKey);
+        state.setEnableSummaries(data.enableSummaries !== false);
         state.setTooltipSettings({ showTooltips: data.showTooltips !== false });
         log.debug('Settings loaded:', { perRequest: log.RESULTS_PER_REQUEST, summaries: state.ENABLE_SUMMARIES, tooltips: state.tooltipSettings.showTooltips });
     } catch (error) { log.error('Failed to load settings:', error); }
@@ -52,19 +57,17 @@ async function init() {
             state.setTooltipSettings({ showTooltips: changes.showTooltips.newValue !== false });
             updateTooltipDisplayState();
         }
-        if ('enableSummaries' in changes || 'openaiApiKey' in changes) {
-            chrome.storage.sync.get(['enableSummaries', 'openaiApiKey'], (data) => {
-                state.setEnableSummaries(data.enableSummaries === true && !!data.openaiApiKey);
-                renderCurrentView();
-            });
+        if ('enableSummaries' in changes) {
+            state.setEnableSummaries(changes.enableSummaries.newValue === true);
+            renderCurrentView();
         }
     });
 
     setupGlobalEventListeners();
 
-    if(dom.treeContainer) dom.treeContainer.style.display = 'block';
-    if(dom.tableContainer) dom.tableContainer.style.display = 'none';
-    if(dom.treeViewBtn) dom.treeViewBtn.classList.add('active');
+    if (dom.treeContainer) dom.treeContainer.style.display = 'block';
+    if (dom.tableContainer) dom.tableContainer.style.display = 'none';
+    if (dom.treeViewBtn) dom.treeViewBtn.classList.add('active');
 
 
     if (state.searchText && state.baseUrl) {
@@ -88,3 +91,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+function injectModalStyles() {
+    const existing = document.getElementById('embedded-ai-modal-style');
+    if (existing) return;
+
+    const link = document.createElement('link');
+    link.id = 'embedded-ai-modal-style';
+    link.rel = 'stylesheet';
+    link.href = chrome.runtime.getURL('content/modalStyles.css');
+    document.head.appendChild(link);
+}
