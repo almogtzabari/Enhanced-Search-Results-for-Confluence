@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const openaiApiKeyInput = $('openaiApiKey');
     const customApiEndpointInput = $('customApiEndpoint');
     const resultsPerRequestSelect = $('resultsPerRequest');
+    const aiModelSelect = $('aiModelSelect');
     const userPromptInput = $('customUserPrompt');
     const status = $('status');
     const clearSummaries = $('clearSummaries');
@@ -210,6 +211,11 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.sync.set({ resultsPerRequest: val });
     };
 
+    aiModelSelect.onchange = () => {
+        chrome.storage.sync.set({ selectedAiModel: aiModelSelect.value });
+    };
+
+
     clearSummaries.onclick = () => {
         confirm(
             '<h2>Are you sure you want to delete all AI summaries and conversations?</h2>This cannot be undone.',
@@ -243,7 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     chrome.storage.sync.get(
-        ['domainSettings', 'darkMode', 'showTooltips', 'enableSummaries', 'autoOpenSummary', 'enableFloatingSummarize', 'openaiApiKey', 'customApiEndpoint', 'resultsPerRequest', 'showTableTooltips'],
+        ['domainSettings', 'darkMode', 'showTooltips', 'enableSummaries', 'autoOpenSummary', 'enableFloatingSummarize', 'openaiApiKey', 'customApiEndpoint', 'resultsPerRequest', 'showTableTooltips', 'selectedAiModel'],
 
         data => {
             chrome.storage.local.get(['customUserPrompt'], local => {
@@ -266,6 +272,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (merged.resultsPerRequest) {
                     resultsPerRequestSelect.value = String(merged.resultsPerRequest);
                 }
+                if (merged.selectedAiModel) {
+                    aiModelSelect.value = merged.selectedAiModel;
+                }
+
                 if (merged.darkMode) document.body.classList.add('dark-mode');
             });
         }

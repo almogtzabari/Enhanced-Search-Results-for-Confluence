@@ -77,6 +77,23 @@ async function init() {
         showLoadingIndicator(false);
     }
     updateTooltipDisplayState();
+
+    window.addEventListener('popstate', () => {
+        const params = getQueryParams();
+        state.setSearchText((params.searchText || '').trim());
+        state.setBaseUrl(sanitiseBaseUrl(params.baseUrl || window.location.origin));
+        state.setDomainName(state.baseUrl ? new URL(state.baseUrl).hostname : 'Unknown');
+
+        populateFiltersFromUrlParams(params);
+
+        if (state.searchText && state.baseUrl) {
+            performNewSearch(state.searchText);
+        } else {
+            showNoResultsMessage();
+            showLoadingIndicator(false);
+        }
+    });
+
     log.info('Initialization complete.');
 }
 
