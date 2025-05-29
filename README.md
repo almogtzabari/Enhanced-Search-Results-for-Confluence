@@ -8,6 +8,20 @@ Enhance your Confluence experience with improved search functionality! This brow
 
 ## Features
 
+### 🧠 AI-Powered Features
+
+- **Instant Page Summaries**  
+  Get a quick overview of any Confluence page with one click. A floating "Summarize" button appears on supported pages to help you understand content faster — no need to scroll or skim.
+
+- **Ask Follow-Up Questions**  
+  Not sure about something? Use the built-in Q&A to ask questions about the page and get instant answers. Perfect for clarifying technical details, exploring related topics, or saving time.
+
+- **Remembers Your Conversations**  
+  The extension remembers your previous questions for each page, so you can pick up right where you left off.
+
+- **Customizable AI Behavior**  
+  Want the AI to focus on specific things? You can add a custom prompt in the options page to tailor summaries to your needs.
+
 ### 🔍 Views and Navigation
 
 - **Tree View Navigation**:
@@ -57,6 +71,10 @@ The extension is available on the Chrome Web Store and Firefox Add-ons site:
 1. **Configure the Extension**:
    - Click the extension icon → **Options**
    - Add your Confluence domain and the corresponding search input ID
+   - To enable AI-powered features:
+     - Paste your **OpenAI API key** in the relevant field
+     - (Optional) Provide a custom API endpoint if you're using a proxy or self-hosted service  
+       Default: `https://api.openai.com/v1/chat/completions`
 
      ![Settings Page](assets/images/settings.png)
 
