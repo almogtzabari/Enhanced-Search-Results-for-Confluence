@@ -35,7 +35,7 @@ export function escapeHtml(text = '') {
 }
 
 export function isValidInput(input) {
-    const regex = /^[\p{L}\p{N}\s\-_.@"']*$/u;
+    const regex = /^[\p{L}\p{N}\s\-_.@"'()\/:&,\[\]{}]*$/u;
     return regex.test(input);
 }
 
