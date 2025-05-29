@@ -20,8 +20,8 @@ export function getStoredSummary(contentId, baseUrl) {
     return callDbAction(SUMMARY_STORE_NAME, 'readonly', 'get', [contentId, baseUrl]);
 }
 
-export function storeSummary({ contentId, baseUrl, title, summaryHtml, bodyHtml }) {
-    const entry = { contentId, baseUrl, title, summaryHtml, bodyHtml, timestamp: Date.now() };
+export function storeSummary({ contentId, baseUrl, title, summaryHtml, userPrompt }) {
+    const entry = { contentId, baseUrl, title, summaryHtml, userPrompt, timestamp: Date.now() };
     log.debug('[Remote DB] storeSummary', contentId);
     return callDbAction(SUMMARY_STORE_NAME, 'readwrite', 'put', entry);
 }
