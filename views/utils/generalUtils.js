@@ -26,7 +26,10 @@ export function updateUrlParams(params) {
         if (params[key]) url.searchParams.set(key, params[key]);
         else url.searchParams.delete(key);
     }
-    history.replaceState(null, '', url.toString());
+    const newUrl = url.toString();
+    if (newUrl !== window.location.href) {
+        history.pushState(null, '', newUrl);
+    }
 }
 
 export function escapeHtml(text = '') {

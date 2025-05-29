@@ -83,7 +83,9 @@ export async function handleQaSubmit(contentId, inputEl, threadEl, submitBtn, me
 
     try {
         const { openaiApiKey, customApiEndpoint } = await new Promise(res => chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
-        const result = await sendOpenAIRequest({ apiKey: openaiApiKey, apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o', messages });
+        const { selectedAiModel } = await new Promise(res => chrome.storage.sync.get(['selectedAiModel'], res));
+        const model = selectedAiModel || 'gpt-4o';
+        const result = await sendOpenAIRequest({ apiKey: openaiApiKey, apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions', model, messages });
         const answer = result.choices?.[0]?.message?.content || '[No response]';
         messages.push({ role: 'assistant', content: answer });
         storeConversation(contentId, state.baseUrl, messages);
@@ -127,7 +129,9 @@ export async function handleResummarize(pageData, bodyHtml) {
         try {
             const userPrompt = await getUserPrompt(pageData);
             const { openaiApiKey: apiKey, customApiEndpoint } = await new Promise(res => chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
-            const result = await sendOpenAIRequest({ apiKey, apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o', messages: [{ role: 'system', content: summarySystemPrompt }, { role: 'user', content: userPrompt }] });
+            const { selectedAiModel } = await new Promise(res => chrome.storage.sync.get(['selectedAiModel'], res));
+            const model = selectedAiModel || 'gpt-4o';
+            const result = await sendOpenAIRequest({ apiKey, apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions', model, messages: [{ role: 'system', content: summarySystemPrompt }, { role: 'user', content: userPrompt }] });
             const newSummary = result.choices[0].message.content;
             state.summaryCache.set(contentId, newSummary);
             await storeSummary({ contentId, baseUrl: state.baseUrl, title: pageData.title, summaryHtml: newSummary, bodyHtml });
@@ -184,7 +188,9 @@ export async function handleSummarizeClick(event) {
                 return;
             }
             const userPrompt = await getUserPrompt(pageData);
-            const result = await sendOpenAIRequest({ apiKey: openaiApiKey, apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o', messages: [{ role: 'system', content: summarySystemPrompt }, { role: 'user', content: userPrompt }] });
+            const { selectedAiModel } = await new Promise(res => chrome.storage.sync.get(['selectedAiModel'], res));
+            const model = selectedAiModel || 'gpt-4o';
+            const result = await sendOpenAIRequest({ apiKey: openaiApiKey, apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions', model, messages: [{ role: 'system', content: summarySystemPrompt }, { role: 'user', content: userPrompt }] });
             const summary = result.choices[0].message.content;
             state.summaryCache.set(contentId, summary);
             await storeSummary({ contentId, baseUrl: state.baseUrl, title: pageData.title, summaryHtml: summary, bodyHtml });

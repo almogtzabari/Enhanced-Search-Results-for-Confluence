@@ -248,11 +248,14 @@
                     return;
                 }
 
+                const { selectedAiModel } = await new Promise(res => chrome.storage.sync.get(['selectedAiModel'], res));
+                const model = selectedAiModel || 'gpt-4o';
                 const result = await sendOpenAIRequest({
                     apiKey: openaiApiKey,
                     apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions',
-                    model: 'gpt-4o',
+                    model,
                     messages: [
+
                         { role: 'system', content: summarySystemPrompt },
                         { role: 'user', content: userPrompt }
                     ]

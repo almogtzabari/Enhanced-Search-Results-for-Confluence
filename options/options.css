@@ -395,11 +395,11 @@ body.dark-mode #addDomain:hover {
 }
 
 .toggle-row select {
-    padding: 10px;
+    padding: 10px 30px 10px 10px;
     font-size: 14px;
     border: 1px solid #cccccc;
     border-radius: 6px;
-    width: 70px;
+    width: 100px;
     background-color: #ffffff;
     color: #333333;
     outline: none;

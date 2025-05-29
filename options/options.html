@@ -112,6 +112,19 @@
 
             <div class="toggle-row">
                 <div class="toggle-label-col">
+                    <label for="aiModelSelect" class="toggle-label">AI Model</label>
+                    <p class="toggle-desc">Select which OpenAI model to use for summaries and Q&A.</p>
+                </div>
+                <select id="aiModelSelect" class="filter-dropdown">
+                    <option value="gpt-4o" selected>GPT-4o</option>
+                    <option value="o4-mini">o4-mini</option>
+                    <option value="gpt-4.1">GPT-4.1</option>
+                    <option value="o3">o3</option>
+                </select>
+            </div>
+
+            <div class="toggle-row">
+                <div class="toggle-label-col">
                     <label for="customApiEndpoint" class="toggle-label">Custom API Endpoint</label>
                     <p class="toggle-desc">Optional override for OpenAI API endpoint. Default is
                         "https://api.openai.com/v1/chat/completions".</p>
@@ -132,8 +145,8 @@
             <div class="toggle-row">
                 <div class="toggle-label-col">
                     <label for="customUserPrompt" class="toggle-label">Custom User Prompt</label>
-                    <p class="toggle-desc">Optional prompt text that will be used instead of the default when
-                        generating summaries. Leave empty to use the default.</p>
+                    <p class="toggle-desc">Optional prompt text that will be used in addition to the default when
+                        generating summaries.</p>
                 </div>
             </div>
             <textarea id="customUserPrompt" placeholder="Optional custom prompt..."></textarea>
