@@ -4,9 +4,9 @@
 import { log } from '../config.js';
 import { baseUrl, confluenceBodyCache } from '../state.js';
 
-export async function fetchConfluenceBodyById(contentId) {
-    if (confluenceBodyCache.has(contentId)) {
-        log.debug(`[Cache] Returning body for ${contentId}`);
+export async function fetchConfluenceBodyById(contentId, forceBodyFetch = false) {
+    if (confluenceBodyCache.has(contentId) && !forceBodyFetch) {
+        log.debug(`[Cache] Hit: Returning body for ${contentId}`);
         return confluenceBodyCache.get(contentId);
     }
     const apiUrl = `${baseUrl}/rest/api/content/${contentId}?expand=body.storage`;
@@ -16,7 +16,7 @@ export async function fetchConfluenceBodyById(contentId) {
         const data = await response.json();
         const bodyHtml = data.body?.storage?.value || '(No content)';
         confluenceBodyCache.set(contentId, bodyHtml);
-        log.debug(`[Cache] Fetched body for ${contentId}`);
+        log.debug(`[Cache] ${forceBodyFetch ? 'Forced ' : ''}Miss: Cached body for ${contentId}`);
         return bodyHtml;
     } catch (error) {
         log.error('[API] Error in fetchConfluenceBodyById:', error);

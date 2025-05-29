@@ -198,7 +198,7 @@
         try {
             const [
                 { getUserPrompt, handleQaSubmit },
-                { fetchConfluenceBodyById, sendOpenAIRequest },
+                { sendOpenAIRequest },
                 { getStoredSummary, getStoredConversation, storeSummary, storeConversation },
                 { showSummaryModal },
                 { summarySystemPrompt, qaSystemPrompt }
@@ -227,15 +227,15 @@
                 type: metadataJson.type || 'page'
             };
 
-
-            const bodyHtml = await fetchConfluenceBodyById(contentId);
             let storedSummary = await getStoredSummary(contentId, baseUrl);
-            const summaryExisted = !!storedSummary?.summaryHtml;   // ⬅️  was a summary already cached?
+            const summaryExisted = !!storedSummary?.summaryHtml;
             let summary = storedSummary?.summaryHtml;
+            let userPrompt = storedSummary?.userPrompt || null;
+            const bodyHtml = ''; // Skip body processing if summary is cached
+
             let conversation = null;
 
             if (!summary) {
-                const userPrompt = await getUserPrompt(pageData);
                 const { openaiApiKey, customApiEndpoint } = await new Promise(res => chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
                 if (!openaiApiKey) {
                     alert('An OpenAI API key is required to generate summaries. Please configure it in the extension options.');
@@ -247,6 +247,8 @@
                     }
                     return;
                 }
+
+                userPrompt = await getUserPrompt(pageData);
 
                 const { selectedAiModel } = await new Promise(res => chrome.storage.sync.get(['selectedAiModel'], res));
                 const model = selectedAiModel || 'gpt-4o';
@@ -272,7 +274,7 @@
                 if (storedConv?.messages) {
                     conversation = storedConv.messages;
                 } else {
-                    const userPrompt = await getUserPrompt(pageData);
+
                     conversation = [
                         { role: 'system', content: qaSystemPrompt },
                         { role: 'user', content: userPrompt },
@@ -286,7 +288,7 @@
                 chrome.storage.sync.get(['autoOpenSummary'], res)
             );
             if (autoOpenSummary === true || summaryExisted) {
-                await showSummaryModal(summary, pageData, bodyHtml, baseUrl);
+                await showSummaryModal(summary, pageData, bodyHtml, baseUrl, userPrompt);
             }
 
             const floatBtn = document.getElementById('enhanced-search-float');

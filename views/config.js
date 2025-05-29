@@ -3,7 +3,7 @@
 // =========================================================
 
 // --- Configuration ---
-export const DEBUG = false; // Toggle verbose DEBUG logging
+export const DEBUG = true; // Toggle verbose DEBUG logging
 export const DB_NAME = 'ConfluenceSummariesDB';
 export const DB_VERSION = 3;
 export const SUMMARY_STORE_NAME = 'summaries';

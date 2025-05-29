@@ -72,12 +72,63 @@ export function detectDirection(text = '') {
     return rtlChars.test(text) ? 'rtl' : 'ltr';
 }
 
-export function sanitizeHtmlWithDOM(htmlString = '') {
+export async function sanitizeHtmlWithDOM(htmlString = '') {
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlString, 'text/html');
     ['script', 'style', 'iframe'].forEach(tag => doc.querySelectorAll(tag).forEach(el => el.remove()));
     const walker = document.createTreeWalker(doc, NodeFilter.SHOW_COMMENT, null);
     let comment;
     while ((comment = walker.nextNode())) comment.parentNode.removeChild(comment);
+
+    const userNodes = Array.from(doc.querySelectorAll('ri\\:user'));
+    const uniqueIds = new Set();
+    const fetchMap = new Map();
+
+    for (const node of userNodes) {
+        const userkey = node.getAttribute('ri:userkey');
+        const username = node.getAttribute('ri:username');
+        const id = userkey || username;
+        if (!id || uniqueIds.has(id)) continue;
+        uniqueIds.add(id);
+
+        const url = userkey
+            ? `${baseUrl}/rest/api/user?key=${encodeURIComponent(userkey)}`
+            : `${baseUrl}/rest/api/user?username=${encodeURIComponent(username)}`;
+
+        try {
+            const res = await fetch(url, {
+                method: 'GET',
+                credentials: 'include',
+                headers: { Accept: 'application/json' }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                fetchMap.set(id, {
+                    displayName: data.displayName || id,
+                    username: data.username || data.name || null
+                });
+            } else {
+                fetchMap.set(id, { displayName: id, username: null });
+            }
+        } catch {
+            fetchMap.set(id, { displayName: id, username: null });
+        }
+    }
+
+    for (const node of userNodes) {
+        const userkey = node.getAttribute('ri:userkey');
+        const usernameAttr = node.getAttribute('ri:username');
+        const id = userkey || usernameAttr;
+        const data = fetchMap.get(id);
+        const profileUrl = data?.username ? `${baseUrl}/display/~${data.username}` : '#';
+        const link = doc.createElement('a');
+        link.className = 'user-mention';
+        link.href = profileUrl;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = `@${data?.displayName || id}`;
+        node.replaceWith(link);
+    }
+
     return doc.body.innerHTML;
 }

@@ -69,7 +69,7 @@ export function setupTextareaResizer(textarea) {
 }
 
 
-export async function showSummaryModal(summaryText, pageData, bodyHtml, baseUrl) {
+export async function showSummaryModal(summaryText, pageData, bodyHtml, baseUrl, providedPrompt = null) {
     const modal = document.getElementById('summary-modal');
     const modalBody = document.getElementById('modal-body');
     const modalClose = document.getElementById('modal-close');
@@ -140,13 +140,20 @@ export async function showSummaryModal(summaryText, pageData, bodyHtml, baseUrl)
     }
 
     const contentId = pageData.id;
-    const userPromptForQA = await getUserPrompt(pageData);
     const storedConv = await getStoredConversation(contentId, baseUrl);
-    const conversation = storedConv?.messages || [
-        { role: 'system', content: qaSystemPrompt },
-        { role: 'user', content: userPromptForQA },
-        { role: 'assistant', content: summaryText }
-    ];
+    let conversation = storedConv?.messages;
+
+    let userPromptForQA = providedPrompt || '';
+    if (!conversation) {
+        if (!userPromptForQA) {
+            userPromptForQA = await getUserPrompt(pageData);
+        }
+        conversation = [
+            { role: 'system', content: qaSystemPrompt },
+            { role: 'user', content: userPromptForQA },
+            { role: 'assistant', content: summaryText }
+        ];
+    }
     state.conversationHistories.set(contentId, conversation);
     await storeConversation(contentId, baseUrl, conversation);
     if (qaThread) renderConversationThread(qaThread, conversation);

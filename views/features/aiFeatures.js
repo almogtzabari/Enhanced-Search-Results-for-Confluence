@@ -9,10 +9,10 @@ import { sanitizeHtmlWithDOM, detectDirection, formatDate, escapeHtml, buildConf
 import { resetSummaryButtons } from '../utils/uiUtils.js';
 import { showConfirmationDialog, showSummaryModal } from '../ui/modalManager.js'; // showSummaryModal is called here
 
-export async function getUserPrompt(pageData) {
+export async function getUserPrompt(pageData, forceBodyFetch = false) {
     log.debug('[Prompt] Building for', pageData.id);
-    const bodyHtmlRaw = await fetchConfluenceBodyById(pageData.id);
-    const bodyHtml = sanitizeHtmlWithDOM(bodyHtmlRaw);
+    const bodyHtmlRaw = await fetchConfluenceBodyById(pageData.id, forceBodyFetch);
+    const bodyHtml = await sanitizeHtmlWithDOM(bodyHtmlRaw);
     const localData = await new Promise(resolve => chrome.storage.local.get(['customUserPrompt'], resolve));
     const userPrompt = (localData.customUserPrompt || '').trim();
     const contentDetails = `
@@ -127,14 +127,14 @@ export async function handleResummarize(pageData, bodyHtml) {
             b.classList.add('loading');
         });
         try {
-            const userPrompt = await getUserPrompt(pageData);
+            const userPrompt = await getUserPrompt(pageData, true);
             const { openaiApiKey: apiKey, customApiEndpoint } = await new Promise(res => chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
             const { selectedAiModel } = await new Promise(res => chrome.storage.sync.get(['selectedAiModel'], res));
             const model = selectedAiModel || 'gpt-4o';
             const result = await sendOpenAIRequest({ apiKey, apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions', model, messages: [{ role: 'system', content: summarySystemPrompt }, { role: 'user', content: userPrompt }] });
             const newSummary = result.choices[0].message.content;
             state.summaryCache.set(contentId, newSummary);
-            await storeSummary({ contentId, baseUrl: state.baseUrl, title: pageData.title, summaryHtml: newSummary, bodyHtml });
+            await storeSummary({ contentId, baseUrl: state.baseUrl, title: pageData.title, summaryHtml: newSummary, userPrompt });
             const newConversation = [{ role: 'system', content: qaSystemPrompt }, { role: 'user', content: userPrompt }, { role: 'assistant', content: newSummary }];
             state.conversationHistories.set(contentId, newConversation);
             await storeConversation(contentId, state.baseUrl, newConversation);
@@ -172,37 +172,51 @@ export async function handleSummarizeClick(event) {
     });
 
     try {
-        const bodyHtml = await fetchConfluenceBodyById(contentId).then(sanitizeHtmlWithDOM);
         const stored = await getStoredSummary(contentId, state.baseUrl);
         if (stored?.summaryHtml) {
             log.debug(`[DB] Using cached summary for ${contentId}`);
             state.summaryCache.set(contentId, stored.summaryHtml);
-            showSummaryModal(stored.summaryHtml, pageData, bodyHtml, state.baseUrl);
+            const userPrompt = stored.userPrompt || '';
+            const bodyHtml = ''; // No need to fetch or sanitize
+            showSummaryModal(stored.summaryHtml, pageData, bodyHtml, state.baseUrl, userPrompt);
             resetSummaryButtons(allButtons, '✅ Summary Available!');
-        } else {
-            log.debug(`[AI] Requesting new summary for ${contentId}`);
-            const { openaiApiKey, customApiEndpoint } = await new Promise(res => chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
-            if (!openaiApiKey) {
-                alert('An OpenAI API key is required to generate summaries. Please configure it in the extension options.');
-                resetSummaryButtons(allButtons);
-                return;
-            }
-            const userPrompt = await getUserPrompt(pageData);
-            const { selectedAiModel } = await new Promise(res => chrome.storage.sync.get(['selectedAiModel'], res));
-            const model = selectedAiModel || 'gpt-4o';
-            const result = await sendOpenAIRequest({ apiKey: openaiApiKey, apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions', model, messages: [{ role: 'system', content: summarySystemPrompt }, { role: 'user', content: userPrompt }] });
-            const summary = result.choices[0].message.content;
-            state.summaryCache.set(contentId, summary);
-            await storeSummary({ contentId, baseUrl: state.baseUrl, title: pageData.title, summaryHtml: summary, bodyHtml });
-            resetSummaryButtons(allButtons, '✅ Summary Available!');
-
-            // Show the modal if auto-open summary is enabled
-            chrome.storage.sync.get(['autoOpenSummary'], ({ autoOpenSummary }) => {
-                if (autoOpenSummary === true) {
-                    showSummaryModal(summary, pageData, bodyHtml, state.baseUrl);
-                }
-            });
+            return;
         }
+
+        const { openaiApiKey, customApiEndpoint } = await new Promise(res => chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
+        if (!openaiApiKey) {
+            alert('An OpenAI API key is required to generate summaries. Please configure it in the extension options.');
+            resetSummaryButtons(allButtons);
+            return;
+        }
+
+        log.debug(`[AI] Requesting new summary for ${contentId}`);
+        const bodyHtml = await fetchConfluenceBodyById(contentId).then(sanitizeHtmlWithDOM);
+        const userPrompt = await getUserPrompt(pageData);
+
+        const { selectedAiModel } = await new Promise(res => chrome.storage.sync.get(['selectedAiModel'], res));
+        const model = selectedAiModel || 'gpt-4o';
+        const result = await sendOpenAIRequest({
+            apiKey: openaiApiKey,
+            apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions',
+            model,
+            messages: [
+                { role: 'system', content: summarySystemPrompt },
+                { role: 'user', content: userPrompt }
+            ]
+        });
+
+        const summary = result.choices[0].message.content;
+        state.summaryCache.set(contentId, summary);
+        await storeSummary({ contentId, baseUrl: state.baseUrl, title: pageData.title, summaryHtml: summary, userPrompt });
+        resetSummaryButtons(allButtons, '✅ Summary Available!');
+
+        chrome.storage.sync.get(['autoOpenSummary'], ({ autoOpenSummary }) => {
+            if (autoOpenSummary === true) {
+                showSummaryModal(summary, pageData, bodyHtml, state.baseUrl, userPrompt);
+            }
+        });
+
     } catch (err) {
         log.error('[Summary] Failed to summarize:', err);
         alert(`Failed to summarize content: ${err.message}`);
