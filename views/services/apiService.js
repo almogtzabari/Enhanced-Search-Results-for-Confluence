@@ -1,7 +1,7 @@
 // =========================================================
 //                      API FUNCTIONS
 // =========================================================
-import { log, USE_LOCAL_PROXY } from '../config.js';
+import { log } from '../config.js';
 import { baseUrl, confluenceBodyCache } from '../state.js';
 
 export async function fetchConfluenceBodyById(contentId) {
@@ -25,25 +25,24 @@ export async function fetchConfluenceBodyById(contentId) {
 }
 
 export async function sendOpenAIRequest({ apiKey, apiUrl, model, messages }) {
-    log.info('[OpenAI] → POST', apiUrl);
+    log.info('[OpenAI] (via BG) → POST', apiUrl);
     log.debug('[OpenAI] Payload:', { model, msgCount: messages.length });
-    const useProxy = USE_LOCAL_PROXY;
-    const url = useProxy ? 'http://localhost:3000/proxy' : apiUrl;
-    const body = useProxy ? JSON.stringify({ apiKey, apiUrl, model, messages }) : JSON.stringify({ model, messages });
-    const headers = useProxy ? { 'Content-Type': 'application/json' } : { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
-    try {
-        const response = await fetch(url, { method: 'POST', headers, body });
-        if (!response.ok) {
-            const errorText = await response.text();
-            log.error('[OpenAI] HTTP Error', response.status, errorText.slice(0, 200));
-            throw new Error(`OpenAI request failed: ${response.statusText}`);
-        }
-        const result = await response.json();
-        log.info('[OpenAI] ✓ Response OK');
-        log.debug('[OpenAI] Meta:', { model: result.model, usage: result.usage });
-        return result;
-    } catch (error) {
-        log.error('[OpenAI] Fetch/Request Error:', error);
-        throw error;
-    }
+
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage(
+            {
+                type: 'openaiRequest',
+                payload: { apiKey, apiUrl, model, messages }
+            },
+            (response) => {
+                if (chrome.runtime.lastError) {
+                    return reject(new Error(chrome.runtime.lastError.message));
+                }
+                if (!response?.success) {
+                    return reject(new Error(response?.error || 'Unknown error from background'));
+                }
+                resolve(response.data);
+            }
+        );
+    });
 }

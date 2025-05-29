@@ -131,3 +131,55 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         .catch(err => sendResponse({ success: false, error: err.message }));
     return true; // keep message channel open
 });
+
+function performOpenAIRequest({ apiKey, apiUrl, model, messages }, sendResponse) {
+    (async () => {
+        try {
+            const res = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({ model, messages })
+            });
+
+            if (!res.ok) {
+                const text = await res.text();
+                sendResponse({ success: false, error: `HTTP ${res.status}: ${text}` });
+            } else {
+                const data = await res.json();
+                sendResponse({ success: true, data });
+            }
+        } catch (err) {
+            sendResponse({ success: false, error: err.message });
+        }
+    })();
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg.type === 'openaiRequest') {
+        const origin = new URL(msg.payload.apiUrl).origin;
+        const isFirefox = typeof browser !== 'undefined' && typeof InstallTrigger !== 'undefined';
+
+        if (isFirefox) {
+            performOpenAIRequest(msg.payload, sendResponse);
+        } else {
+            chrome.permissions.contains({ origins: [origin + '/*'] }, (hasPermission) => {
+                if (hasPermission) {
+                    performOpenAIRequest(msg.payload, sendResponse);
+                } else {
+                    chrome.permissions.request({ origins: [origin + '/*'] }, (granted) => {
+                        if (granted) {
+                            performOpenAIRequest(msg.payload, sendResponse);
+                        } else {
+                            sendResponse({ success: false, error: 'Permission denied for custom endpoint' });
+                        }
+                    });
+                }
+            });
+        }
+
+        return true;
+    }
+});

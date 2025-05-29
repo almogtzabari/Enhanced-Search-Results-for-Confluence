@@ -4,7 +4,6 @@
 
 // --- Configuration ---
 export const DEBUG = false; // Toggle verbose DEBUG logging
-export const USE_LOCAL_PROXY = false; // Use local proxy for OpenAI requests
 export const DB_NAME = 'ConfluenceSummariesDB';
 export const DB_VERSION = 3;
 export const SUMMARY_STORE_NAME = 'summaries';
@@ -46,10 +45,13 @@ export const summarySystemPrompt = `
     Use it to focus the summary on what the user cares about.
 `;
 export const qaSystemPrompt = `
-    You are a helpful AI assistant answering follow-up questions about a Confluence document and its summary.
+    You are a helpful AI assistant answering follow-up questions about a Confluence document.
     Respond clearly, accurately, and in plain text. Avoid reiterating the full summary format.
     Answer as a helpful peer who understands the document’s purpose and key details.
     Important: Output only valid, clean and nicely formatted HTML (no Markdown or code blocks, and no \`\`\`html)
+    When generating tables, make sure it is styled nicely (e.g. the width of each column is appropriate for the content,
+    the titles are aligned with the columns, etc.).
+    If the question is about a specific section, provide that section's content.
 `;
 
 // --- Logging Utility ---
