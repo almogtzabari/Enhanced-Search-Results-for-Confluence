@@ -109,7 +109,7 @@
         floatBtn.textContent = '🧠 Summarize';
         Object.assign(floatBtn.style, {
             position: 'fixed',
-            bottom: '20px',
+            bottom: '50px',
             right: '20px',
             zIndex: '10000',
             padding: '10px 14px',

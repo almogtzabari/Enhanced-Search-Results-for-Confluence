@@ -82,12 +82,12 @@ export function updateTableHtml(resultsToDisplay) {
         const creator = page.history?.createdBy;
         const creatorId = creator ? (creator.username || creator.userKey || creator.accountId) : '';
         row.innerHTML = `
-            <td><span title="${typeLabels[page.type] || page.type}" style="font-size: 2.0em;">${typeIcons[page.type] || '📄'}</span></td>
-            <td><div style="display: flex; flex-direction: column; align-items: flex-start;"><a href="${buildConfluenceUrl(page._links.webui)}" target="_blank" class="multiline-ellipsis" title="${escapeHtml(page.title)}">${escapeHtml(page.title)}</a><button class="summarize-button" data-id="${page.id}" style="display: ${state.ENABLE_SUMMARIES ? 'inline-block' : 'none'};">${state.summaryCache.has(page.id) ? '✅ Summary Available!' : '🧠 Summarize'}</button></div></td>
-            <td>${page.space ? `<div class="space-cell"><img src="${page.space.iconUrl || `${state.baseUrl}/images/logo/default-space-logo.svg`}" class="space-icon" alt=""><a href="${buildConfluenceUrl(page.space._links?.webui)}" target="_blank" class="multiline-ellipsis" title="${escapeHtml(page.space.name)}">${escapeHtml(page.space.name)}</a></div>` : ''}</td>
-            <td>${creator ? `<div class="contributor-cell"><img src="${creator.profilePicture?.path ? `${state.baseUrl}${creator.profilePicture.path}` : `${state.baseUrl}/images/icons/profilepics/default.png`}" class="contributor-avatar" alt="" loading="lazy"><a href="${creatorId ? `${state.baseUrl}/display/~${creatorId}` : '#'}" target="_blank" class="multiline-ellipsis" title="${escapeHtml(creator.displayName)}">${escapeHtml(creator.displayName)}</a></div>` : 'Unknown'}</td>
-            <td>${page.history?.createdDate ? formatDate(page.history.createdDate) : 'N/A'}</td>
-            <td>${page.version?.when ? formatDate(page.version.when) : 'N/A'}</td>`;
+        <td><span title="${typeLabels[page.type] || page.type}" style="font-size: 2.0em;">${typeIcons[page.type] || '📄'}</span></td>
+        <td><div style="display: flex; flex-direction: column; align-items: flex-start;"><a href="${buildConfluenceUrl(page._links.webui)}" target="_blank" class="multiline-ellipsis" title="${escapeHtml(page.title)}">${escapeHtml(page.title)}</a><button class="summarize-button" data-id="${page.id}" style="display: ${state.ENABLE_SUMMARIES ? 'inline-block' : 'none'};">${state.summaryCache.has(page.id) ? '✅ Summary Available!' : '🧠 Summarize'}</button></div></td>
+        <td>${page.space ? `<div class="space-cell"><img src="${page.space.iconUrl || `${state.baseUrl}/images/logo/default-space-logo.svg`}" class="space-icon" alt="" data-name="${escapeHtml(page.space.name)}" data-url="${buildConfluenceUrl(page.space._links?.webui)}"><a href="${buildConfluenceUrl(page.space._links?.webui)}" target="_blank" class="multiline-ellipsis" title="${escapeHtml(page.space.name)}">${escapeHtml(page.space.name)}</a></div>` : ''}</td>
+        <td>${creator ? `<div class="contributor-cell"><img src="${creator.avatarUrl}" class="contributor-avatar" alt="" loading="lazy" data-name="${escapeHtml(creator.displayName)}" data-url="${creatorId ? `${state.baseUrl}/display/~${creatorId}` : '#'}"><a href="${creatorId ? `${state.baseUrl}/display/~${creatorId}` : '#'}" target="_blank" class="multiline-ellipsis" title="${escapeHtml(creator.displayName)}">${escapeHtml(creator.displayName)}</a></div>` : 'Unknown'}</td>
+        <td>${page.history?.createdDate ? formatDate(page.history.createdDate) : 'N/A'}</td>
+        <td>${page.version?.when ? formatDate(page.version.when) : 'N/A'}</td>`;
         tbody.appendChild(row);
     });
 
@@ -104,6 +104,19 @@ export function updateTableHtml(resultsToDisplay) {
     if (dom.tableViewBtn?.classList.contains('active')) {
         attachScrollListenerTo(bodyWrapper);
     }
+
+    chrome.storage.sync.get(['showTableTooltips'], data => {
+        if (data.showTableTooltips !== false) {
+            attachHoverTooltipToIcons();
+        }
+    });
+
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'sync') return;
+        if ('showTableTooltips' in changes) {
+            updateTableHtml(state.filteredResults); // Re-render to apply new tooltip setting
+        }
+    });
 }
 
 function attachColResizer(resizerEl, idx, headerColGroup, bodyColGroup, minWidth = 60) {
@@ -189,4 +202,32 @@ export function switchToTableView() {
     dom.tableViewBtn.classList.add('active');
     syncTableHorizontalScroll();
     attachScrollListenerTo(document.querySelector('.table-body-wrapper'));
+}
+
+function attachHoverTooltipToIcons() {
+    let tooltip = document.getElementById('avatar-tooltip');
+    if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.id = 'avatar-tooltip';
+        tooltip.className = 'avatar-tooltip';
+        document.body.appendChild(tooltip);
+    }
+
+    document.querySelectorAll('.contributor-avatar, .space-icon').forEach(icon => {
+        icon.addEventListener('mouseenter', () => {
+            const name = icon.dataset.name || '';
+            const url = icon.dataset.url || '#';
+            tooltip.innerHTML = `<img src="${icon.src}" alt="${name}"><br><a href="${url}" target="_blank">${name}</a>`;
+            tooltip.style.display = 'block';
+        });
+
+        icon.addEventListener('mousemove', e => {
+            tooltip.style.left = `${e.pageX + 10}px`;
+            tooltip.style.top = `${e.pageY + 10}px`;
+        });
+
+        icon.addEventListener('mouseleave', () => {
+            tooltip.style.display = 'none';
+        });
+    });
 }
