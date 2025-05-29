@@ -219,7 +219,22 @@ function attachHoverTooltipToIcons() {
             const url = icon.dataset.url || '#';
             const escapedName = escapeHtml(name);
             const escapedUrl = escapeHtml(url);
-            tooltip.innerHTML = `<img src="${icon.src}" alt="${escapedName}"><br><a href="${escapedUrl}" target="_blank">${escapedName}</a>`;
+            while (tooltip.firstChild) {
+                tooltip.removeChild(tooltip.firstChild);
+            }
+
+            const img = document.createElement('img');
+            img.src = icon.src;
+            img.alt = escapedName;
+            tooltip.appendChild(img);
+
+            tooltip.appendChild(document.createElement('br'));
+
+            const link = document.createElement('a');
+            link.href = escapedUrl;
+            link.target = '_blank';
+            link.textContent = escapedName;
+            tooltip.appendChild(link);
             tooltip.style.display = 'block';
         });
 
