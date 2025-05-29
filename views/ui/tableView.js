@@ -217,7 +217,9 @@ function attachHoverTooltipToIcons() {
         icon.addEventListener('mouseenter', () => {
             const name = icon.dataset.name || '';
             const url = icon.dataset.url || '#';
-            tooltip.innerHTML = `<img src="${icon.src}" alt="${name}"><br><a href="${url}" target="_blank">${name}</a>`;
+            const escapedName = escapeHtml(name);
+            const escapedUrl = escapeHtml(url);
+            tooltip.innerHTML = `<img src="${icon.src}" alt="${escapedName}"><br><a href="${escapedUrl}" target="_blank">${escapedName}</a>`;
             tooltip.style.display = 'block';
         });
 
