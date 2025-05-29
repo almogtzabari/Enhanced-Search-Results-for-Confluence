@@ -3,7 +3,7 @@
 // =========================================================
 import { dom } from '../domElements.js';
 import * as state from '../state.js';
-import { log, typeIcons, typeLabels } from '../config.js';
+import { log, typeIcons } from '../config.js';
 import { escapeHtml, buildConfluenceUrl, formatDate } from '../utils/generalUtils.js';
 import { attachScrollListenerTo } from '../eventManager.js';
 
@@ -15,7 +15,9 @@ function generateTreeHtml(nodesToRender) {
         const id = `node-${node.id}`;
         const isCollapsed = state.collapsedNodes.has(id);
         const arrowClass = hasChildren ? (isCollapsed ? 'collapsed' : 'expanded') : 'empty';
-        const tooltipAttrs = isResult && state.tooltipSettings.showTooltips ? ` data-title="${escapeHtml(node.title)}" data-contributor="${escapeHtml(node.contributor)}" data-modified="${escapeHtml(node.modified)}" data-type="${node.type}"` : '';
+        const avatarUrl = node.avatarUrl || `${state.baseUrl}/images/icons/profilepics/default.png`;
+        const spaceIcon = node.spaceIcon || `${state.baseUrl}/images/logo/default-space-logo.svg`;
+        const tooltipAttrs = isResult && state.tooltipSettings.showTooltips ? ` data-title="${escapeHtml(node.title)}" data-contributor="${escapeHtml(node.contributor)}" data-modified="${escapeHtml(node.modified)}" data-type="${node.type}" data-avatar="${avatarUrl}" data-spaceicon="${spaceIcon}"` : '';
         const icon = typeIcons[node.type] || '📄';
         html += `<li id="${id}" class="${isResult ? 'search-result' : 'ancestor'}"${tooltipAttrs}>`;
         html += `<span class="arrow ${arrowClass}"></span> <a href="${node.url}" class="tree-node" target="_blank">${isResult ? `${icon}&nbsp;&nbsp;` : ''}${escapeHtml(node.title)}</a>`;
@@ -49,11 +51,20 @@ export function updateTreeHtml(resultsToDisplay) {
             }
         }
         if (!state.nodeMap[pageData.id]) {
+            const contributor = pageData.history?.createdBy;
+            const avatarUrl = contributor?.profilePicture?.path ? `${state.baseUrl}${contributor.profilePicture.path}` : `${state.baseUrl}/images/icons/profilepics/default.png`;
+            const spaceIcon = pageData.space?.icon?.path ? `${state.baseUrl}${pageData.space.icon.path}` : `${state.baseUrl}/images/logo/default-space-logo.svg`;
             state.nodeMap[pageData.id] = {
-                id: pageData.id, title: pageData.title, url: buildConfluenceUrl(pageData._links.webui), children: [], isSearchResult: true,
-                contributor: pageData.history?.createdBy?.displayName || 'Unknown',
+                id: pageData.id,
+                title: pageData.title,
+                url: buildConfluenceUrl(pageData._links.webui),
+                children: [],
+                isSearchResult: true,
+                contributor: contributor?.displayName || 'Unknown',
                 modified: pageData.version?.when ? formatDate(pageData.version.when) : 'N/A',
-                type: pageData.type || 'page'
+                type: pageData.type || 'page',
+                avatarUrl,
+                spaceIcon
             };
         } else {
             state.nodeMap[pageData.id].isSearchResult = true;
@@ -147,17 +158,48 @@ export function switchToTreeView() {
 
 function attachTooltipListenersToTreeNodes() {
     if (!dom.treeTooltip) return;
+
     document.querySelectorAll('#tree-container .search-result').forEach(node => {
         if (state.tooltipBoundNodes.has(node)) return;
+
+        const title = node.dataset.title || '';
+        const contributor = node.dataset.contributor || 'Unknown';
+        const modified = node.dataset.modified || '';
+        const url = node.querySelector('a')?.href || '#';
+
+        const avatar = escapeHtml(node.dataset.avatar || '');
+        const spaceIcon = escapeHtml(node.dataset.spaceicon || '');
+        const safeTitle = escapeHtml(title);
+        const safeContributor = escapeHtml(contributor);
+        const safeModified = escapeHtml(modified);
+        const safeUrl = escapeHtml(url);
+
         const enter = () => {
-            dom.treeTooltip.innerHTML = `<strong>${node.dataset.title}</strong><br>Type: ${typeLabels[node.dataset.type] || 'N/A'}<br>By: ${node.dataset.contributor}<br>Modified: ${node.dataset.modified}`;
+            dom.treeTooltip.innerHTML = `
+                <div class="tooltip-header">
+                    <img src="${spaceIcon}" alt="" class="tooltip-space-icon">
+                    <a href="${safeUrl}" target="_blank">${safeTitle}</a>
+                </div>
+                <div class="tooltip-avatar-row">
+                    <img src="${avatar}" alt="" class="tooltip-avatar">
+                    <span>Created by ${safeContributor}</span>
+                </div>
+                <div class="tooltip-meta">
+                    Last modified at ${safeModified}
+                </div>
+            `;
             dom.treeTooltip.style.display = 'block';
         };
+
         const move = e => {
-            dom.treeTooltip.style.left = `${e.pageX + 10}px`;
-            dom.treeTooltip.style.top = `${e.pageY + 10}px`;
+            dom.treeTooltip.style.left = `${e.pageX + 12}px`;
+            dom.treeTooltip.style.top = `${e.pageY + 12}px`;
         };
-        const leave = () => { dom.treeTooltip.style.display = 'none'; };
+
+        const leave = () => {
+            dom.treeTooltip.style.display = 'none';
+        };
+
         node.addEventListener('mouseenter', enter);
         node.addEventListener('mousemove', move);
         node.addEventListener('mouseleave', leave);

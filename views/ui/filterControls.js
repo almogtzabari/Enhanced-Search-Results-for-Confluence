@@ -34,18 +34,24 @@ export function updateFilterOptionsUIDisplay() {
     const currentBatch = state.allResults.slice(Math.max(0, state.start - RESULTS_PER_REQUEST));
 
     currentBatch.forEach(pageData => {
-        if (pageData.space?.key && !state.fullSpaceList.find(s => s.key === pageData.space.key) && !newSpaces.find(s => s.key === pageData.space.key)) {
+        if (pageData.space?.key) {
             const iconUrl = pageData.space.icon?.path ? `${state.baseUrl}${pageData.space.icon.path}` : `${state.baseUrl}/images/logo/default-space-logo.svg`;
-            newSpaces.push({ key: pageData.space.key, name: pageData.space.name, iconUrl });
             pageData.space.iconUrl = iconUrl;
+
+            if (!state.fullSpaceList.find(s => s.key === pageData.space.key) && !newSpaces.find(s => s.key === pageData.space.key)) {
+                newSpaces.push({ key: pageData.space.key, name: pageData.space.name, iconUrl });
+            }
         }
         const creator = pageData.history?.createdBy;
         if (creator) {
             const key = creator.username || creator.userKey || creator.accountId;
-            if (key && !state.fullContributorList.find(c => c.key === key) && !newContributors.find(c => c.key === key)) {
+            if (key) {
                 const avatarUrl = `${state.baseUrl}${creator.profilePicture?.path || '/images/icons/profilepics/default.png'}`;
-                newContributors.push({ key, name: creator.displayName, avatarUrl });
                 creator.avatarUrl = avatarUrl;
+
+                if (!state.fullContributorList.find(c => c.key === key) && !newContributors.find(c => c.key === key)) {
+                    newContributors.push({ key, name: creator.displayName, avatarUrl });
+                }
             }
         }
     });

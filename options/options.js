@@ -15,7 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const addDomainBtn = $('addDomain');
     const domainContainer = $('domainSettings');
     const darkModeToggle = $('darkModeToggle');
-    const tooltipToggle = $('tooltipToggle');
+    const treeTooltipToggle = $('tooltipToggle');
+    const tableTooltipToggle = $('imageTooltipToggle');
     const enableSummariesToggle = $('enableSummariesToggle');
     const autoOpenSummaryToggle = $('autoOpenSummaryToggle');
     const enableFloatingSummarizeToggle = $('enableFloatingSummarizeToggle');
@@ -165,8 +166,12 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.sync.set({ darkMode: isDark });
     };
 
-    tooltipToggle.onchange = () => {
-        chrome.storage.sync.set({ showTooltips: tooltipToggle.checked });
+    treeTooltipToggle.onchange = () => {
+        chrome.storage.sync.set({ showTooltips: treeTooltipToggle.checked });
+    };
+
+    tableTooltipToggle.onchange = () => {
+        chrome.storage.sync.set({ showTableTooltips: tableTooltipToggle.checked });
     };
 
     enableSummariesToggle.onchange = () => {
@@ -238,7 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     chrome.storage.sync.get(
-        ['domainSettings', 'darkMode', 'showTooltips', 'enableSummaries', 'autoOpenSummary', 'enableFloatingSummarize', 'openaiApiKey', 'customApiEndpoint', 'resultsPerRequest'],
+        ['domainSettings', 'darkMode', 'showTooltips', 'enableSummaries', 'autoOpenSummary', 'enableFloatingSummarize', 'openaiApiKey', 'customApiEndpoint', 'resultsPerRequest', 'showTableTooltips'],
 
         data => {
             chrome.storage.local.get(['customUserPrompt'], local => {
@@ -249,7 +254,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     addDomainEntry();
                 }
                 darkModeToggle.checked = !!merged.darkMode;
-                tooltipToggle.checked = merged.showTooltips !== false;
+                treeTooltipToggle.checked = merged.showTooltips !== false;
+                tableTooltipToggle.checked = merged.showTableTooltips !== false;
                 enableSummariesToggle.checked = merged.enableSummaries !== false;
                 enableFloatingSummarizeToggle.checked = merged.enableFloatingSummarize !== false;
                 autoOpenSummaryToggle.checked = merged.autoOpenSummary === true;
