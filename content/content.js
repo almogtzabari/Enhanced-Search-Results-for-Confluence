@@ -308,8 +308,13 @@
             }
 
         } catch (err) {
-            console.error('[AI Modal] Failed to summarize page:', err);
-            alert('Failed to generate or load summary.');
+            // show the exact reason we got back (falls back to the generic string)
+            const msg = err?.message || 'Failed to generate or load summary.';
+            console.error('[AI Modal] Failed to summarize page:', msg);
+            alert(msg);
+
+            // propagate so the outer <button> handler can reset its UI
+            throw err;
         }
 
         const { setupModalResizers } = await import(chrome.runtime.getURL('views/ui/modalManager.js'));
