@@ -12,7 +12,8 @@ export let allResults = [], filteredResults = [];
 export let fullSpaceList = [], fullContributorList = [];
 export const conversationHistories = new Map();
 export let currentSortColumn = '', currentSortOrder = '';
-export let tooltipSettings = { showTooltips: true };
+export let treeTooltipSettings = { showTooltips: true };
+export let tableTooltipSettings = { showTooltips: true };
 export const confluenceBodyCache = new Map(), summaryCache = new Map();
 export const tooltipBoundNodes = new WeakMap();
 export let lastTextFilter = '', lastSpaceKey = '', lastContributorKey = '';
@@ -40,7 +41,8 @@ export function setFullSpaceList(value) { fullSpaceList = value; }
 export function setFullContributorList(value) { fullContributorList = value; }
 export function setCurrentSortColumn(value) { currentSortColumn = value; }
 export function setCurrentSortOrder(value) { currentSortOrder = value; }
-export function setTooltipSettings(value) { tooltipSettings = value; }
+export function setTreeTooltipSettings(value) { treeTooltipSettings = value; }
+export function setTableTooltipSettings(value) { tableTooltipSettings = value; }
 export function setLastTextFilter(value) { lastTextFilter = value; }
 export function setLastSpaceKey(value) { lastSpaceKey = value; }
 export function setLastContributorKey(value) { lastContributorKey = value; }

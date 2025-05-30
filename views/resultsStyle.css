@@ -1076,7 +1076,7 @@ body.dark-mode {
     color: #fff;
 }
 
-.avatar-tooltip {
+.table-tooltip {
     position: absolute;
     z-index: 9999;
     display: none;
@@ -1092,7 +1092,7 @@ body.dark-mode {
     line-height: 1.4;
 }
 
-.avatar-tooltip img {
+.table-tooltip img {
     width: 64px;
     height: 64px;
     border-radius: 50%;
@@ -1100,11 +1100,11 @@ body.dark-mode {
     margin-bottom: 6px;
 }
 
-.avatar-tooltip a {
+.table-tooltip a {
     color: var(--link-color);
     text-decoration: none;
 }
 
-.avatar-tooltip a:hover {
+.table-tooltip a:hover {
     text-decoration: underline;
 }

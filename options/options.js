@@ -168,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     treeTooltipToggle.onchange = () => {
-        chrome.storage.sync.set({ showTooltips: treeTooltipToggle.checked });
+        chrome.storage.sync.set({ showTreeTooltips: treeTooltipToggle.checked });
     };
 
     tableTooltipToggle.onchange = () => {
@@ -260,7 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     addDomainEntry();
                 }
                 darkModeToggle.checked = !!merged.darkMode;
-                treeTooltipToggle.checked = merged.showTooltips !== false;
+                treeTooltipToggle.checked = merged.showTreeTooltips !== false;
                 tableTooltipToggle.checked = merged.showTableTooltips !== false;
                 enableSummariesToggle.checked = merged.enableSummaries !== false;
                 enableFloatingSummarizeToggle.checked = merged.enableFloatingSummarize !== false;

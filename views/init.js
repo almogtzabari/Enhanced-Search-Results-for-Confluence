@@ -9,7 +9,8 @@ import { showLoadingIndicator, showNoResultsMessage } from './utils/uiUtils.js';
 import { performNewSearch } from './features/searchController.js';
 import { populateFiltersFromUrlParams } from './ui/filterControls.js';
 import { setupGlobalEventListeners } from './eventManager.js';
-import { updateTooltipDisplayState } from './ui/treeView.js';
+import { updateTreeTooltipDisplayState } from './ui/treeView.js';
+import { updateTableTooltipDisplayState } from './ui/tableView.js';
 import { renderCurrentView } from './core/dataProcessor.js';
 
 async function init() {
@@ -38,7 +39,7 @@ async function init() {
     if (dom.newSearchInput) dom.newSearchInput.value = state.searchText;
 
     try {
-        const data = await new Promise(res => chrome.storage.sync.get(['darkMode', 'resultsPerRequest', 'enableSummaries', 'openaiApiKey', 'showTooltips'], res));
+        const data = await new Promise(res => chrome.storage.sync.get(['darkMode', 'resultsPerRequest', 'enableSummaries', 'openaiApiKey', 'showTooltips', 'showTableTooltips'], res));
         if (data.darkMode) {
             document.body.classList.add('dark-mode');
         } else {
@@ -46,16 +47,21 @@ async function init() {
         }
         setGlobalResultsPerRequest(Number.isInteger(data.resultsPerRequest) ? data.resultsPerRequest : 75);
         state.setEnableSummaries(data.enableSummaries !== false);
-        state.setTooltipSettings({ showTooltips: data.showTooltips !== false });
-        log.debug('Settings loaded:', { perRequest: log.RESULTS_PER_REQUEST, summaries: state.ENABLE_SUMMARIES, tooltips: state.tooltipSettings.showTooltips });
+        state.setTreeTooltipSettings({ showTreeTooltips: data.showTreeTooltips !== false });
+        state.setTableTooltipSettings({ showTableTooltips: data.showTableTooltips !== false });
+        log.debug('Settings loaded:', { perRequest: log.RESULTS_PER_REQUEST, summaries: state.ENABLE_SUMMARIES, tooltips: state.treeTooltipSettings.showTooltips });
     } catch (error) { log.error('Failed to load settings:', error); }
 
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== 'sync') return;
         if (changes.darkMode) document.body.classList.toggle('dark-mode', changes.darkMode.newValue);
         if (changes.showTooltips) {
-            state.setTooltipSettings({ showTooltips: changes.showTooltips.newValue !== false });
-            updateTooltipDisplayState();
+            state.setTreeTooltipSettings({ showTooltips: changes.showTooltips.newValue !== false });
+            updateTreeTooltipDisplayState();
+        }
+        if (changes.showTableTooltips) {
+            state.setTableTooltipSettings({ showTooltips: changes.showTableTooltips.newValue !== false });
+            updateTableTooltipDisplayState();
         }
         if ('enableSummaries' in changes) {
             state.setEnableSummaries(changes.enableSummaries.newValue === true);
@@ -76,7 +82,8 @@ async function init() {
         showNoResultsMessage();
         showLoadingIndicator(false);
     }
-    updateTooltipDisplayState();
+    updateTreeTooltipDisplayState();
+    updateTableTooltipDisplayState();
 
     window.addEventListener('popstate', () => {
         const params = getQueryParams();
