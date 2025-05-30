@@ -126,6 +126,13 @@ export async function handleResummarize(pageData, bodyHtml) {
             b.disabled = true;
             b.classList.add('loading');
         });
+
+        const floatBtn = document.getElementById('enhanced-search-float');
+        if (floatBtn) {
+            floatBtn.textContent = 'Summarizing...';
+            floatBtn.classList.add('loading');
+            floatBtn.disabled = true;
+        }
         try {
             const userPrompt = await getUserPrompt(pageData, true);
             const { openaiApiKey: apiKey, customApiEndpoint } = await new Promise(res => chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
@@ -152,6 +159,14 @@ export async function handleResummarize(pageData, bodyHtml) {
             if (qaSubmitBtn) qaSubmitBtn.disabled = false;
             if (qaClearBtn) qaClearBtn.disabled = false;
             if (qaResummarizeBtn) qaResummarizeBtn.disabled = false;
+
+            const floatBtn = document.getElementById('enhanced-search-float');
+            if (floatBtn) {
+                floatBtn.textContent = '✅ Summary Available!';
+                floatBtn.classList.remove('loading');
+                floatBtn.disabled = false;
+            }
+
         }
     });
 }

@@ -30,7 +30,7 @@ export function cacheDomElements() {
     dom.openOptionsButton = document.getElementById('open-options');
     dom.poofAudio = document.getElementById('poof-audio');
     dom.treeTooltip = null; // Will be created dynamically
-
+    dom.TableTooltip = null; // Will be created dynamically
     dom.modalBody = document.getElementById('modal-body');
     dom.modalClose = document.getElementById('modal-close');
     dom.summaryTitle = document.getElementById('summary-title');

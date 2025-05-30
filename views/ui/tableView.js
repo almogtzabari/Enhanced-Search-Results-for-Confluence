@@ -107,13 +107,14 @@ export function updateTableHtml(resultsToDisplay) {
 
     chrome.storage.sync.get(['showTableTooltips'], data => {
         if (data.showTableTooltips !== false) {
-            attachHoverTooltipToIcons();
+            detachTableTooltipListeners();
+            attachTableTooltipListeners();
         }
     });
 
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== 'sync') return;
-        if ('showTableTooltips' in changes) {
+        if ('showTooltips' in changes) {
             updateTableHtml(state.filteredResults); // Re-render to apply new tooltip setting
         }
     });
@@ -174,7 +175,6 @@ function syncTableHorizontalScroll() {
     }
 }
 
-
 export function handleTableSortClick(event) {
     if (event.target.classList.contains('th-resizer')) return;
     const column = event.currentTarget.dataset.column;
@@ -192,7 +192,6 @@ export function handleTableSortClick(event) {
     processAndRenderResults(true);
 }
 
-
 export function switchToTableView() {
     if (!dom.treeContainer || !dom.tableContainer || !dom.treeViewBtn || !dom.tableViewBtn) return;
     log.debug('Switching to Table View');
@@ -204,14 +203,14 @@ export function switchToTableView() {
     attachScrollListenerTo(document.querySelector('.table-body-wrapper'));
 }
 
-function attachHoverTooltipToIcons() {
-    let tooltip = document.getElementById('avatar-tooltip');
-    if (!tooltip) {
-        tooltip = document.createElement('div');
-        tooltip.id = 'avatar-tooltip';
-        tooltip.className = 'avatar-tooltip';
-        document.body.appendChild(tooltip);
+function attachTableTooltipListeners() {
+    if (!dom.tableTooltip) {
+        dom.tableTooltip = document.createElement('div');
+        dom.tableTooltip.id = 'table-tooltip';
+        dom.tableTooltip.className = 'table-tooltip';
+        document.body.appendChild(dom.tableTooltip);
     }
+    const tooltip = dom.tableTooltip;
 
     document.querySelectorAll('.contributor-avatar, .space-icon').forEach(icon => {
         icon.addEventListener('mouseenter', () => {
@@ -246,5 +245,28 @@ function attachHoverTooltipToIcons() {
         icon.addEventListener('mouseleave', () => {
             tooltip.style.display = 'none';
         });
+    });
+}
+
+function detachTableTooltipListeners() {
+    if (dom.tableTooltip) dom.tableTooltip.style.display = 'none';
+    document.querySelectorAll('.contributor-avatar, .space-icon').forEach(icon => {
+        // Clone node to remove all listeners (simple and effective)
+        const clone = icon.cloneNode(true);
+        icon.parentNode.replaceChild(clone, icon);
+    });
+}
+
+export function updateTableTooltipDisplayState() {
+    if (!dom.tableTooltip) {
+        dom.tableTooltip = document.createElement('div');
+        dom.tableTooltip.id = 'table-tooltip';
+        dom.tableTooltip.className = 'table-tooltip';
+        document.body.appendChild(dom.tableTooltip);
+    }
+    chrome.storage.sync.get(['showTableTooltips'], (data) => {
+        state.tableTooltipSettings.showTooltips = data.showTableTooltips !== false;
+        detachTableTooltipListeners();
+        if (state.tableTooltipSettings.showTooltips) attachTableTooltipListeners();
     });
 }

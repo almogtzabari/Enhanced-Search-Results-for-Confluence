@@ -921,3 +921,11 @@ body.dark-mode {
     animation: spin 0.8s linear infinite;
     vertical-align: middle;
 }
+
+#summary-modal th,
+#summary-modal td {
+    padding: 12px 15px;
+    text-align: left;
+    color: var(--text-color);
+    min-width: 0;
+}

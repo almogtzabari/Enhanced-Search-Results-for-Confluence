@@ -17,7 +17,7 @@ function generateTreeHtml(nodesToRender) {
         const arrowClass = hasChildren ? (isCollapsed ? 'collapsed' : 'expanded') : 'empty';
         const avatarUrl = node.avatarUrl || `${state.baseUrl}/images/icons/profilepics/default.png`;
         const spaceIcon = node.spaceIcon || `${state.baseUrl}/images/logo/default-space-logo.svg`;
-        const tooltipAttrs = isResult && state.tooltipSettings.showTooltips ? ` data-title="${escapeHtml(node.title)}" data-contributor="${escapeHtml(node.contributor)}" data-modified="${escapeHtml(node.modified)}" data-type="${node.type}" data-avatar="${avatarUrl}" data-spaceicon="${spaceIcon}"` : '';
+        const tooltipAttrs = isResult && state.treeTooltipSettings.showTooltips ? ` data-title="${escapeHtml(node.title)}" data-contributor="${escapeHtml(node.contributor)}" data-modified="${escapeHtml(node.modified)}" data-type="${node.type}" data-avatar="${avatarUrl}" data-spaceicon="${spaceIcon}"` : '';
         const icon = typeIcons[node.type] || '📄';
         html += `<li id="${id}" class="${isResult ? 'search-result' : 'ancestor'}"${tooltipAttrs}>`;
         html += `<span class="arrow ${arrowClass}"></span> <a href="${node.url}" class="tree-node" target="_blank">${isResult ? `${icon}&nbsp;&nbsp;` : ''}${escapeHtml(node.title)}</a>`;
@@ -105,7 +105,7 @@ export function updateTreeHtml(resultsToDisplay) {
     }
     log.debug(`[Tree] Rendering with ${state.roots.length} root nodes. NodeMap size: ${Object.keys(state.nodeMap).length}`);
     if (dom.treeContainer) dom.treeContainer.innerHTML = generateTreeHtml(state.roots);
-    updateTooltipDisplayState();
+    updateTreeTooltipDisplayState();
 }
 
 export function handleTreeArrowClick(event) {
@@ -156,7 +156,7 @@ export function switchToTreeView() {
     attachScrollListenerTo(document.querySelector('.container'));
 }
 
-function attachTooltipListenersToTreeNodes() {
+function attachTreeTooltipListeners() {
     if (!dom.treeTooltip) return;
 
     document.querySelectorAll('#tree-container .search-result').forEach(node => {
@@ -207,7 +207,7 @@ function attachTooltipListenersToTreeNodes() {
     });
 }
 
-function detachTooltipListenersFromTreeNodes() {
+function detachTreeTooltipListeners() {
     if (dom.treeTooltip) dom.treeTooltip.style.display = 'none';
     document.querySelectorAll('#tree-container .search-result').forEach(node => {
         const handlers = state.tooltipBoundNodes.get(node);
@@ -220,7 +220,7 @@ function detachTooltipListenersFromTreeNodes() {
     });
 }
 
-export function updateTooltipDisplayState() {
+export function updateTreeTooltipDisplayState() {
     if (!dom.treeTooltip) {
         dom.treeTooltip = document.createElement('div');
         dom.treeTooltip.id = 'tree-tooltip';
@@ -228,8 +228,8 @@ export function updateTooltipDisplayState() {
         document.body.appendChild(dom.treeTooltip);
     }
     chrome.storage.sync.get(['showTooltips'], (data) => {
-        state.tooltipSettings.showTooltips = data.showTooltips !== false;
-        detachTooltipListenersFromTreeNodes();
-        if (state.tooltipSettings.showTooltips) attachTooltipListenersToTreeNodes();
+        state.treeTooltipSettings.showTooltips = data.showTooltips !== false;
+        detachTreeTooltipListeners();
+        if (state.treeTooltipSettings.showTooltips) attachTreeTooltipListeners();
     });
 }
