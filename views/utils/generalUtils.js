@@ -80,6 +80,7 @@ export async function sanitizeHtmlWithDOM(htmlString = '') {
     let comment;
     while ((comment = walker.nextNode())) comment.parentNode.removeChild(comment);
 
+    log.debug('[Sanitize] Looking for user mentions to replace (ri:userkey or ri:username)');
     const userNodes = Array.from(doc.querySelectorAll('ri\\:user'));
     const uniqueIds = new Set();
     const fetchMap = new Map();

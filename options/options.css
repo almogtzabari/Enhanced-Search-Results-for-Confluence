@@ -489,7 +489,7 @@ body.dark-mode #advancedSettingsContent textarea#customUserPrompt {
 }
 
 #customApiEndpoint {
-    max-width: 50%;
+    max-width: 100%;
 }
 
 #clearConversations,

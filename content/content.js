@@ -131,6 +131,8 @@
                 injectModalHtml();
                 await launchAiModalForPage();
             } catch (err) {
+                console.error('[Summarize Button] Unexpected error:', err);
+                alert(`Failed to summarize the page.\n\nReason: ${err.message || 'Unknown error.'}`);
                 floatBtn.textContent = '🧠 Summarize';
             } finally {
                 floatBtn.classList.remove('loading');
@@ -196,19 +198,36 @@
         }
 
         try {
-            const [
-                { getUserPrompt, handleQaSubmit },
-                { sendOpenAIRequest },
-                { getStoredSummary, getStoredConversation, storeSummary, storeConversation },
-                { showSummaryModal },
-                { summarySystemPrompt, qaSystemPrompt }
-            ] = await Promise.all([
-                import(chrome.runtime.getURL('views/features/aiFeatures.js')),
-                import(chrome.runtime.getURL('views/services/apiService.js')),
-                import(chrome.runtime.getURL('views/services/dbService.js')),
-                import(chrome.runtime.getURL('views/ui/modalManager.js')),
-                import(chrome.runtime.getURL('views/config.js'))
-            ]);
+            let getUserPrompt, handleQaSubmit, sendOpenAIRequest, getStoredSummary, getStoredConversation, storeSummary, storeConversation, showSummaryModal, summarySystemPrompt, qaSystemPrompt;
+            try {
+                const [
+                    aiFeatures,
+                    apiService,
+                    dbService,
+                    modalManager,
+                    config
+                ] = await Promise.all([
+                    import(chrome.runtime.getURL('views/features/aiFeatures.js')),
+                    import(chrome.runtime.getURL('views/services/apiService.js')),
+                    import(chrome.runtime.getURL('views/services/dbService.js')),
+                    import(chrome.runtime.getURL('views/ui/modalManager.js')),
+                    import(chrome.runtime.getURL('views/config.js'))
+                ]);
+                getUserPrompt = aiFeatures.getUserPrompt;
+                handleQaSubmit = aiFeatures.handleQaSubmit;
+                sendOpenAIRequest = apiService.sendOpenAIRequest;
+                getStoredSummary = dbService.getStoredSummary;
+                getStoredConversation = dbService.getStoredConversation;
+                storeSummary = dbService.storeSummary;
+                storeConversation = dbService.storeConversation;
+                showSummaryModal = modalManager.showSummaryModal;
+                summarySystemPrompt = config.summarySystemPrompt;
+                qaSystemPrompt = config.qaSystemPrompt;
+            } catch (importErr) {
+                console.error('[AI Modal] Failed to load modules:', importErr);
+                alert('Failed to load necessary components for AI features.');
+                throw importErr;
+            }
 
             const baseUrl = new URL(window.location.href).origin;
             const { setBaseUrl } = await import(chrome.runtime.getURL('views/state.js'));
@@ -238,7 +257,7 @@
             if (!summary) {
                 const { openaiApiKey, customApiEndpoint } = await new Promise(res => chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
                 if (!openaiApiKey) {
-                    alert('An OpenAI API key is required to generate summaries. Please configure it in the extension options.');
+                    alert('An OpenAI API key is required to generate summaries.\n\nPlease configure it in the extension options.');
                     const floatBtn = document.getElementById('enhanced-search-float');
                     if (floatBtn) {
                         floatBtn.textContent = '🧠 Summarize';
@@ -376,4 +395,9 @@
             console.error('Failed to check stored summary:', err);
         }
     }
+
+    // Global error handler to prevent silent rejections
+    window.addEventListener('unhandledrejection', event => {
+        console.error('[Unhandled Rejection]', event.reason);
+    });
 })();

@@ -104,14 +104,6 @@
 
             <div class="toggle-row">
                 <div class="toggle-label-col">
-                    <label for="openaiApiKey" class="toggle-label">OpenAI API Key</label>
-                    <p class="toggle-desc">Used to request AI analysis of search results.</p>
-                </div>
-                <input type="password" id="openaiApiKey" class="openai-api-input" placeholder="Paste your key here...">
-            </div>
-
-            <div class="toggle-row">
-                <div class="toggle-label-col">
                     <label for="aiModelSelect" class="toggle-label">AI Model</label>
                     <p class="toggle-desc">Select which OpenAI model to use for summaries and Q&A.</p>
                 </div>
@@ -125,12 +117,21 @@
 
             <div class="toggle-row">
                 <div class="toggle-label-col">
-                    <label for="customApiEndpoint" class="toggle-label">Custom API Endpoint</label>
-                    <p class="toggle-desc">Optional override for OpenAI API endpoint. Default is
-                        "https://api.openai.com/v1/chat/completions".</p>
+                    <label for="openaiApiKey" class="toggle-label">OpenAI API Key</label>
+                    <p class="toggle-desc">Used to request AI analysis of search results.</p>
+                    <input type="password" id="openaiApiKey" class="openai-api-input"
+                        placeholder="Paste your key here..." style="margin-top: 8px; width: 100%;">
                 </div>
-                <input type="text" id="customApiEndpoint" class="openai-api-input"
-                    placeholder="https://your-api-endpoint..." />
+            </div>
+
+            <div class="toggle-row">
+                <div class="toggle-label-col">
+                    <label for="customApiEndpoint" class="toggle-label">Custom OpenAI API Base URL</label>
+                    <p class="toggle-desc">Optional override for the base URL of your OpenAI-compatible API (e.g.,
+                        https://api.openai.com/v1). The extension will automatically append /chat/completions.</p>
+                    <input type="text" id="customApiEndpoint" class="openai-api-input"
+                        placeholder="https://your-api-endpoint..." style="margin-top: 8px; width: 100%;" />
+                </div>
             </div>
 
             <div class="toggle-row">
