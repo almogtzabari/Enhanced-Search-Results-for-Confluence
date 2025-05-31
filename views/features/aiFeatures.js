@@ -234,7 +234,11 @@ export async function handleSummarizeClick(event) {
 
     } catch (err) {
         log.error('[Summary] Failed to summarize:', err);
-        alert(`Failed to summarize content: ${err.message}`);
+        const isEndpointError = err.message?.includes('HTTP') || err.message?.includes('route not supported');
+        const friendlyMessage = isEndpointError
+            ? 'Failed to summarize the page.\n\nThe API endpoint may be incorrect or unsupported.\n\nPlease check your custom API endpoint in the extension options.'
+            : `Failed to summarize the page.\n\nReason: ${err.message || 'Unknown error.'}`;
+        alert(friendlyMessage);
         resetSummaryButtons(allButtons, '🧠 Summarize');
     }
 }

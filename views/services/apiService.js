@@ -29,10 +29,12 @@ export async function sendOpenAIRequest({ apiKey, apiUrl, model, messages }) {
     log.debug('[OpenAI] Payload:', { model, msgCount: messages.length });
 
     return new Promise((resolve, reject) => {
+        const sanitizedBase = (apiUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
+        const fullUrl = `${sanitizedBase}/chat/completions`;
         chrome.runtime.sendMessage(
             {
                 type: 'openaiRequest',
-                payload: { apiKey, apiUrl, model, messages }
+                payload: { apiKey, apiUrl: fullUrl, model, messages }
             },
             (response) => {
                 if (chrome.runtime.lastError) {
