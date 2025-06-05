@@ -19,7 +19,6 @@ function generateTreeHtml(nodesToRender) {
         const avatarUrl = node.avatarUrl || `${state.baseUrl}/images/icons/profilepics/default.png`;
         const spaceIcon = node.spaceIcon || `${state.baseUrl}/images/logo/default-space-logo.svg`;
         const tooltipAttrs = isResult && state.treeTooltipSettings.showTooltips ? ` data-title="${escapeHtml(node.title)}" data-contributor="${escapeHtml(node.contributor)}" data-modified="${escapeHtml(node.modified)}" data-type="${node.type}" data-avatar="${avatarUrl}" data-spaceicon="${spaceIcon}"` : '';
-        const icon = typeIcons[node.type] || '📄';
         html += `<li id="${id}" class="${isResult ? 'search-result' : 'ancestor'}"${tooltipAttrs}>`;
         html += `<span class="arrow ${arrowClass}"></span>`;
         if (isResult && state.ENABLE_SUMMARIES) {
