@@ -3,9 +3,10 @@
 // =========================================================
 import { dom } from '../domElements.js';
 import * as state from '../state.js';
-import { log, typeIcons } from '../config.js';
+import { log, typeIcons, typeLabels } from '../config.js';
 import { escapeHtml, buildConfluenceUrl, formatDate } from '../utils/generalUtils.js';
 import { attachScrollListenerTo } from '../eventManager.js';
+import { resetSummaryButtons } from '../utils/uiUtils.js';
 
 function generateTreeHtml(nodesToRender) {
     let html = '<ul>';
@@ -20,11 +21,12 @@ function generateTreeHtml(nodesToRender) {
         const tooltipAttrs = isResult && state.treeTooltipSettings.showTooltips ? ` data-title="${escapeHtml(node.title)}" data-contributor="${escapeHtml(node.contributor)}" data-modified="${escapeHtml(node.modified)}" data-type="${node.type}" data-avatar="${avatarUrl}" data-spaceicon="${spaceIcon}"` : '';
         const icon = typeIcons[node.type] || '📄';
         html += `<li id="${id}" class="${isResult ? 'search-result' : 'ancestor'}"${tooltipAttrs}>`;
-        html += `<span class="arrow ${arrowClass}"></span> <a href="${node.url}" class="tree-node" target="_blank">${isResult ? `${icon}&nbsp;&nbsp;` : ''}${escapeHtml(node.title)}</a>`;
+        html += `<span class="arrow ${arrowClass}"></span>`;
         if (isResult && state.ENABLE_SUMMARIES) {
             const btnText = state.summaryCache.has(node.id) ? '✅ Summary Available!' : '🧠 Summarize';
-            html += `<div><button class="summarize-button" data-id="${node.id}">${btnText}</button></div>`;
+            html += `<button class="summarize-button inline-prepend" data-id="${node.id}">${btnText}</button>`;
         }
+        html += ` <a href="${node.url}" class="tree-node" target="_blank">${escapeHtml(node.title)}</a>`;
         if (hasChildren) { html += `<div class="children" style="display: ${isCollapsed ? 'none' : 'block'};">${generateTreeHtml(node.children)}</div>`; }
         html += '</li>';
     }
@@ -104,7 +106,14 @@ export function updateTreeHtml(resultsToDisplay) {
         }
     }
     log.debug(`[Tree] Rendering with ${state.roots.length} root nodes. NodeMap size: ${Object.keys(state.nodeMap).length}`);
-    if (dom.treeContainer) dom.treeContainer.innerHTML = generateTreeHtml(state.roots);
+    if (dom.treeContainer) {
+        dom.treeContainer.innerHTML = generateTreeHtml(state.roots);
+        const summarizeBtns = dom.treeContainer.querySelectorAll('.summarize-button');
+        summarizeBtns.forEach(btn => {
+            const isAvailable = state.summaryCache.has(btn.dataset.id);
+            resetSummaryButtons([btn], isAvailable ? '✅ Summary Available!' : '🧠 Summarize');
+        });
+    }
     updateTreeTooltipDisplayState();
 }
 
@@ -166,6 +175,8 @@ function attachTreeTooltipListeners() {
         const contributor = node.dataset.contributor || 'Unknown';
         const modified = node.dataset.modified || '';
         const url = node.querySelector('a')?.href || '#';
+        const type = node.dataset.type || 'page';
+        const typeDisplay = `${typeIcons[type] || '📄'} ${typeLabels[type] || type}`;
 
         const avatar = escapeHtml(node.dataset.avatar || '');
         const spaceIcon = escapeHtml(node.dataset.spaceicon || '');
@@ -185,6 +196,7 @@ function attachTreeTooltipListeners() {
                     <span>Created by ${safeContributor}</span>
                 </div>
                 <div class="tooltip-meta">
+                    ${typeDisplay}<br>
                     Last modified at ${safeModified}
                 </div>
             `;

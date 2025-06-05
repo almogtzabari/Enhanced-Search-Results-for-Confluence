@@ -710,27 +710,6 @@ body.dark-mode #resummarize-loading-overlay {
     }
 }
 
-#enhanced-search-float.summarize-button {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 10000;
-    padding: 10px 14px;
-    font-size: 14px;
-    background-color: #0052CC;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    transition: transform 0.2s ease-in-out, background-color 0.2s ease-in-out;
-}
-
-#enhanced-search-float.summarize-button:hover {
-    transform: scale(1.1);
-    background-color: var(--button-hover-background);
-}
-
 /* ───────────────────────────────
    Confirmation Dialog
    ───────────────────────────────*/
@@ -909,23 +888,114 @@ body.dark-mode {
     scrollbar-color: #555 #1e1e1e;
 }
 
-#enhanced-search-float.loading::after {
-    content: "";
-    display: inline-block;
-    margin-left: 8px;
-    width: 12px;
-    height: 12px;
-    border: 2px solid #ffffff;
-    border-top: 2px solid transparent;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    vertical-align: middle;
-}
-
 #summary-modal th,
 #summary-modal td {
     padding: 12px 15px;
     text-align: left;
     color: var(--text-color);
     min-width: 0;
+}
+
+/* ───────────────────────────────
+   Page Floating Action Button (FAB)
+   ───────────────────────────────*/
+.page-floating-summarize-btn {
+    /* Base style for the button injected by content.js */
+    position: fixed;
+    /* from JS */
+    bottom: 50px;
+    /* from JS */
+    right: 20px;
+    /* from JS */
+    z-index: 10000;
+    /* from JS */
+    background-color: #0052CC;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    /* Slightly more pronounced shadow */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Softer transitions */
+    transition: width 0.3s ease,
+        height 0.3s ease,
+        padding 0.3s ease,
+        border-radius 0.3s ease,
+        line-height 0.3s ease,
+        background-color 0.2s ease,
+        transform 0.2s ease;
+    /* Added transform to transition */
+    overflow: hidden;
+    text-wrap: nowrap;
+}
+
+.page-floating-summarize-btn.float-btn-small {
+    width: 48px;
+    /* Slightly smaller for a tighter look */
+    height: 48px;
+    border-radius: 50%;
+    padding: 0;
+    font-size: 22px;
+    /* Adjusted for typical emoji rendering */
+    line-height: 48px;
+    /* Matches height */
+}
+
+.page-floating-summarize-btn.float-btn-expanded {
+    min-width: auto;
+    height: 48px;
+    border-radius: 24px;
+    /* Consistent with height/2 for pill */
+    padding: 0 18px;
+    /* Adjusted padding */
+    font-size: 14px;
+    line-height: 48px;
+}
+
+.page-floating-summarize-btn:hover:not(:disabled):not(.loading) {
+    background-color: #0041a3;
+    transform: scale(1.05);
+}
+
+.page-floating-summarize-btn:disabled {
+    opacity: 0.6;
+    /* Reduced opacity for disabled state */
+    cursor: not-allowed;
+    transform: scale(1);
+    /* No scale change when disabled */
+}
+
+/* Loading spinner for the button */
+.page-floating-summarize-btn.loading.float-btn-expanded::after {
+    content: "";
+    display: inline-block;
+    margin-left: 8px;
+    width: 14px;
+    /* Slightly adjusted spinner size */
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    /* Slightly faster spin */
+    vertical-align: middle;
+}
+
+/* Dark mode adjustments */
+body.dark-mode .page-floating-summarize-btn {
+    background-color: #3a86ff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+body.dark-mode .page-floating-summarize-btn:hover:not(:disabled):not(.loading) {
+    background-color: #336fcb;
+}
+
+/* Ensure spin animation is defined (it should be from your existing modalStyles.css) */
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
 }

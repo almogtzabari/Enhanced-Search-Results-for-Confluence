@@ -121,16 +121,19 @@ export async function handleResummarize(pageData, bodyHtml) {
         if (resummarizeOverlay) resummarizeOverlay.style.display = 'flex';
 
         const allButtons = document.querySelectorAll(`.summarize-button[data-id="${contentId}"]`);
-        resetSummaryButtons(allButtons, 'Re-summarizing...');
         allButtons.forEach(b => {
+            b.innerHTML = 'Re-summarizing... <span class="inline-spinner"></span>';
             b.disabled = true;
-            b.classList.add('loading');
+            b.classList.add('loading', 'float-btn-expanded');
+            b.classList.remove('float-btn-small');
         });
 
         const floatBtn = document.getElementById('enhanced-search-float');
         if (floatBtn) {
+            floatBtn.dataset.loading = 'true';
             floatBtn.textContent = 'Summarizing...';
-            floatBtn.classList.add('loading');
+            floatBtn.classList.add('float-btn-expanded', 'loading');
+            floatBtn.classList.remove('float-btn-small');
             floatBtn.disabled = true;
         }
         try {
@@ -162,11 +165,23 @@ export async function handleResummarize(pageData, bodyHtml) {
 
             const floatBtn = document.getElementById('enhanced-search-float');
             if (floatBtn) {
-                floatBtn.textContent = '✅ Summary Available!';
-                floatBtn.classList.remove('loading');
+                floatBtn.dataset.loading = 'false';
+                floatBtn.dataset.summaryAvailable = 'true';
                 floatBtn.disabled = false;
-            }
+                const isHovering = floatBtn.matches(':hover');
 
+                if (isHovering) {
+                    floatBtn.textContent = '✅ Summary Available!';
+                    floatBtn.classList.add('float-btn-expanded');
+                    floatBtn.classList.remove('float-btn-small');
+                } else {
+                    floatBtn.textContent = '✅';
+                    floatBtn.classList.add('float-btn-small');
+                    floatBtn.classList.remove('float-btn-expanded');
+                }
+
+                floatBtn.classList.remove('loading');
+            }
         }
     });
 }
@@ -183,7 +198,9 @@ export async function handleSummarizeClick(event) {
     resetSummaryButtons(allButtons, 'Summarizing...');
     allButtons.forEach(b => {
         b.disabled = true;
-        b.classList.add('loading');
+        b.innerHTML = 'Summarizing... <span class="inline-spinner"></span>';
+        b.classList.add('loading', 'float-btn-expanded');
+        b.classList.remove('float-btn-small');
     });
 
     try {
