@@ -39,7 +39,7 @@ body {
     --input-border-color: #ced4da;
     --input-background-color: #ffffff;
     --shadow-color: rgba(0, 0, 0, 0.1);
-    --border-radius: 8px;
+    --border-radius: 10px;
 }
 
 /* Dark Theme Variables */
@@ -66,7 +66,7 @@ body.dark-mode {
     --input-border-color: #555555;
     --input-background-color: #202124;
     --shadow-color: rgba(255, 255, 255, 0.1);
-    --border-radius: 8px;
+    --border-radius: 10px;
 }
 
 .background-wrapper {
@@ -751,19 +751,6 @@ td:nth-child(3) a {
     opacity: 0.7;
 }
 
-.summarize-button.loading::after {
-    content: "";
-    display: inline-block;
-    margin-left: 8px;
-    width: 12px;
-    height: 12px;
-    border: 2px solid #ffffff;
-    border-top: 2px solid transparent;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    vertical-align: middle;
-}
-
 /* Prevent .summarize-button from blending with hovered <li> */
 .tree-container .summarize-button {
     position: relative;
@@ -1107,4 +1094,58 @@ body.dark-mode {
 
 .table-tooltip a:hover {
     text-decoration: underline;
+}
+
+/* Enhanced view-page summarize button transitions */
+.summarize-button.float-btn-small {
+    width: 28px;
+    /* Slightly smaller for a tighter look */
+    height: 28px;
+    border-radius: 50%;
+    padding: 0;
+    font-size: 12px;
+    /* Adjusted for typical emoji rendering */
+    line-height: 28px;
+    /* Matches height */
+}
+
+.summarize-button.float-btn-expanded {
+    min-width: auto;
+    height: 28px;
+    border-radius: 14px;
+    padding: 0 14px;
+    font-size: 12px;
+    line-height: 28px;
+    transition: all 0.3s ease;
+}
+
+.summarize-button.float-btn-expanded.loading {
+    min-width: 160px;
+    height: 28px;
+    padding: 0 14px;
+    font-size: 12px;
+    line-height: 28px;
+    border-radius: 14px;
+}
+
+.inline-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-left: 8px;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+}
+
+.summarize-button.inline-prepend {
+    margin-right: 6px;
+    margin-top: 0;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
 }

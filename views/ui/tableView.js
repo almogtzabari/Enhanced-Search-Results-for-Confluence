@@ -7,6 +7,7 @@ import { log, typeIcons, typeLabels, DEFAULT_COL_WIDTHS } from '../config.js';
 import { escapeHtml, buildConfluenceUrl, formatDate } from '../utils/generalUtils.js';
 import { processAndRenderResults } from '../core/dataProcessor.js';
 import { attachScrollListenerTo } from '../eventManager.js';
+import { resetSummaryButtons } from '../utils/uiUtils.js';
 
 
 export function updateSortIcons() {
@@ -83,7 +84,7 @@ export function updateTableHtml(resultsToDisplay) {
         const creatorId = creator ? (creator.username || creator.userKey || creator.accountId) : '';
         row.innerHTML = `
         <td><span title="${typeLabels[page.type] || page.type}" style="font-size: 2.0em;">${typeIcons[page.type] || '📄'}</span></td>
-        <td><div style="display: flex; flex-direction: column; align-items: flex-start;"><a href="${buildConfluenceUrl(page._links.webui)}" target="_blank" class="multiline-ellipsis" title="${escapeHtml(page.title)}">${escapeHtml(page.title)}</a><button class="summarize-button" data-id="${page.id}" style="display: ${state.ENABLE_SUMMARIES ? 'inline-block' : 'none'};">${state.summaryCache.has(page.id) ? '✅ Summary Available!' : '🧠 Summarize'}</button></div></td>
+        <td><div style="display: flex; align-items: center; gap: 6px;"><button class="summarize-button inline-prepend" data-id="${page.id}" style="display: ${state.ENABLE_SUMMARIES ? 'inline-block' : 'none'};">${state.summaryCache.has(page.id) ? '✅ Summary Available!' : '🧠 Summarize'}</button><a href="${buildConfluenceUrl(page._links.webui)}" target="_blank" class="multiline-ellipsis" title="${escapeHtml(page.title)}">${escapeHtml(page.title)}</a></div></td>
         <td>${page.space ? `<div class="space-cell"><img src="${page.space.iconUrl || `${state.baseUrl}/images/logo/default-space-logo.svg`}" class="space-icon" alt="" data-name="${escapeHtml(page.space.name)}" data-url="${buildConfluenceUrl(page.space._links?.webui)}"><a href="${buildConfluenceUrl(page.space._links?.webui)}" target="_blank" class="multiline-ellipsis" title="${escapeHtml(page.space.name)}">${escapeHtml(page.space.name)}</a></div>` : ''}</td>
         <td>${creator ? `<div class="contributor-cell"><img src="${creator.avatarUrl}" class="contributor-avatar" alt="" loading="lazy" data-name="${escapeHtml(creator.displayName)}" data-url="${creatorId ? `${state.baseUrl}/display/~${creatorId}` : '#'}"><a href="${creatorId ? `${state.baseUrl}/display/~${creatorId}` : '#'}" target="_blank" class="multiline-ellipsis" title="${escapeHtml(creator.displayName)}">${escapeHtml(creator.displayName)}</a></div>` : 'Unknown'}</td>
         <td>${page.history?.createdDate ? formatDate(page.history.createdDate) : 'N/A'}</td>
@@ -104,6 +105,12 @@ export function updateTableHtml(resultsToDisplay) {
     if (dom.tableViewBtn?.classList.contains('active')) {
         attachScrollListenerTo(bodyWrapper);
     }
+
+    const summarizeBtns = dom.tableContainer.querySelectorAll('.summarize-button');
+    summarizeBtns.forEach(btn => {
+        const isAvailable = state.summaryCache.has(btn.dataset.id);
+        resetSummaryButtons([btn], isAvailable ? '✅ Summary Available!' : '🧠 Summarize');
+    });
 
     chrome.storage.sync.get(['showTableTooltips'], data => {
         if (data.showTableTooltips !== false) {
