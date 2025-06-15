@@ -37,6 +37,22 @@ export function storeConversation(contentId, baseUrl, messages) {
     return callDbAction(CONVERSATION_STORE_NAME, 'readwrite', 'put', entry);
 }
 
+export function getAllSavedSearches() {
+    return callDbAction('saved_searches', 'readonly', 'getAll');
+}
+
+export function storeSavedSearch(entry) {
+    return callDbAction('saved_searches', 'readwrite', 'put', entry);
+}
+
+export function deleteSavedSearch(id) {
+    return callDbAction('saved_searches', 'readwrite', 'delete', id);
+}
+
+export function clearAllSavedSearches() {
+    return callDbAction('saved_searches', 'readwrite', 'clear');
+}
+
 export function clearAllSummariesAndConversationsFromDB() {
     return Promise.all([
         callDbAction(SUMMARY_STORE_NAME, 'readwrite', 'clear'),

@@ -74,7 +74,7 @@ The extension is available on the Chrome Web Store and Firefox Add-ons site:
    - To enable AI-powered features:
      - Paste your **OpenAI API key** in the relevant field
      - (Optional) Provide a custom API endpoint if you're using a proxy or self-hosted service  
-       Default: `https://api.openai.com/v1/chat/completions`
+       Default: `https://api.openai.com/v1/`
 
      ![Settings Page](assets/images/settings.png)
 

@@ -85,6 +85,8 @@ function openDb() {
                     db.createObjectStore(SUMMARY_STORE, { keyPath: ['contentId', 'baseUrl'] });
                 if (!db.objectStoreNames.contains(CONVERSATION_STORE))
                     db.createObjectStore(CONVERSATION_STORE, { keyPath: ['contentId', 'baseUrl'] });
+                if (!db.objectStoreNames.contains('saved_searches'))
+                    db.createObjectStore('saved_searches', { keyPath: 'id' });
             };
         } catch (err) {
             reject(err);
@@ -95,6 +97,7 @@ function openDb() {
 
 function dbAction(store, mode, operation, payload) {
     return openDb().then(db => {
+        log.debug(`[DB] dbAction called with store="${store}", mode="${mode}", operation="${operation}"`);
         return new Promise((resolve, reject) => {
             let tx;
             try {
@@ -108,14 +111,19 @@ function dbAction(store, mode, operation, payload) {
             try {
                 if (operation === 'put') req = os.put(payload);
                 else if (operation === 'get') req = os.get(payload);
+                else if (operation === 'getAll') req = os.getAll();
                 else if (operation === 'clear') req = os.clear();
+                else if (operation === 'delete') req = os.delete(payload);
                 else return reject(new Error(`Unsupported operation: ${operation}`));
             } catch (err) {
                 return reject(err);
             }
 
             tx.oncomplete = () => log.debug(`[DB] ${operation} complete on ${store}`);
-            tx.onerror = () => log.error(`[DB] Transaction error: ${tx.error?.message || 'unknown error'}`);
+            tx.onerror = () => {
+                log.error(`[DB] Transaction error: ${tx.error?.message || 'unknown error'}`);
+                reject(tx.error);
+            };
 
             req.onsuccess = () => resolve(req.result);
             req.onerror = () => reject(req.error);

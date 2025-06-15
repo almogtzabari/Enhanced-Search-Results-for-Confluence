@@ -19,7 +19,7 @@ export async function performNewSearch(query) {
     state.setSearchText(sanitizeInput(query));
     log.info(`[Search] Starting new search for: "${state.searchText}"`);
     document.title = `Search results for '${escapeHtml(state.searchText)}' on ${state.domainName}`;
-    if (dom.pageTitle) dom.pageTitle.textContent = `Results (${state.domainName})`;
+    if (dom.pageTitle) dom.pageTitle.textContent = `${state.domainName}`;
     chrome.storage.local.set({ lastSearchText: state.searchText });
 
     const newUrl = new URL(window.location.href);

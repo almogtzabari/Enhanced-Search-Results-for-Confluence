@@ -225,3 +225,42 @@ export function setupModalResizers() {
         sessionStorage.removeItem('modalWidth');
     };
 }
+
+export function showInputDialog(titleHtml, placeholder, onSubmit) {
+    const existingDialog = document.getElementById('dialog-overlay');
+    if (existingDialog) existingDialog.remove();
+
+    const dialogOverlay = document.createElement('div');
+    dialogOverlay.id = 'dialog-overlay';
+    dialogOverlay.className = 'dialog-overlay';
+    dialogOverlay.innerHTML = `
+        <div class="dialog-content">
+            <span class="dialog-close">&times;</span>
+            <p>${titleHtml}</p>
+            <input type="text" id="dialog-input" placeholder="${placeholder}" style="width: 100%; margin: 12px 0; padding: 10px; border-radius: 6px; border: 1px solid #ccc;" />
+            <div class="dialog-actions">
+                <button id="dialog-cancel">Cancel</button>
+                <button id="dialog-confirm">Save</button>
+            </div>
+        </div>`;
+    document.body.appendChild(dialogOverlay);
+
+    const input = dialogOverlay.querySelector('#dialog-input');
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            dialogOverlay.querySelector('#dialog-confirm').click();
+        }
+    };
+    setTimeout(() => input.focus(), 20);
+
+    const closeDialog = () => dialogOverlay.remove();
+    dialogOverlay.querySelector('.dialog-close').onclick = closeDialog;
+    dialogOverlay.querySelector('#dialog-cancel').onclick = closeDialog;
+    dialogOverlay.querySelector('#dialog-confirm').onclick = () => {
+        const value = input.value.trim();
+        closeDialog();
+        onSubmit(value);
+    };
+    dialogOverlay.onclick = (e) => { if (e.target === dialogOverlay) closeDialog(); };
+}
