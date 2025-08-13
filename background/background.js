@@ -94,7 +94,6 @@ function openDb() {
     });
 }
 
-
 function dbAction(store, mode, operation, payload) {
     return openDb().then(db => {
         log.debug(`[DB] dbAction called with store="${store}", mode="${mode}", operation="${operation}"`);

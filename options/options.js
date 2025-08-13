@@ -1,11 +1,11 @@
 /**
  * options.js
  * Updated for Enhanced Search Results for Confluence
- * Compatible with DB_VERSION = 3 and store names 'summaries', 'conversations'
+ * Compatible with DB_VERSION = 5 and store names 'summaries', 'conversations'
  */
 
 const DB_NAME = 'ConfluenceSummariesDB';
-const DB_VERSION = 3;
+const DB_VERSION = 5;
 const SUMMARY_STORE = 'summaries';
 const CONVERSATION_STORE = 'conversations';
 
