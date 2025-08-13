@@ -297,7 +297,7 @@
                 }
                 userPrompt = await getUserPrompt(pageData);
                 const { selectedAiModel } = await new Promise(res => chrome.storage.sync.get(['selectedAiModel'], res));
-                const model = selectedAiModel || 'gpt-4o';
+                const model = selectedAiModel || 'gpt-5';
                 const result = await sendOpenAIRequest({
                     apiKey: openaiApiKey,
                     apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions',

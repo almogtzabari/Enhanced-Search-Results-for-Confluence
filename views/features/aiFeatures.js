@@ -84,7 +84,7 @@ export async function handleQaSubmit(contentId, inputEl, threadEl, submitBtn, me
     try {
         const { openaiApiKey, customApiEndpoint } = await new Promise(res => chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
         const { selectedAiModel } = await new Promise(res => chrome.storage.sync.get(['selectedAiModel'], res));
-        const model = selectedAiModel || 'gpt-4o';
+        const model = selectedAiModel || 'gpt-5';
         const result = await sendOpenAIRequest({ apiKey: openaiApiKey, apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions', model, messages });
         const answer = result.choices?.[0]?.message?.content || '[No response]';
         messages.push({ role: 'assistant', content: answer });
@@ -140,7 +140,7 @@ export async function handleResummarize(pageData, bodyHtml) {
             const userPrompt = await getUserPrompt(pageData, true);
             const { openaiApiKey: apiKey, customApiEndpoint } = await new Promise(res => chrome.storage.sync.get(['openaiApiKey', 'customApiEndpoint'], res));
             const { selectedAiModel } = await new Promise(res => chrome.storage.sync.get(['selectedAiModel'], res));
-            const model = selectedAiModel || 'gpt-4o';
+            const model = selectedAiModel || 'gpt-5';
             const result = await sendOpenAIRequest({ apiKey, apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions', model, messages: [{ role: 'system', content: summarySystemPrompt }, { role: 'user', content: userPrompt }] });
             const newSummary = result.choices[0].message.content;
             state.summaryCache.set(contentId, newSummary);
@@ -227,7 +227,7 @@ export async function handleSummarizeClick(event) {
         const userPrompt = await getUserPrompt(pageData);
 
         const { selectedAiModel } = await new Promise(res => chrome.storage.sync.get(['selectedAiModel'], res));
-        const model = selectedAiModel || 'gpt-4o';
+        const model = selectedAiModel || 'gpt-5';
         const result = await sendOpenAIRequest({
             apiKey: openaiApiKey,
             apiUrl: customApiEndpoint?.trim() || 'https://api.openai.com/v1/chat/completions',
