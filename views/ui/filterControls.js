@@ -7,6 +7,7 @@ import { log, RESULTS_PER_REQUEST } from '../config.js';
 import { toggleClearIcon } from '../utils/uiUtils.js';
 import { debounce, escapeHtml, sanitizeInput, updateUrlParams, getQueryParams } from '../utils/generalUtils.js';
 import { resetDataAndFetchResults, processAndRenderResults } from '../core/dataProcessor.js';
+import { searchSpacesByQuery, searchUsersByQuery } from '../services/apiService.js';
 
 export function populateFiltersFromUrlParams(params) {
     if (dom.textFilterInput) dom.textFilterInput.value = params.text || '';
@@ -70,7 +71,10 @@ export function updateFilterOptionsUIDisplay() {
 function displayFilteredSpaceOptionsUI(filterValue) {
     if (!dom.spaceOptionsContainer || !dom.spaceFilterInput) return;
     dom.spaceOptionsContainer.innerHTML = '';
-    const filtered = state.fullSpaceList.filter(s => s.name.toLowerCase().includes(filterValue.toLowerCase()) || s.key.toLowerCase().includes(filterValue.toLowerCase()));
+    const q = (filterValue || '').toLowerCase();
+    const filtered = state.fullSpaceList.filter(s =>
+        s.name.toLowerCase().includes(q) || s.key.toLowerCase().includes(q)
+    );
     filtered.forEach(space => {
         const option = document.createElement('div');
         option.className = 'option';
@@ -85,7 +89,10 @@ function displayFilteredSpaceOptionsUI(filterValue) {
 function displayFilteredContributorOptionsUI(filterValue) {
     if (!dom.contributorOptionsContainer || !dom.contributorFilterInput) return;
     dom.contributorOptionsContainer.innerHTML = '';
-    const filtered = state.fullContributorList.filter(c => c.name.toLowerCase().includes(filterValue.toLowerCase()) || c.key.toLowerCase().includes(filterValue.toLowerCase()));
+    const q = (filterValue || '').toLowerCase();
+    const filtered = state.fullContributorList.filter(c =>
+        c.name.toLowerCase().includes(q) || c.key.toLowerCase().includes(q)
+    );
     filtered.forEach(contributor => {
         const option = document.createElement('div');
         option.className = 'option';
@@ -96,7 +103,6 @@ function displayFilteredContributorOptionsUI(filterValue) {
     });
     addFilterOptionListeners(dom.contributorOptionsContainer, 'contributor-filter');
 }
-
 
 function onTypeFilterChange() {
     log.debug('[Filter] Type changed:', dom.typeFilter.value);
@@ -185,15 +191,136 @@ export function setupFilterInputEventListeners() {
     if (dom.dateFilter) dom.dateFilter.onchange = onDateFilterChange;
     if (dom.typeFilter) dom.typeFilter.onchange = onTypeFilterChange;
 
-    const setupDropdownFilter = (input, optionsContainer, displayFn, clearBtn) => {
+    // ---- Async autocomplete glue (spaces & contributors) ----
+    let lastSpaceReqId = 0;
+
+    const runSpaceLookup = debounce(async (term) => {
+        const reqId = ++lastSpaceReqId;
+        try {
+            if (!term || term.length < 2) return;
+
+            const remoteRaw = await searchSpacesByQuery(term, 10);
+            if (reqId !== lastSpaceReqId) return; // stale
+
+            // Normalize each item so we always have: key, name, label, value, iconUrl
+            const normalizeSpace = (s) => {
+                if (!s) return null;
+
+                // If a string sneaks in, turn it into a minimal object
+                if (typeof s === 'string') {
+                    return { key: s, name: s, label: s, value: s, iconUrl: '' };
+                }
+
+                // Try common shapes from Confluence endpoints / CQL results
+                const key =
+                    s.key ??
+                    s.spaceKey ??
+                    s.id ??
+                    s.space?.key ??
+                    ''; // last resort: leave empty (will be filtered out)
+
+                const name =
+                    s.name ??
+                    s.title ??
+                    s.space?.name ??
+                    s.space?.title ??
+                    '';
+
+                // Icons can be {icon: {path}} or {iconUrl}; make a URL if we only have a path
+                const rawIcon =
+                    s.iconUrl ??
+                    s.icon?.path ??
+                    s._links?.icon ??
+                    '';
+
+                const iconUrl = rawIcon
+                    ? (rawIcon.startsWith('http') ? rawIcon : `${state.baseUrl}${rawIcon}`)
+                    : `${state.baseUrl}/images/icons/space_48.png`;
+
+                const label = s.label ?? name;
+                const value = s.value ?? (key || name);
+
+                return key && name
+                    ? {
+                        ...s,
+                        key: String(key),
+                        name: String(name),
+                        label: String(label),
+                        value: String(value),
+                        iconUrl: String(iconUrl),
+                    }
+                    : null;
+            };
+
+            const remote = (Array.isArray(remoteRaw) ? remoteRaw : [])
+                .map(normalizeSpace)
+                .filter(Boolean);
+
+            // Merge & de-dupe by key
+            const byKey = new Map(state.fullSpaceList.map((s) => [s.key, s]));
+            for (const s of remote) byKey.set(s.key, s);
+
+            // Safe comparator that never touches undefined
+            const safeCompareByName = (a, b) => {
+                const A = (a?.name ?? a?.label ?? a?.title ?? a?.value ?? '').toString();
+                const B = (b?.name ?? b?.label ?? b?.title ?? b?.value ?? '').toString();
+                return A.localeCompare(B, undefined, { sensitivity: 'base' });
+            };
+
+            const merged = Array.from(byKey.values()).sort(safeCompareByName);
+
+            state.fullSpaceList.splice(0, state.fullSpaceList.length, ...merged);
+            displayFilteredSpaceOptionsUI(term);
+        } catch (err) {
+            log.warn('[Spaces] Remote lookup failed:', err);
+        }
+    }, 250);
+
+    let lastUserReqId = 0;
+    const runUserLookup = debounce(async (term) => {
+        const reqId = ++lastUserReqId;
+        try {
+            if (!term || term.length < 2) return;
+
+            // Ensure a .name exists on each item
+            const remoteRaw = await searchUsersByQuery(term, 10);
+            const remote = remoteRaw.map(u => ({
+                ...u,
+                name: u.name ?? u.displayName ?? u.label ?? u.username ?? ''  // alias
+            }));
+
+            if (reqId !== lastUserReqId) return; // stale
+
+            const byKey = new Map(state.fullContributorList.map(u => [u.key, u]));
+            for (const u of remote) byKey.set(u.key, u);
+
+            const safeCompareByName = (a, b) => {
+                const A = (a?.name ?? '').toString();
+                const B = (b?.name ?? '').toString();
+                return A.localeCompare(B, undefined, { sensitivity: 'base' });
+            };
+
+            const merged = Array.from(byKey.values()).sort(safeCompareByName);
+            state.fullContributorList.splice(0, state.fullContributorList.length, ...merged);
+
+            displayFilteredContributorOptionsUI(term);
+        } catch (err) {
+            log.warn('[Users] Remote lookup failed:', err);
+        }
+    }, 250);
+
+    const setupDropdownFilter = (input, optionsContainer, displayFn, clearBtn, asyncLookup) => {
         if (input) {
             input.oninput = evt => {
-                displayFn(sanitizeInput(evt.target.value));
+                const val = sanitizeInput(evt.target.value);
+                displayFn(val);
                 if (optionsContainer) optionsContainer.style.display = 'block';
                 toggleClearIcon(input, clearBtn);
+                asyncLookup?.(val);
             };
             input.onfocus = evt => {
-                displayFn(evt.target.value);
+                const val = evt.target.value;
+                displayFn(val);
                 if (optionsContainer) optionsContainer.style.display = 'block';
             };
 
@@ -225,9 +352,9 @@ export function setupFilterInputEventListeners() {
         }
     };
 
-
-    setupDropdownFilter(dom.spaceFilterInput, dom.spaceOptionsContainer, displayFilteredSpaceOptionsUI, dom.spaceClear);
-    setupDropdownFilter(dom.contributorFilterInput, dom.contributorOptionsContainer, displayFilteredContributorOptionsUI, dom.contributorClear);
+    // Attach with async lookup
+    setupDropdownFilter(dom.spaceFilterInput, dom.spaceOptionsContainer, displayFilteredSpaceOptionsUI, dom.spaceClear, runSpaceLookup);
+    setupDropdownFilter(dom.contributorFilterInput, dom.contributorOptionsContainer, displayFilteredContributorOptionsUI, dom.contributorClear, runUserLookup);
 
     if (dom.spaceClear) dom.spaceClear.onclick = clearSpaceFilter;
     if (dom.contributorClear) dom.contributorClear.onclick = clearContributorFilter;
