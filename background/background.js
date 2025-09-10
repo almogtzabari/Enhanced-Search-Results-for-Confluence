@@ -170,23 +170,61 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const isFirefox = typeof browser !== 'undefined' && typeof InstallTrigger !== 'undefined';
 
         if (isFirefox) {
-            performOpenAIRequest(msg.payload, sendResponse);
-        } else {
-            chrome.permissions.contains({ origins: [origin + '/*'] }, (hasPermission) => {
-                if (hasPermission) {
-                    performOpenAIRequest(msg.payload, sendResponse);
-                } else {
-                    chrome.permissions.request({ origins: [origin + '/*'] }, (granted) => {
-                        if (granted) {
-                            performOpenAIRequest(msg.payload, sendResponse);
-                        } else {
-                            sendResponse({ success: false, error: 'Permission denied for custom endpoint' });
-                        }
-                    });
-                }
-            });
+            // Let Firefox use runtime.connect instead of onMessage
+            sendResponse({ success: false, error: 'Use port-based connection for Firefox' });
+            return false;
         }
+
+        chrome.permissions.contains({ origins: [origin + '/*'] }, (hasPermission) => {
+            if (hasPermission) {
+                performOpenAIRequest(msg.payload, sendResponse);
+            } else {
+                chrome.permissions.request({ origins: [origin + '/*'] }, (granted) => {
+                    if (granted) {
+                        performOpenAIRequest(msg.payload, sendResponse);
+                    } else {
+                        sendResponse({ success: false, error: 'Permission denied for custom endpoint' });
+                    }
+                });
+            }
+        });
 
         return true;
     }
 });
+
+chrome.runtime.onConnect.addListener((port) => {
+    if (port.name === 'openaiPort') {
+        port.onMessage.addListener((msg) => {
+            const { apiKey, apiUrl, model, messages } = msg;
+
+            let keepAliveTimer = setInterval(() => {
+                port.postMessage({ keepAlive: true });
+            }, 25000); // every 25s to avoid 30s timeout
+
+            fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({ model, messages })
+            })
+                .then(async (res) => {
+                    clearInterval(keepAliveTimer);
+                    if (!res.ok) {
+                        const text = await res.text();
+                        port.postMessage({ success: false, error: `HTTP ${res.status}: ${text}` });
+                    } else {
+                        const data = await res.json();
+                        port.postMessage({ success: true, data });
+                    }
+                })
+                .catch((err) => {
+                    clearInterval(keepAliveTimer);
+                    port.postMessage({ success: false, error: err.message });
+                });
+        });
+    }
+});
+

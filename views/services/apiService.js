@@ -31,21 +31,59 @@ export async function sendOpenAIRequest({ apiKey, apiUrl, model, messages }) {
     return new Promise((resolve, reject) => {
         const sanitizedBase = (apiUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
         const fullUrl = `${sanitizedBase}/chat/completions`;
-        chrome.runtime.sendMessage(
-            {
-                type: 'openaiRequest',
-                payload: { apiKey, apiUrl: fullUrl, model, messages }
-            },
-            (response) => {
-                if (chrome.runtime.lastError) {
-                    return reject(new Error(chrome.runtime.lastError.message));
+        const isFirefox = typeof browser !== 'undefined' && typeof InstallTrigger !== 'undefined';
+
+        if (isFirefox) {
+            log.debug('[CONTENT:PORT] Using long-lived port for OpenAI request (Firefox)');
+            const port = chrome.runtime.connect({ name: 'openaiPort' });
+
+            const cleanup = () => {
+                port.onMessage.removeListener(handleMessage);
+                port.onDisconnect.removeListener(handleDisconnect);
+            };
+
+            const handleMessage = (response) => {
+                if (response?.keepAlive) {
+                    console.debug('[CONTENT:PORT] Keep-alive message received');
+                    return; // ignore keep-alive messages
                 }
+
+                console.debug('[CONTENT:PORT] Received message from port:', response);
+                cleanup();
                 if (!response?.success) {
                     return reject(new Error(response?.error || 'Unknown error from background'));
                 }
                 resolve(response.data);
-            }
-        );
+            };
+
+            const handleDisconnect = () => {
+                console.warn('[CONTENT:PORT] Port disconnected');
+                cleanup();
+                if (chrome.runtime.lastError) {
+                    return reject(new Error(chrome.runtime.lastError.message));
+                }
+            };
+
+            port.onMessage.addListener(handleMessage);
+            port.onDisconnect.addListener(handleDisconnect);
+            port.postMessage({ apiKey, apiUrl: fullUrl, model, messages });
+        } else {
+            chrome.runtime.sendMessage(
+                {
+                    type: 'openaiRequest',
+                    payload: { apiKey, apiUrl: fullUrl, model, messages }
+                },
+                (response) => {
+                    if (chrome.runtime.lastError) {
+                        return reject(new Error(chrome.runtime.lastError.message));
+                    }
+                    if (!response?.success) {
+                        return reject(new Error(response?.error || 'Unknown error from background'));
+                    }
+                    resolve(response.data);
+                }
+            );
+        }
     });
 }
 
