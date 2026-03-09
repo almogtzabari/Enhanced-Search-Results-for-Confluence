@@ -394,7 +394,6 @@ function FloatingSummarizeButton() {
       ref={shellRef}
       class={`enhanced-fab-shell ${isExpanded ? 'expanded' : ''}`}
       style={{ position: 'fixed', bottom: '50px', right: '20px', zIndex: '10000' }}
-      onMouseEnter={() => setIsExpanded(true)}
       onMouseLeave={() => setIsExpanded(false)}
       onFocusCapture={() => setIsExpanded(true)}
       onBlurCapture={onShellBlur}
@@ -403,6 +402,8 @@ function FloatingSummarizeButton() {
         class="enhanced-fab-main"
         type="button"
         aria-label="Open Enhanced Search"
+        onMouseEnter={() => setIsExpanded(true)}
+        onFocus={() => setIsExpanded(true)}
         onClick={onOpenViews}
       >
         <img src={faviconUrl} alt="" class="enhanced-fab-icon" />
