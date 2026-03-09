@@ -21,9 +21,44 @@ chrome.runtime.onMessage.addListener(function (request) {
     if (request.action === 'openTab') {
         chrome.tabs.create({ url: request.url });
     } else if (request.action === 'openSearchTab') {
-        const url = `${chrome.runtime.getURL('views/index.html')}?searchText=${encodeURIComponent(request.searchText)}&baseUrl=${encodeURIComponent(request.baseUrl)}`;
+        const params = new URLSearchParams({
+            searchText: String(request.searchText || ''),
+            baseUrl: String(request.baseUrl || '')
+        });
+        if (request.focusSearch) {
+            params.set('focusSearch', '1');
+        }
+        const url = `${chrome.runtime.getURL('views/v2/index.html')}?${params.toString()}`;
         chrome.tabs.create({ url });
     }
+});
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request?.action !== 'ensureApiOriginPermission') return;
+
+    let origin = '';
+    try {
+        origin = new URL(String(request.origin || '')).origin;
+    } catch {
+        sendResponse({ granted: false, error: 'Invalid API origin' });
+        return false;
+    }
+
+    ensureOriginPermission(origin)
+        .then((result) => {
+            sendResponse({
+                granted: !!result.granted,
+                error: result.error || ''
+            });
+        })
+        .catch((err) => {
+            sendResponse({
+                granted: false,
+                error: err?.message || 'Failed to request endpoint permission'
+            });
+        });
+
+    return true;
 });
 
 
@@ -139,16 +174,46 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // keep message channel open
 });
 
-function performOpenAIRequest({ apiKey, apiUrl, model, messages }, sendResponse) {
+function buildResponsesPayload({ model, messages, reasoningEffort }) {
+    const safeMessages = Array.isArray(messages) ? messages : [];
+    let instructions = '';
+    const input = [];
+
+    safeMessages.forEach((msg, index) => {
+        if (!msg || typeof msg.content !== 'string') return;
+        const role = msg.role || 'user';
+
+        // Use the first system message as Responses API instructions.
+        if (!instructions && role === 'system') {
+            instructions = msg.content;
+            return;
+        }
+
+        if (role === 'assistant' || role === 'developer' || role === 'user') {
+            input.push({ role, content: msg.content });
+        } else {
+            input.push({ role: 'user', content: msg.content });
+        }
+    });
+
+    const payload = { model, input };
+    if (instructions) payload.instructions = instructions;
+    if (reasoningEffort) payload.reasoning = { effort: reasoningEffort };
+    return payload;
+}
+
+function performOpenAIRequest({ apiKey, apiUrl, model, messages, reasoningEffort }, sendResponse) {
     (async () => {
         try {
+            const payload = buildResponsesPayload({ model, messages, reasoningEffort });
+
             const res = await fetch(apiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${apiKey}`
                 },
-                body: JSON.stringify({ model, messages })
+                body: JSON.stringify(payload)
             });
 
             if (!res.ok) {
@@ -164,29 +229,55 @@ function performOpenAIRequest({ apiKey, apiUrl, model, messages }, sendResponse)
     })();
 }
 
+function ensureOriginPermission(origin) {
+    return new Promise((resolve) => {
+        if (!chrome.permissions || !chrome.permissions.contains || !chrome.permissions.request) {
+            resolve({ granted: true, error: '' });
+            return;
+        }
+
+        const originPattern = `${origin}/*`;
+        chrome.permissions.contains({ origins: [originPattern] }, (hasPermission) => {
+            if (hasPermission) {
+                resolve({ granted: true, error: '' });
+                return;
+            }
+
+            chrome.permissions.request({ origins: [originPattern] }, (granted) => {
+                if (!granted) {
+                    resolve({ granted: false, error: 'Permission denied for custom endpoint' });
+                    return;
+                }
+
+                chrome.permissions.contains({ origins: [originPattern] }, (verified) => {
+                    if (verified) {
+                        resolve({ granted: true, error: '' });
+                    } else {
+                        resolve({ granted: false, error: 'Permission was not granted for custom endpoint' });
+                    }
+                });
+            });
+        });
+    });
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'openaiRequest') {
         const origin = new URL(msg.payload.apiUrl).origin;
         const isFirefox = typeof browser !== 'undefined' && typeof InstallTrigger !== 'undefined';
 
-        if (isFirefox) {
-            // Let Firefox use runtime.connect instead of onMessage
+        if (isFirefox && sender?.url?.startsWith('chrome')) {
+            // Block sendMessage from Firefox extension pages — use port instead
             sendResponse({ success: false, error: 'Use port-based connection for Firefox' });
             return false;
         }
 
-        chrome.permissions.contains({ origins: [origin + '/*'] }, (hasPermission) => {
-            if (hasPermission) {
-                performOpenAIRequest(msg.payload, sendResponse);
-            } else {
-                chrome.permissions.request({ origins: [origin + '/*'] }, (granted) => {
-                    if (granted) {
-                        performOpenAIRequest(msg.payload, sendResponse);
-                    } else {
-                        sendResponse({ success: false, error: 'Permission denied for custom endpoint' });
-                    }
-                });
+        ensureOriginPermission(origin).then((result) => {
+            if (!result.granted) {
+                sendResponse({ success: false, error: result.error || 'Permission denied for custom endpoint' });
+                return;
             }
+            performOpenAIRequest(msg.payload, sendResponse);
         });
 
         return true;
@@ -196,35 +287,51 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 chrome.runtime.onConnect.addListener((port) => {
     if (port.name === 'openaiPort') {
         port.onMessage.addListener((msg) => {
-            const { apiKey, apiUrl, model, messages } = msg;
+            const { apiKey, apiUrl, model, messages, reasoningEffort } = msg;
+            (async () => {
+                let origin;
+                try {
+                    origin = new URL(apiUrl).origin;
+                } catch {
+                    port.postMessage({ success: false, error: 'Invalid API URL' });
+                    return;
+                }
 
-            let keepAliveTimer = setInterval(() => {
-                port.postMessage({ keepAlive: true });
-            }, 25000); // every 25s to avoid 30s timeout
+                const permission = await ensureOriginPermission(origin);
+                if (!permission.granted) {
+                    port.postMessage({ success: false, error: permission.error || 'Permission denied for custom endpoint' });
+                    return;
+                }
 
-            fetch(apiUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`
-                },
-                body: JSON.stringify({ model, messages })
-            })
-                .then(async (res) => {
-                    clearInterval(keepAliveTimer);
-                    if (!res.ok) {
-                        const text = await res.text();
-                        port.postMessage({ success: false, error: `HTTP ${res.status}: ${text}` });
-                    } else {
-                        const data = await res.json();
-                        port.postMessage({ success: true, data });
-                    }
+                let keepAliveTimer = setInterval(() => {
+                    port.postMessage({ keepAlive: true });
+                }, 25000); // every 25s to avoid 30s timeout
+
+                const payload = buildResponsesPayload({ model, messages, reasoningEffort });
+
+                fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify(payload)
                 })
-                .catch((err) => {
-                    clearInterval(keepAliveTimer);
-                    port.postMessage({ success: false, error: err.message });
-                });
+                    .then(async (res) => {
+                        clearInterval(keepAliveTimer);
+                        if (!res.ok) {
+                            const text = await res.text();
+                            port.postMessage({ success: false, error: `HTTP ${res.status}: ${text}` });
+                        } else {
+                            const data = await res.json();
+                            port.postMessage({ success: true, data });
+                        }
+                    })
+                    .catch((err) => {
+                        clearInterval(keepAliveTimer);
+                        port.postMessage({ success: false, error: err.message });
+                    });
+            })();
         });
     }
 });
-

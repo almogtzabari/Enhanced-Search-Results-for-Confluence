@@ -1,11 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Enhanced Search Results for Confluence",
-  "version": "1.2.1",
+  "version": "2.0.0",
   "description": "Enhances search functionality on Confluence pages.",
   "permissions": [
     "storage",
-    "activeTab",
     "scripting",
     "tabs"
   ],
@@ -15,17 +14,12 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "views/features/aiFeatures.js",
-        "views/ui/modalManager.js",
-        "views/services/apiService.js",
+        "content/v2/content-main.js",
+        "views/v2/index.html",
         "views/services/dbService.js",
         "views/config.js",
-        "views/state.js",
-        "views/domElements.js",
-        "views/utils/generalUtils.js",
-        "views/utils/uiUtils.js",
         "content/modalStyles.css",
-        "assets/sounds/swoosh.mp3"
+        "assets/icons/favicon.png"
       ],
       "matches": [
         "<all_urls>"
@@ -37,7 +31,7 @@
     "type": "module"
   },
   "options_ui": {
-    "page": "options/options.html",
+    "page": "options/v2/options.html",
     "open_in_tab": true
   },
   "icons": {

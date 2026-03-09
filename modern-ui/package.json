@@ -1,0 +1,21 @@
+{
+  "name": "enhanced-confluence-search-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run build:views && npm run build:options && npm run build:content",
+    "build:views": "vite build",
+    "build:options": "vite build --config vite.options.config.js",
+    "build:content": "vite build --config vite.content.config.js",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "preact": "^10.26.4"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.2",
+    "vite": "^6.3.5"
+  }
+}

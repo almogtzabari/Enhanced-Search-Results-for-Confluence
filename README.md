@@ -4,7 +4,7 @@
 
 # Enhanced Search Results for Confluence Extension
 
-Enhance your Confluence experience with improved search functionality! This browser extension enhances the way search results are displayed in Confluence, making it easier to navigate and find relevant information efficiently.
+Enhance your Confluence experience with improved search functionality. This browser extension upgrades Confluence search results with richer navigation, filtering, and AI-assisted workflows on both Chrome and Firefox.
 
 ## Features
 
@@ -50,7 +50,7 @@ Enhance your Confluence experience with improved search functionality! This brow
 ### 🌙 Display and Personalization
 
 - **Dark Mode Support**: Toggle a dark theme for low-light environments.
-- **Customizable Domains**: Configure multiple Confluence domains and their respective search input IDs.
+- **Customizable Domains**: Configure multiple Confluence domains from the Options page.
 - **New Icons and Branding**: Refreshed extension logo and interface icons for a polished experience.
 
 ### ⚡️ Performance & UX
@@ -66,11 +66,64 @@ The extension is available on the Chrome Web Store and Firefox Add-ons site:
 - <img src="assets/images/chrome.png" width="20" alt="Chrome" align="absmiddle"> **[Chrome Web Store](https://chromewebstore.google.com/detail/enhanced-search-results-f/mmaihfkphcnjjheipeljfjbfkimfhcch)**
 - <img src="assets/images/firefox.png" width="20" alt="Firefox" align="absmiddle"> **[Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/enhanced-confluence-search/)**
 
+## Development (Preact v2)
+
+The v2 UI is built with **Preact + Vite** from `modern-ui/`.
+
+### Prerequisites
+
+- Node.js 18+ (recommended)
+- npm
+
+### Install dependencies
+
+```bash
+cd modern-ui
+npm install
+```
+
+### Build extension assets
+
+```bash
+cd modern-ui
+npm run build
+```
+
+Build output folders:
+
+- `views/v2` (enhanced search page)
+- `options/v2` (options page)
+- `content/v2` (content bootstrap module)
+
+### UI development server
+
+```bash
+cd modern-ui
+npm run dev
+```
+
+Use this for UI iteration. For real extension testing, run `npm run build` and reload the extension.
+
+### Load unpacked extension locally
+
+After running `npm run build`:
+
+1. **Chrome**
+   - Open `chrome://extensions`
+   - Enable **Developer mode**
+   - Click **Load unpacked**
+   - Select the repository root folder (the folder containing `manifest.json`)
+
+2. **Firefox**
+   - Open `about:debugging#/runtime/this-firefox`
+   - Click **Load Temporary Add-on**
+   - Select `manifest.json` from the repository root
+
 ## Usage
 
 1. **Configure the Extension**:
    - Click the extension icon → **Options**
-   - Add your Confluence domain and the corresponding search input ID
+   - Add one or more Confluence domains
    - To enable AI-powered features:
      - Paste your **OpenAI API key** in the relevant field
      - (Optional) Provide a custom API endpoint if you're using a proxy or self-hosted service  
@@ -79,8 +132,9 @@ The extension is available on the Chrome Web Store and Firefox Add-ons site:
      ![Settings Page](assets/images/settings.png)
 
 2. **Search in Confluence**:
-   - Use the regular Confluence search input and either press **Enter** or click the new **Enhanced Search** button that appears next to the search box.
-   - The extension will open a new tab with enhanced results
+   - Open any configured Confluence domain
+   - Use the floating extension launcher to open the enhanced search page
+   - Enter your query in the enhanced search page to fetch Confluence results
 
 3. **Browse and Filter**:
    - Use Tree or Table view
@@ -99,13 +153,13 @@ You can add support for multiple Confluence domains via the Options page.
 | Field                | Description                                              |
 | -------------------- | -------------------------------------------------------- |
 | **Domain**           | Your Confluence instance (e.g., `confluence.example.com`) |
-| **Search Input ID**  | The ID of the Confluence search input element (default: `search-filter-input`) |
 
 ### Advanced Options
 
 - **Results per Batch**: Configure how many results are loaded at once to balance performance and speed.
 - **Dark Mode**: Toggle dark mode globally or per session.
-- **Tooltips**: Enable/disable tooltips in Tree view showing contextual metadata.
+- **Tooltips**: Enable/disable tooltips in Tree and Table views.
+- **AI Settings**: Configure model, reasoning effort, API key, custom endpoint, and custom summarization prompt.
 
 ## Contributing
 

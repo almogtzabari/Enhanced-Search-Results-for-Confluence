@@ -1,0 +1,17 @@
+.DS_Store
+.vscode/
+
+# Dependencies
+modern-ui/node_modules/
+
+# Local tools workspace
+tools/
+
+# Build outputs (generated from modern-ui)
+views/v2/
+options/v2/
+content/v2/
+
+# Archives / logs
+*.zip
+npm-debug.log*
