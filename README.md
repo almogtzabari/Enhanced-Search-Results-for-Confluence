@@ -166,18 +166,6 @@ After running `npm run build:dist`:
 - `.build/` — intermediate generated bundles from `ui/`
 - `dist/chrome`, `dist/firefox` — packaged unpacked builds for each browser
 
-### Quick Smoke Checklist
-
-Run after loading both dist builds:
-
-1. Open options page in Chrome and Firefox.
-2. Save domain settings and verify permission prompt behavior.
-3. Open Confluence page and confirm floating launcher appears.
-4. Open views page, run a search, switch tree/table, and load more results.
-5. Open AI modal from views and from Confluence content page.
-6. Generate summary and ask follow-up question in both browsers.
-7. Toggle dark mode and confirm expected behavior in views/content modal.
-
 ## Usage
 
 1. **Configure the Extension**:
@@ -207,11 +195,7 @@ Run after loading both dist builds:
 
 ### Domain Settings
 
-You can add support for multiple Confluence domains via the Options page.
-
-| Field                | Description                                              |
-| -------------------- | -------------------------------------------------------- |
-| **Domain**           | Your Confluence instance (e.g., `confluence.example.com`) |
+Add one or more Confluence domains via the Options page (for example, `confluence.example.com`).
 
 ### Advanced Options
 
@@ -222,22 +206,7 @@ You can add support for multiple Confluence domains via the Options page.
 
 ## Contributing
 
-We welcome contributions! To contribute:
-
-1. Fork this repo
-2. Create a feature branch:
-
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-3. Commit your changes:
-
-   ```bash
-   git commit -am 'Add a new feature'
-   ```
-
-4. Push and open a Pull Request
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution workflow and smoke-test checklist.
 
 ## License
 
