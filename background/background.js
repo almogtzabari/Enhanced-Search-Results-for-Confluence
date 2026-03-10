@@ -485,53 +485,105 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 chrome.runtime.onConnect.addListener((port) => {
-    if (port.name === 'openaiPort') {
-        port.onMessage.addListener((msg) => {
-            const { apiKey, apiUrl, model, messages, reasoningEffort } = msg;
-            (async () => {
-                let origin;
-                try {
-                    origin = new URL(apiUrl).origin;
-                } catch {
-                    port.postMessage({ success: false, error: 'Invalid API URL' });
-                    return;
-                }
+    if (port.name !== 'openaiPort') return;
 
-                const permission = await ensureOriginPermission(origin, { requestIfMissing: false });
-                if (!permission.granted) {
-                    port.postMessage({ success: false, error: permission.error || 'Permission denied for custom endpoint' });
-                    return;
-                }
+    let isConnected = true;
+    let keepAliveTimer = null;
+    let activeFetchController = null;
 
-                let keepAliveTimer = setInterval(() => {
-                    port.postMessage({ keepAlive: true });
-                }, 25000); // every 25s to avoid 30s timeout
+    const postToPort = (payload) => {
+        if (!isConnected) return false;
+        try {
+            port.postMessage(payload);
+            return true;
+        } catch {
+            return false;
+        }
+    };
 
+    const clearKeepAlive = () => {
+        if (!keepAliveTimer) return;
+        clearInterval(keepAliveTimer);
+        keepAliveTimer = null;
+    };
+
+    const startKeepAlive = () => {
+        clearKeepAlive();
+        keepAliveTimer = setInterval(() => {
+            if (!postToPort({ keepAlive: true })) {
+                clearKeepAlive();
+            }
+        }, 25000); // every 25s to avoid 30s timeout
+    };
+
+    const abortActiveFetch = () => {
+        if (!activeFetchController) return;
+        activeFetchController.abort();
+        activeFetchController = null;
+    };
+
+    const cleanupConnection = () => {
+        clearKeepAlive();
+        abortActiveFetch();
+    };
+
+    port.onDisconnect.addListener(() => {
+        isConnected = false;
+        cleanupConnection();
+    });
+
+    port.onMessage.addListener((msg) => {
+        const { apiKey, apiUrl, model, messages, reasoningEffort } = msg || {};
+        (async () => {
+            let origin;
+            try {
+                origin = new URL(apiUrl).origin;
+            } catch {
+                postToPort({ success: false, error: 'Invalid API URL' });
+                return;
+            }
+
+            const permission = await ensureOriginPermission(origin, { requestIfMissing: false });
+            if (!permission.granted) {
+                postToPort({ success: false, error: permission.error || 'Permission denied for custom endpoint' });
+                return;
+            }
+            if (!isConnected) return;
+
+            abortActiveFetch();
+            const fetchController = new AbortController();
+            activeFetchController = fetchController;
+            startKeepAlive();
+
+            try {
                 const payload = buildResponsesPayload({ model, messages, reasoningEffort });
-
-                fetch(apiUrl, {
+                const res = await fetch(apiUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${apiKey}`
                     },
-                    body: JSON.stringify(payload)
-                })
-                    .then(async (res) => {
-                        clearInterval(keepAliveTimer);
-                        if (!res.ok) {
-                            const text = await res.text();
-                            port.postMessage({ success: false, error: `HTTP ${res.status}: ${text}` });
-                        } else {
-                            const data = await res.json();
-                            port.postMessage({ success: true, data });
-                        }
-                    })
-                    .catch((err) => {
-                        clearInterval(keepAliveTimer);
-                        port.postMessage({ success: false, error: err.message });
-                    });
-            })();
-        });
-    }
+                    body: JSON.stringify(payload),
+                    signal: fetchController.signal
+                });
+
+                if (!res.ok) {
+                    const text = await res.text();
+                    postToPort({ success: false, error: `HTTP ${res.status}: ${text}` });
+                    return;
+                }
+
+                const data = await res.json();
+                postToPort({ success: true, data });
+            } catch (err) {
+                if (err?.name === 'AbortError') return;
+                postToPort({ success: false, error: err?.message || 'OpenAI request failed' });
+            } finally {
+                if (activeFetchController === fetchController) {
+                    activeFetchController = null;
+                }
+                clearKeepAlive();
+            }
+        })();
+    });
 });

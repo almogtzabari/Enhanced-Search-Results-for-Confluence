@@ -7,6 +7,41 @@ const ROOT_ID = 'enhanced-content-app-root';
 const MODAL_HOST_ID = 'enhanced-content-ai-modal-host';
 const MODAL_IFRAME_ID = 'enhanced-content-ai-modal-frame';
 const MODAL_CLOSE_MESSAGE = 'enhanced-ai-modal-close';
+const AI_MODAL_FETCH_MESSAGE = 'enhanced-ai-modal-fetch';
+const AI_MODAL_FETCH_RESULT_MESSAGE = 'enhanced-ai-modal-fetch-result';
+const AI_MODAL_FETCH_IMAGE_MESSAGE = 'enhanced-ai-modal-fetch-image';
+const AI_MODAL_FETCH_IMAGE_RESULT_MESSAGE = 'enhanced-ai-modal-fetch-image-result';
+
+function toHttpUrl(value) {
+  try {
+    const parsed = new URL(String(value || ''), window.location.href);
+    if (!/^https?:$/i.test(parsed.protocol)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function buildAllowedBridgeOrigins(baseUrl) {
+  const origins = new Set();
+  origins.add(window.location.origin);
+  const parsedBase = toHttpUrl(baseUrl);
+  if (parsedBase) origins.add(parsedBase.origin);
+  return origins;
+}
+
+function isAllowedBridgeUrl(rawUrl, allowedOrigins) {
+  const parsed = toHttpUrl(rawUrl);
+  if (!parsed) return false;
+  return allowedOrigins.has(parsed.origin);
+}
+
+function isAllowedBridgeApiUrl(rawUrl, allowedOrigins) {
+  const parsed = toHttpUrl(rawUrl);
+  if (!parsed) return false;
+  if (!allowedOrigins.has(parsed.origin)) return false;
+  return /\/rest\/api\//.test(parsed.pathname);
+}
 
 function normalizeConfluenceId(raw) {
   const value = String(raw || '').trim();
@@ -50,6 +85,12 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, onClosed) {
   iframe.id = MODAL_IFRAME_ID;
   iframe.setAttribute('allow', 'clipboard-read; clipboard-write');
   iframe.src = `${chrome.runtime.getURL('views/index.html')}?mode=content-modal&baseUrl=${encodeURIComponent(baseUrl)}&contentId=${encodeURIComponent(contentId)}&contentTitle=${encodeURIComponent(contentTitle || '')}`;
+  const iframeOrigin = new URL(iframe.src).origin;
+  const allowedBridgeOrigins = buildAllowedBridgeOrigins(baseUrl);
+
+  const postToIframe = (payload) => {
+    iframe.contentWindow?.postMessage(payload, iframeOrigin);
+  };
 
   host.appendChild(iframe);
   document.body.appendChild(host);
@@ -68,88 +109,122 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, onClosed) {
 
   const onMessage = async (event) => {
     if (event.source !== iframe.contentWindow) return;
+    if (event.origin !== iframeOrigin) return;
     const payload = event.data || {};
+    const requestId = typeof payload.requestId === 'string' ? payload.requestId : '';
+    const requestUrl = typeof payload.url === 'string' ? payload.url : '';
+
+    const respondFetchError = (errorMessage) => {
+      if (!requestId) return;
+      postToIframe({
+        type: AI_MODAL_FETCH_RESULT_MESSAGE,
+        requestId,
+        ok: false,
+        status: 0,
+        statusText: errorMessage || 'Bridge fetch blocked',
+        contentType: '',
+        body: '',
+      });
+    };
+
+    const respondImageError = (errorMessage) => {
+      if (!requestId) return;
+      postToIframe({
+        type: AI_MODAL_FETCH_IMAGE_RESULT_MESSAGE,
+        requestId,
+        ok: false,
+        error: errorMessage || 'Bridge image fetch blocked',
+      });
+    };
 
     if (payload.type === MODAL_CLOSE_MESSAGE) {
       cleanup();
       return;
     }
 
-    if (payload.type === 'enhanced-ai-modal-fetch') {
-      if (!payload.requestId || typeof payload.url !== 'string') return;
+    if (payload.type === AI_MODAL_FETCH_MESSAGE) {
+      if (!requestId || !requestUrl) return;
+      if (!isAllowedBridgeApiUrl(requestUrl, allowedBridgeOrigins)) {
+        respondFetchError('Bridge API fetch blocked');
+        return;
+      }
       try {
-        const response = await fetch(payload.url, {
+        const response = await fetch(requestUrl, {
           method: 'GET',
           headers: { Accept: 'application/json' },
           credentials: 'include',
         });
         const body = await response.text();
-        iframe.contentWindow?.postMessage({
-          type: 'enhanced-ai-modal-fetch-result',
-          requestId: payload.requestId,
+        postToIframe({
+          type: AI_MODAL_FETCH_RESULT_MESSAGE,
+          requestId,
           ok: response.ok,
           status: response.status,
           statusText: response.statusText || '',
           contentType: response.headers.get('content-type') || '',
           body,
-        }, '*');
+        });
       } catch (err) {
-        iframe.contentWindow?.postMessage({
-          type: 'enhanced-ai-modal-fetch-result',
-          requestId: payload.requestId,
+        postToIframe({
+          type: AI_MODAL_FETCH_RESULT_MESSAGE,
+          requestId,
           ok: false,
           status: 0,
           statusText: err?.message || 'Bridge fetch failed',
           contentType: '',
           body: '',
-        }, '*');
+        });
       }
       return;
     }
 
-    if (payload.type === 'enhanced-ai-modal-fetch-image') {
-      if (!payload.requestId || typeof payload.url !== 'string') return;
+    if (payload.type === AI_MODAL_FETCH_IMAGE_MESSAGE) {
+      if (!requestId || !requestUrl) return;
+      if (!isAllowedBridgeUrl(requestUrl, allowedBridgeOrigins)) {
+        respondImageError('Bridge image fetch blocked for non-Confluence origin');
+        return;
+      }
       try {
-        const response = await fetch(payload.url, {
+        const response = await fetch(requestUrl, {
           method: 'GET',
           credentials: 'include',
         });
         if (!response.ok) {
-          iframe.contentWindow?.postMessage({
-            type: 'enhanced-ai-modal-fetch-image-result',
-            requestId: payload.requestId,
+          postToIframe({
+            type: AI_MODAL_FETCH_IMAGE_RESULT_MESSAGE,
+            requestId,
             ok: false,
             error: `HTTP ${response.status} ${response.statusText || ''}`.trim(),
-          }, '*');
+          });
           return;
         }
 
         const blob = await response.blob();
         const reader = new FileReader();
         reader.onload = () => {
-          iframe.contentWindow?.postMessage({
-            type: 'enhanced-ai-modal-fetch-image-result',
-            requestId: payload.requestId,
+          postToIframe({
+            type: AI_MODAL_FETCH_IMAGE_RESULT_MESSAGE,
+            requestId,
             ok: true,
             dataUrl: typeof reader.result === 'string' ? reader.result : '',
-          }, '*');
+          });
         };
         reader.onerror = () => {
-          iframe.contentWindow?.postMessage({
-            type: 'enhanced-ai-modal-fetch-image-result',
-            requestId: payload.requestId,
+          postToIframe({
+            type: AI_MODAL_FETCH_IMAGE_RESULT_MESSAGE,
+            requestId,
             ok: false,
             error: 'Failed to read image response',
-          }, '*');
+          });
         };
         reader.readAsDataURL(blob);
       } catch (err) {
-        iframe.contentWindow?.postMessage({
-          type: 'enhanced-ai-modal-fetch-image-result',
-          requestId: payload.requestId,
+        postToIframe({
+          type: AI_MODAL_FETCH_IMAGE_RESULT_MESSAGE,
+          requestId,
           ok: false,
           error: err?.message || 'Bridge image fetch failed',
-        }, '*');
+        });
       }
     }
   };

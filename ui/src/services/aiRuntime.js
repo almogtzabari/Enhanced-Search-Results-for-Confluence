@@ -29,10 +29,19 @@ function extractOutputText(responseData) {
   return '';
 }
 
-export async function withTimeout(promise, timeoutMs, errorMessage) {
+export async function withTimeout(promise, timeoutMs, errorMessage, onTimeout) {
   let timeoutId;
   const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
+    timeoutId = setTimeout(() => {
+      reject(new Error(errorMessage));
+      if (typeof onTimeout === 'function') {
+        try {
+          onTimeout();
+        } catch {
+          // Ignore timeout side-effect failures.
+        }
+      }
+    }, timeoutMs);
   });
   try {
     return await Promise.race([promise, timeoutPromise]);
@@ -41,37 +50,91 @@ export async function withTimeout(promise, timeoutMs, errorMessage) {
   }
 }
 
-export function sendOpenAIRequest({ apiKey, apiUrl, model, messages, reasoningEffort }) {
+function createAbortError() {
+  const err = new Error('Request aborted');
+  err.name = 'AbortError';
+  return err;
+}
+
+export function sendOpenAIRequest({
+  apiKey,
+  apiUrl,
+  model,
+  messages,
+  reasoningEffort,
+  signal,
+}) {
   return new Promise((resolve, reject) => {
     const port = chrome.runtime.connect({ name: 'openaiPort' });
     const fullUrl = normalizeResponsesUrl(apiUrl);
+    let settled = false;
+
+    const settle = (action, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      action(value);
+    };
 
     const cleanup = () => {
       port.onMessage.removeListener(handleMessage);
       port.onDisconnect.removeListener(handleDisconnect);
+      if (signal?.removeEventListener) {
+        signal.removeEventListener('abort', handleAbort);
+      }
     };
 
     const handleMessage = (response) => {
       if (response?.keepAlive) return;
-      cleanup();
       if (!response?.success) {
-        reject(new Error(response?.error || 'Unknown error from background'));
+        settle(reject, new Error(response?.error || 'Unknown error from background'));
         return;
       }
       const data = response.data || {};
-      resolve({ ...data, output_text: data.output_text || extractOutputText(data) });
+      settle(resolve, { ...data, output_text: data.output_text || extractOutputText(data) });
     };
 
     const handleDisconnect = () => {
-      cleanup();
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
+      if (signal?.aborted) {
+        settle(reject, createAbortError());
+        return;
       }
+      const message = chrome.runtime.lastError?.message || 'OpenAI connection closed';
+      settle(reject, new Error(message));
     };
+
+    const handleAbort = () => {
+      if (settled) return;
+      try {
+        port.disconnect();
+      } catch {
+        // Ignore disconnect errors.
+      }
+      settle(reject, createAbortError());
+    };
+
+    if (signal?.aborted) {
+      handleAbort();
+      return;
+    }
 
     port.onMessage.addListener(handleMessage);
     port.onDisconnect.addListener(handleDisconnect);
-    port.postMessage({ apiKey, apiUrl: fullUrl, model, messages, reasoningEffort });
+    if (signal?.addEventListener) {
+      signal.addEventListener('abort', handleAbort, { once: true });
+    }
+
+    try {
+      port.postMessage({
+        apiKey,
+        apiUrl: fullUrl,
+        model,
+        messages,
+        reasoningEffort,
+      });
+    } catch (err) {
+      settle(reject, err instanceof Error ? err : new Error('Failed to send OpenAI request'));
+    }
   });
 }
 

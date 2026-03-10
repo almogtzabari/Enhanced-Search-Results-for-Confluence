@@ -9,13 +9,16 @@
     "build:views": "vite build",
     "build:options": "vite build --config vite.options.config.js",
     "build:content": "vite build --config vite.content.config.js",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "preact": "^10.26.4"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.2",
+    "jsdom": "^26.1.0",
+    "vitest": "^2.1.8",
     "vite": "^6.3.5"
   }
 }

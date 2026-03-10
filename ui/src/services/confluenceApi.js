@@ -1,6 +1,10 @@
 const confluenceBodyCache = new Map();
 const confluenceUserCache = new Map();
 let bridgeRequestCounter = 0;
+const AI_MODAL_FETCH_MESSAGE = 'enhanced-ai-modal-fetch';
+const AI_MODAL_FETCH_RESULT_MESSAGE = 'enhanced-ai-modal-fetch-result';
+const AI_MODAL_FETCH_IMAGE_MESSAGE = 'enhanced-ai-modal-fetch-image';
+const AI_MODAL_FETCH_IMAGE_RESULT_MESSAGE = 'enhanced-ai-modal-fetch-image-result';
 
 function normalizeBaseForCacheKey(value) {
   return String(value || '').trim().replace(/\/+$/, '').toLowerCase();
@@ -152,10 +156,38 @@ function isContentModalModeRuntime() {
   }
 }
 
+function resolveExpectedHostOrigin() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const baseUrl = params.get('baseUrl') || '';
+    if (baseUrl) {
+      return new URL(baseUrl, window.location.href).origin;
+    }
+  } catch {
+    // Continue with referrer fallback.
+  }
+
+  try {
+    if (document.referrer) {
+      return new URL(document.referrer).origin;
+    }
+  } catch {
+    // Ignore referrer parse errors.
+  }
+
+  return '';
+}
+
+const expectedHostOrigin = resolveExpectedHostOrigin();
+
 function fetchViaHostBridge(url, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     if (window.parent === window) {
       reject(new Error('Host bridge unavailable'));
+      return;
+    }
+    if (!expectedHostOrigin) {
+      reject(new Error('Host bridge origin is unknown'));
       return;
     }
 
@@ -169,8 +201,9 @@ function fetchViaHostBridge(url, timeoutMs = 15000) {
 
     const onMessage = (event) => {
       if (event.source !== window.parent) return;
+      if (event.origin !== expectedHostOrigin) return;
       const payload = event.data || {};
-      if (payload.type !== 'enhanced-ai-modal-fetch-result') return;
+      if (payload.type !== AI_MODAL_FETCH_RESULT_MESSAGE) return;
       if (payload.requestId !== requestId) return;
       cleanup();
       resolve(payload);
@@ -183,10 +216,10 @@ function fetchViaHostBridge(url, timeoutMs = 15000) {
 
     window.addEventListener('message', onMessage);
     window.parent.postMessage({
-      type: 'enhanced-ai-modal-fetch',
+      type: AI_MODAL_FETCH_MESSAGE,
       requestId,
       url,
-    }, '*');
+    }, expectedHostOrigin);
   });
 }
 
@@ -194,6 +227,10 @@ export function fetchImageDataUrlViaHostBridge(url, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     if (window.parent === window) {
       reject(new Error('Host image bridge unavailable'));
+      return;
+    }
+    if (!expectedHostOrigin) {
+      reject(new Error('Host image bridge origin is unknown'));
       return;
     }
 
@@ -207,8 +244,9 @@ export function fetchImageDataUrlViaHostBridge(url, timeoutMs = 15000) {
 
     const onMessage = (event) => {
       if (event.source !== window.parent) return;
+      if (event.origin !== expectedHostOrigin) return;
       const payload = event.data || {};
-      if (payload.type !== 'enhanced-ai-modal-fetch-image-result') return;
+      if (payload.type !== AI_MODAL_FETCH_IMAGE_RESULT_MESSAGE) return;
       if (payload.requestId !== requestId) return;
       cleanup();
       if (!payload.ok || !payload.dataUrl) {
@@ -225,10 +263,10 @@ export function fetchImageDataUrlViaHostBridge(url, timeoutMs = 15000) {
 
     window.addEventListener('message', onMessage);
     window.parent.postMessage({
-      type: 'enhanced-ai-modal-fetch-image',
+      type: AI_MODAL_FETCH_IMAGE_MESSAGE,
       requestId,
       url,
-    }, '*');
+    }, expectedHostOrigin);
   });
 }
 
