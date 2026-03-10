@@ -176,7 +176,7 @@ After running `npm run build:dist`:
      - (Optional) Provide a custom API endpoint if you're using a proxy or self-hosted service  
        Default: `https://api.openai.com/v1/`
 
-     ![Settings Page](assets/images/settings.png)
+     <img src="assets/images/settings.png" alt="Settings Page" style="max-width: 800px; width: 100%;">
 
 2. **Search in Confluence**:
    - Open any configured Confluence domain
@@ -188,8 +188,8 @@ After running `npm run build:dist`:
    - Apply filters as needed (spaces, contributors, date, type)
    - Use the search bar to refine your query further
 
-     ![Tree View](assets/images/tree-view.png)
-     ![Table View](assets/images/table-view.png)
+     <img src="assets/images/tree-view.png" alt="Tree View" style="max-width: 800px; width: 100%;">
+     <img src="assets/images/table-view.png" alt="Table View" style="max-width: 800px; width: 100%;">
 
 ## Configuration
 
