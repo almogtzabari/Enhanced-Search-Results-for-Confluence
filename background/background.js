@@ -1,16 +1,30 @@
-import {
-    DB_NAME,
-    DB_VERSION,
-    SAVED_SEARCH_STORE_NAME as SAVED_SEARCH_STORE,
-    SUMMARY_STORE_NAME as SUMMARY_STORE,
-    CONVERSATION_STORE_NAME as CONVERSATION_STORE,
-    log
-} from '../shared/extensionConfig.js';
+const DEBUG = false;
+const DB_NAME = 'ConfluenceSummariesDB';
+const DB_VERSION = 5;
+const SUMMARY_STORE = 'summaries';
+const CONVERSATION_STORE = 'conversations';
+const SAVED_SEARCH_STORE = 'saved_searches';
+
+const log = {
+    debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
+    info: (...args) => console.info('[INFO]', ...args),
+    warn: (...args) => console.warn('[WARN]', ...args),
+    error: (...args) => console.error('[ERROR]', ...args),
+};
+
 const grantedDomains = new Set();
 let domainSettingsCache = [];
 let domainSettingsCacheReady = false;
 let domainSettingsLoadPromise = null;
 let dbPromise = null;
+
+function hasOptionalOriginPermissions(entries) {
+    if (!Array.isArray(entries)) return false;
+    return entries.some((entry) => (
+        typeof entry === 'string'
+        && (entry === '<all_urls>' || entry.includes('://'))
+    ));
+}
 
 function supportsDynamicOriginPermissionRequests() {
     if (!chrome.permissions || !chrome.permissions.contains || !chrome.permissions.request) {
@@ -21,7 +35,10 @@ function supportsDynamicOriginPermissionRequests() {
         return false;
     }
     const mv = Number(manifest.manifest_version || 0);
-    return mv >= 3 && Array.isArray(manifest.optional_host_permissions);
+    if (mv >= 3) {
+        return hasOptionalOriginPermissions(manifest.optional_host_permissions);
+    }
+    return hasOptionalOriginPermissions(manifest.optional_permissions);
 }
 
 function normalizeHost(value) {
@@ -146,7 +163,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return false;
     }
 
-    ensureOriginPermission(origin)
+    ensureOriginPermission(origin, {
+        requestIfMissing: request?.requestIfMissing !== false
+    })
         .then((result) => {
             sendResponse({
                 granted: !!result.granted,
@@ -188,11 +207,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
         const origin = `*://${matchedDomain}/*`;
 
-        if (chrome.permissions && chrome.permissions.contains && chrome.scripting && typeof chrome.scripting.executeScript === 'function') {
+        if (chrome.permissions && chrome.permissions.contains) {
             if (grantedDomains.has(origin)) {
                 injectContentScript(tabId);
             } else {
                 chrome.permissions.contains({ origins: [origin] }, (hasPermission) => {
+                    const permissionError = chrome.runtime?.lastError;
+                    if (permissionError) {
+                        log.error(`Permission check failed for ${origin}:`, permissionError.message || permissionError);
+                        return;
+                    }
                     log.debug(`Permission check for ${origin}:`, hasPermission);
                     if (hasPermission) {
                         grantedDomains.add(origin);
@@ -370,7 +394,7 @@ function performOpenAIRequest({ apiKey, apiUrl, model, messages, reasoningEffort
     })();
 }
 
-function ensureOriginPermission(origin) {
+function ensureOriginPermission(origin, { requestIfMissing = true } = {}) {
     return new Promise((resolve) => {
         if (!supportsDynamicOriginPermissionRequests()) {
             resolve({ granted: true, error: '' });
@@ -379,18 +403,47 @@ function ensureOriginPermission(origin) {
 
         const originPattern = `${origin}/*`;
         chrome.permissions.contains({ origins: [originPattern] }, (hasPermission) => {
+            const containsError = chrome.runtime?.lastError;
+            if (containsError) {
+                resolve({
+                    granted: false,
+                    error: containsError.message || 'Failed to check endpoint permission'
+                });
+                return;
+            }
             if (hasPermission) {
                 resolve({ granted: true, error: '' });
                 return;
             }
 
+            if (!requestIfMissing) {
+                resolve({ granted: false, error: 'Endpoint permission is missing' });
+                return;
+            }
+
             chrome.permissions.request({ origins: [originPattern] }, (granted) => {
+                const requestError = chrome.runtime?.lastError;
+                if (requestError) {
+                    resolve({
+                        granted: false,
+                        error: requestError.message || 'Failed to request endpoint permission'
+                    });
+                    return;
+                }
                 if (!granted) {
                     resolve({ granted: false, error: 'Permission denied for custom endpoint' });
                     return;
                 }
 
                 chrome.permissions.contains({ origins: [originPattern] }, (verified) => {
+                    const verifyError = chrome.runtime?.lastError;
+                    if (verifyError) {
+                        resolve({
+                            granted: false,
+                            error: verifyError.message || 'Failed to verify endpoint permission'
+                        });
+                        return;
+                    }
                     if (verified) {
                         resolve({ granted: true, error: '' });
                     } else {
@@ -419,7 +472,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             return false;
         }
 
-        ensureOriginPermission(origin).then((result) => {
+        ensureOriginPermission(origin, { requestIfMissing: false }).then((result) => {
             if (!result.granted) {
                 sendResponse({ success: false, error: result.error || 'Permission denied for custom endpoint' });
                 return;
@@ -444,7 +497,7 @@ chrome.runtime.onConnect.addListener((port) => {
                     return;
                 }
 
-                const permission = await ensureOriginPermission(origin);
+                const permission = await ensureOriginPermission(origin, { requestIfMissing: false });
                 if (!permission.granted) {
                     port.postMessage({ success: false, error: permission.error || 'Permission denied for custom endpoint' });
                     return;

@@ -962,7 +962,7 @@ Content (HTML): ${bodyHtml}
 
     if (!preflightStoredSummary?.summaryHtml) {
       try {
-        await getAiRuntimeSettings({ requireApiKey: true, requestEndpointPermission: !modalOnlyMode });
+        await getAiRuntimeSettings({ requireApiKey: true, requestEndpointPermission: false });
       } catch (err) {
         const message = err?.message || 'Unknown error';
         const isApiKeyIssue = /api key/i.test(message);
@@ -1025,7 +1025,7 @@ Content (HTML): ${bodyHtml}
       } else {
         const {
           apiKey, apiUrl, model, reasoningEffort,
-        } = await getAiRuntimeSettings({ requireApiKey: true, requestEndpointPermission: !modalOnlyMode });
+        } = await getAiRuntimeSettings({ requireApiKey: true, requestEndpointPermission: false });
         userPromptText = await buildUserPrompt(resolvedPageData, forceResummarize);
         const result = await withTimeout(
           sendOpenAIRequest({
@@ -1105,7 +1105,7 @@ Content (HTML): ${bodyHtml}
     try {
       const {
         apiKey, apiUrl, model, reasoningEffort,
-      } = await getAiRuntimeSettings({ requireApiKey: true, requestEndpointPermission: !modalOnlyMode });
+      } = await getAiRuntimeSettings({ requireApiKey: true, requestEndpointPermission: false });
       const result = await withTimeout(
         sendOpenAIRequest({
           apiKey,

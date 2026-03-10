@@ -275,7 +275,7 @@ async function getConfiguredOpenAiOrigin() {
   });
 }
 
-function requestApiOriginPermissionFromBackground(origin) {
+function requestApiOriginPermissionFromBackground(origin, { requestIfMissing = false } = {}) {
   return new Promise((resolve) => {
     if (!origin) {
       resolve({ granted: false, error: 'Invalid API origin' });
@@ -283,12 +283,12 @@ function requestApiOriginPermissionFromBackground(origin) {
     }
 
     chrome.runtime.sendMessage(
-      { action: 'ensureApiOriginPermission', origin },
+      { action: 'ensureApiOriginPermission', origin, requestIfMissing },
       (response) => {
         if (chrome.runtime.lastError) {
           resolve({
             granted: false,
-            error: chrome.runtime.lastError.message || 'Failed to request endpoint permission',
+            error: chrome.runtime.lastError.message || 'Failed to check endpoint permission',
           });
           return;
         }
@@ -401,11 +401,11 @@ function FloatingSummarizeButton() {
         return;
       }
 
-      const permissionResult = await requestApiOriginPermissionFromBackground(endpointOrigin);
+      const permissionResult = await requestApiOriginPermissionFromBackground(endpointOrigin, { requestIfMissing: false });
       if (!permissionResult.granted) {
         showDialog(
           'Permission Required',
-          permissionResult.error || 'Please allow access to the OpenAI endpoint domain and try again.',
+          permissionResult.error || 'Grant endpoint permission from extension Options and try again.',
         );
         setIsLoading(false);
         return;

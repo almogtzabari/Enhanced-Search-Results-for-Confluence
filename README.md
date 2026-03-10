@@ -244,6 +244,8 @@ Add one or more Confluence domains via the Options page (for example, `confluenc
 
 - Domain entries use optional host permissions. The browser prompts you when saving domains.
 - AI requests use an endpoint-origin permission (`https://.../*`) for the configured OpenAI-compatible API base URL.
+  - In both Chrome and Firefox, grant this from **Options → AI Options → Grant Endpoint Permission** (especially after changing the endpoint URL).
+  - Firefox enforces stricter user-gesture rules for permission requests, so granting from the Options button is the reliable path.
 
 ### Advanced Options
 

@@ -75,7 +75,7 @@ export function sendOpenAIRequest({ apiKey, apiUrl, model, messages, reasoningEf
   });
 }
 
-export async function getAiRuntimeSettings({ requireApiKey = false, requestEndpointPermission = true } = {}) {
+export async function getAiRuntimeSettings({ requireApiKey = false, requestEndpointPermission = false } = {}) {
   const [syncData, localData] = await Promise.all([
     getSync(['openaiApiKey', 'customApiEndpoint', 'selectedAiModel', 'reasoningEffort', 'useHighReasoningEffort']),
     getLocal(['openaiApiKey']),
@@ -107,7 +107,7 @@ export async function getAiRuntimeSettings({ requireApiKey = false, requestEndpo
   );
   if (!permissionResult.granted) {
     if (permissionResult.reason === 'missing_permission') {
-      throw new Error('OpenAI endpoint permission is missing. Re-open summary from the Confluence page and allow the permission prompt.');
+      throw new Error('OpenAI endpoint permission is missing. Open extension Options and click "Grant Endpoint Permission".');
     }
     throw new Error('Permission denied for the OpenAI endpoint domain. Please allow it and try again.');
   }

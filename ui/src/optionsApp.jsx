@@ -11,6 +11,7 @@ import {
 import { clearObjectStores } from './services/indexedDb.js';
 import { requestOriginsPermission } from './services/permissions.js';
 import { getChrome, getLocal, getSync, setLocal, setSync } from './services/storage.js';
+import { normalizeResponsesUrl } from './shared/openai.js';
 
 const DEFAULT_RESULTS_PER_REQUEST = 75;
 const STORAGE_WRITE_DEBOUNCE_MS = 320;
@@ -359,6 +360,29 @@ export function OptionsApp() {
     setCustomApiEndpoint(next);
   };
 
+  const onGrantEndpointPermission = async () => {
+    const configuredBase = (customApiEndpoint || '').trim() || 'https://api.openai.com/v1';
+    let origin = '';
+    try {
+      origin = new URL(normalizeResponsesUrl(configuredBase)).origin;
+    } catch {
+      showStatus('Invalid OpenAI endpoint URL.', 'error');
+      return;
+    }
+
+    const permissionResult = await requestOriginsPermission([`${origin}/*`]);
+    if (!permissionResult.granted) {
+      if (permissionResult.reason === 'request_failed' || permissionResult.reason === 'contains_failed') {
+        showStatus('Could not request endpoint permission. Try again from this Options page.', 'error');
+        return;
+      }
+      showStatus('Permission denied for the OpenAI endpoint domain.', 'error');
+      return;
+    }
+
+    showStatus(`Endpoint permission granted for ${origin}.`, 'success');
+  };
+
   const onCustomPromptChange = (next) => {
     setCustomUserPrompt(next);
     if (promptDebounceRef.current) clearTimeout(promptDebounceRef.current);
@@ -588,15 +612,22 @@ export function OptionsApp() {
             <div class="setting-row stacked">
               <div>
                 <label class="setting-label" htmlFor="custom-endpoint">Custom OpenAI API Base URL</label>
-                <p class="setting-desc">Optional override (the extension appends /responses automatically).</p>
+                <p class="setting-desc">Optional override (the extension appends /responses automatically). Click Grant Endpoint Permission after changes.</p>
               </div>
-              <input
-                id="custom-endpoint"
-                type="text"
-                value={customApiEndpoint}
-                onInput={(e) => onCustomEndpointChange(e.currentTarget.value)}
-                placeholder="https://api.openai.com/v1"
-              />
+              <div class="inline-control-stack">
+                <input
+                  id="custom-endpoint"
+                  type="text"
+                  value={customApiEndpoint}
+                  onInput={(e) => onCustomEndpointChange(e.currentTarget.value)}
+                  placeholder="https://api.openai.com/v1"
+                />
+                <div class="section-actions tight">
+                  <button class="btn secondary" type="button" onClick={onGrantEndpointPermission}>
+                    Grant Endpoint Permission
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div class="setting-row stacked">

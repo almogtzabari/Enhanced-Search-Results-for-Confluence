@@ -189,6 +189,11 @@ h2 {
   width: 100%;
 }
 
+.inline-control-stack {
+  display: grid;
+  gap: 8px;
+}
+
 .setting-row.stacked textarea {
   min-height: 128px;
 }
@@ -328,6 +333,10 @@ textarea:focus {
   margin-top: 10px;
   display: flex;
   justify-content: flex-end;
+}
+
+.section-actions.tight {
+  margin-top: 0;
 }
 
 .status {
