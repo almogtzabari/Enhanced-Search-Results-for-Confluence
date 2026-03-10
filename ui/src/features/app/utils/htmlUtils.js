@@ -12,7 +12,7 @@ const SAFE_HTML_ATTRS = new Set([
   'aria-label', 'aria-hidden',
 ]);
 
-export function isSafeHtmlUrl(value) {
+function isSafeHtmlUrl(value) {
   const trimmed = String(value || '').trim();
   if (!trimmed) return false;
   if (trimmed.startsWith('#') || trimmed.startsWith('/')) return true;

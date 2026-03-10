@@ -170,10 +170,6 @@ body.dark-mode {
     color: var(--primary);
 }
 
-#enhanced-content-app-root #dialog-cancel {
-    border-color: color-mix(in srgb, var(--line) 78%, var(--muted) 22%);
-}
-
 #enhanced-content-app-root .enhanced-fab-shell {
     width: 56px;
     height: 196px;

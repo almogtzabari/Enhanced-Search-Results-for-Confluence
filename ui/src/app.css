@@ -543,10 +543,6 @@ body.dark-mode .sidebar-block:hover {
   border: 1px solid var(--line);
 }
 
-.combo-option.clear-option {
-  font-weight: 600;
-}
-
 .combo-empty {
   padding: 10px;
   color: var(--muted);
@@ -664,25 +660,6 @@ body.dark-mode .sidebar-block:hover {
   font-weight: 600;
   color: color-mix(in srgb, var(--text) 92%, var(--muted) 8%);
   text-align: right;
-}
-
-.toggle-row {
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 11px;
-  border: 1px solid color-mix(in srgb, var(--line) 74%, var(--primary) 26%);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-strong) 90%, var(--primary-soft) 10%);
-  cursor: pointer;
-}
-
-.toggle-row-label {
-  font-size: 0.84rem;
-  color: var(--text);
-  font-weight: 600;
 }
 
 .switch {
@@ -1705,20 +1682,6 @@ body.dark-mode .ai-visibility-btn.is-selected {
   border: 1px solid color-mix(in srgb, var(--line) 72%, var(--primary) 28%);
 }
 
-.ai-chip-svg {
-  width: 15px;
-  height: 15px;
-  color: color-mix(in srgb, var(--primary) 66%, var(--muted) 34%);
-  flex-shrink: 0;
-}
-
-.ai-chip-wide {
-  max-width: min(100%, 760px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .ai-chip-popover {
   position: absolute;
   top: calc(100% + 10px);
@@ -2571,65 +2534,6 @@ body.dark-mode .ai-action-btn.ask:disabled {
   color: var(--muted);
   font-size: 0.92rem;
   max-width: 560px;
-}
-
-.ai-loading-meta {
-  margin-top: 6px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  max-width: 720px;
-}
-
-.ai-loading-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--line) 60%, var(--primary) 40%);
-  background: color-mix(in srgb, var(--surface-strong) 84%, #ffffff 16%);
-  color: var(--text);
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-.ai-loading-link {
-  display: inline-flex;
-  align-items: center;
-  height: 28px;
-  padding: 0 11px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--primary) 62%, #ffffff 38%);
-  background: linear-gradient(
-    160deg,
-    color-mix(in srgb, var(--primary-soft) 74%, #ffffff 26%),
-    color-mix(in srgb, var(--primary-soft) 54%, #d8e9ff 46%)
-  );
-  color: color-mix(in srgb, var(--primary) 82%, #0f427f 18%);
-  text-decoration: none;
-  font-size: 0.78rem;
-  font-weight: 700;
-  transition: transform 130ms ease, box-shadow 130ms ease, border-color 130ms ease;
-}
-
-.ai-loading-link:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--primary) 76%, #ffffff 24%);
-  box-shadow: 0 8px 14px color-mix(in srgb, var(--primary) 20%, transparent 80%);
-}
-
-body.dark-mode .ai-loading-chip {
-  border-color: color-mix(in srgb, #5d8bc3 58%, #2f5077 42%);
-  background: color-mix(in srgb, #173154 82%, #132744 18%);
-}
-
-body.dark-mode .ai-loading-link {
-  border-color: color-mix(in srgb, #6db6ff 64%, #376ca6 36%);
-  background: linear-gradient(155deg, #1c426d, #173b63);
-  color: #c8e3ff;
 }
 
 .typing-bubble {

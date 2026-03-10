@@ -25,7 +25,6 @@ const runtimePathsToCopy = [
   'assets',
   'background',
   'extension',
-  'shared',
 ];
 
 const buildOutputMappings = [
@@ -124,8 +123,6 @@ function buildTargetManifest(baseManifest, target) {
       'content/*',
       'views/*',
       'options/*',
-      'shared/*',
-      'shared/runtime/*',
     ];
 
     manifest.browser_specific_settings = {

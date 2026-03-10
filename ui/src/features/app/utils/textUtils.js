@@ -16,7 +16,7 @@ export function detectDirection(text = '') {
   return /[\u0590-\u05FF\u0600-\u06FF]/.test(text) ? 'rtl' : 'ltr';
 }
 
-export function stripHtmlToText(html = '') {
+function stripHtmlToText(html = '') {
   const doc = new DOMParser().parseFromString(String(html), 'text/html');
   return (doc.body?.textContent || '').replace(/\s+/g, ' ').trim();
 }

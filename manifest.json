@@ -16,8 +16,6 @@
       "resources": [
         "content/content-main.js",
         "views/index.html",
-        "shared/runtime/dbService.js",
-        "shared/extensionConfig.js",
         "extension/content/modalStyles.css",
         "assets/icons/favicon.png"
       ],
