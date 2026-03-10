@@ -29,6 +29,8 @@ npm run test:ui:coverage
 npm run lint
 ```
 
+For full local setup, build, packaging, and extension-loading instructions, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
 ## Quick Smoke Checklist
 
 Run after loading both `dist/chrome` and `dist/firefox` builds:

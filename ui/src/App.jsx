@@ -40,6 +40,15 @@ export function App() {
   const modalOnlyMode = params.mode === 'content-modal';
   const modalContentId = (params.contentId || '').trim();
   const modalContentTitle = (params.contentTitle || '').trim();
+  const modalContentType = (params.contentType || '').trim();
+  const modalContentWebUi = (params.contentWebUi || '').trim();
+  const modalSpaceName = (params.spaceName || '').trim();
+  const modalSpaceKey = (params.spaceKey || '').trim();
+  const modalSpaceIconPath = (params.spaceIconPath || '').trim();
+  const modalContributorName = (params.contributorName || '').trim();
+  const modalContributorUsername = (params.contributorUsername || '').trim();
+  const modalContributorAvatarPath = (params.contributorAvatarPath || '').trim();
+  const modalModifiedWhen = (params.modifiedWhen || '').trim();
 
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [selectedAiModel, setSelectedAiModel] = useState(DEFAULT_AI_MODEL);
@@ -117,6 +126,15 @@ export function App() {
     modalOnlyMode,
     modalContentId,
     modalContentTitle,
+    modalContentType,
+    modalContentWebUi,
+    modalSpaceName,
+    modalSpaceKey,
+    modalSpaceIconPath,
+    modalContributorName,
+    modalContributorUsername,
+    modalContributorAvatarPath,
+    modalModifiedWhen,
     enableSummaries,
     allResults: search.derived.allResults,
     openNoticeDialog,
@@ -403,12 +421,16 @@ export function App() {
         buildConfluenceUrl={buildConfluenceUrl}
         baseUrl={ai.state.aiBaseUrl}
         aiModalLoading={ai.state.aiModalLoading}
+        aiModalLoadingTitle={ai.state.aiModalLoadingTitle}
         typeIcons={typeIcons}
         aiSpaceIconSrc={ai.state.aiSpaceIconSrc}
         fallbackSpaceIcon={fallbackSpaceIcon}
         aiContributorIconSrc={ai.state.aiContributorIconSrc}
         fallbackUserIcon={fallbackUserIcon}
         aiContributorName={ai.state.aiContributorName}
+        selectedAiModel={selectedAiModel}
+        aiModelOptions={aiModelOptions}
+        changeAiModel={changeAiModel}
         isAiSummaryCollapsed={ai.state.isAiSummaryCollapsed}
         isAiChatCollapsed={ai.state.isAiChatCollapsed}
         aiLayoutRef={ai.refs.aiLayoutRef}

@@ -6,21 +6,25 @@ import {
   SAVED_SEARCH_STORE_NAME,
 } from '../../../shared/extensionConfig.js';
 
-export const DEFAULT_AI_MODEL = 'gpt-5.2-chat-latest';
+export const DEFAULT_AI_MODEL = 'gpt-5.4';
 
 export const AI_MODEL_OPTIONS = [
+  { value: 'gpt-5.4', label: 'gpt-5.4' },
+  { value: 'gpt-5.4-pro', label: 'gpt-5.4-pro' },
+  { value: 'gpt-5.3-codex', label: 'gpt-5.3-codex' },
+  { value: 'gpt-5-codex', label: 'gpt-5-codex' },
   { value: 'gpt-5', label: 'gpt-5' },
-  { value: 'gpt-5.2-chat-latest', label: 'gpt-5.2-chat-latest' },
   { value: 'gpt-5-pro', label: 'gpt-5-pro' },
-  { value: 'gpt-5.2-pro', label: 'gpt-5.2-pro' },
-  { value: 'gpt-5.2', label: 'gpt-5.2' },
-  { value: 'gpt-5.1', label: 'gpt-5.1' },
   { value: 'gpt-5-mini', label: 'gpt-5-mini' },
   { value: 'gpt-5-nano', label: 'gpt-5-nano' },
-  { value: 'gpt-5-chat-latest', label: 'gpt-5-chat-latest' },
 ];
 
 export const retiredModelFallbacks = {
+  'gpt-5.1': DEFAULT_AI_MODEL,
+  'gpt-5.2': DEFAULT_AI_MODEL,
+  'gpt-5-chat-latest': DEFAULT_AI_MODEL,
+  'gpt-5.2-chat-latest': DEFAULT_AI_MODEL,
+  'gpt-5.2-pro': DEFAULT_AI_MODEL,
   'gpt-4o': DEFAULT_AI_MODEL,
   'gpt-4.1': DEFAULT_AI_MODEL,
   'gpt-4.1-mini': DEFAULT_AI_MODEL,

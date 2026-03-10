@@ -141,6 +141,12 @@ export function ResultsPanel({
               </thead>
               <tbody>
                 {tableResults.map((item) => {
+                  const aiStatus = aiItemLoadingId === item.id ? 'loading' : (aiSummaryStatusById[item.id] || 'idle');
+                  const aiLabel = aiStatus === 'loading'
+                    ? 'Thinking...'
+                    : aiStatus === 'ready'
+                      ? 'Open'
+                      : 'Summarize';
                   const creator = item.history?.createdBy;
                   const creatorKey = creator?.username || creator?.userKey || creator?.accountId || '';
                   const creatorName = creator?.displayName || 'Unknown';
@@ -225,15 +231,13 @@ export function ResultsPanel({
                           <button
                             class="mini-ai-btn"
                             onClick={() => openAiSummaryModal(item)}
-                            disabled={aiItemLoadingId === item.id}
+                            disabled={aiStatus === 'loading'}
                             title="AI Summary"
-                            data-status={aiItemLoadingId === item.id ? 'loading' : (aiSummaryStatusById[item.id] || 'idle')}
+                            data-status={aiStatus}
+                            aria-busy={aiStatus === 'loading' ? 'true' : 'false'}
                           >
-                            {aiItemLoadingId === item.id
-                              ? 'Thinking...'
-                              : aiSummaryStatusById[item.id] === 'ready'
-                                ? 'Open'
-                                : 'Summarize'}
+                            <span class="mini-ai-btn__icon" aria-hidden="true" />
+                            <span class="mini-ai-btn__label">{aiLabel}</span>
                           </button>
                         </td>
                       )}

@@ -13,6 +13,7 @@ const serviceMocks = vi.hoisted(() => ({
   getSync: vi.fn(),
   setLocal: vi.fn(),
   setSync: vi.fn(),
+  subscribeStorageChanges: vi.fn(),
 }));
 
 vi.mock('../services/indexedDb.js', () => ({
@@ -29,6 +30,7 @@ vi.mock('../services/storage.js', () => ({
   getSync: serviceMocks.getSync,
   setLocal: serviceMocks.setLocal,
   setSync: serviceMocks.setSync,
+  subscribeStorageChanges: serviceMocks.subscribeStorageChanges,
 }));
 
 function mount() {
@@ -70,6 +72,7 @@ describe('OptionsApp', () => {
     serviceMocks.getLocal.mockResolvedValue({});
     serviceMocks.setLocal.mockResolvedValue({ ok: true, error: '' });
     serviceMocks.setSync.mockResolvedValue({ ok: true, error: '' });
+    serviceMocks.subscribeStorageChanges.mockReturnValue(() => {});
     serviceMocks.getChrome.mockReturnValue({
       runtime: {
         sendMessage: vi.fn(),
@@ -88,6 +91,7 @@ describe('OptionsApp', () => {
       darkMode: true,
       showTooltips: false,
       selectedAiModel: 'gpt-4o',
+      floatingPrimaryAction: 'summarize',
       useHighReasoningEffort: true,
       openaiApiKey: 'sync-api-key',
     });
@@ -104,10 +108,12 @@ describe('OptionsApp', () => {
 
     const modelSelect = view.container.querySelector('#ai-model');
     const reasoningSelect = view.container.querySelector('#reasoning-effort');
+    const floatingPrimaryActionSelect = view.container.querySelector('#floating-primary-action');
     const domainInput = view.container.querySelector('input[placeholder="example.com"]');
 
     expect(modelSelect?.value).toBe(DEFAULT_AI_MODEL);
     expect(reasoningSelect?.value).toBe('high');
+    expect(floatingPrimaryActionSelect?.value).toBe('summarize');
     expect(domainInput?.value).toBe('example.atlassian.net');
 
     expect(serviceMocks.setLocal).toHaveBeenCalledWith({ openaiApiKey: 'sync-api-key' });
@@ -206,6 +212,24 @@ describe('OptionsApp', () => {
     await flushMany();
     expect(view.container.textContent).toContain('Endpoint permission granted for https://custom.openai.example.');
 
+    view.unmount();
+  });
+
+  it('persists floating primary action selection', async () => {
+    const view = mount();
+    await flushMany();
+
+    const floatingPrimaryActionSelect = view.container.querySelector('#floating-primary-action');
+    expect(floatingPrimaryActionSelect).toBeTruthy();
+    expect(floatingPrimaryActionSelect?.value).toBe('summarize');
+
+    floatingPrimaryActionSelect.value = 'search';
+    act(() => {
+      floatingPrimaryActionSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushMany();
+
+    expect(serviceMocks.setSync).toHaveBeenCalledWith({ floatingPrimaryAction: 'search' });
     view.unmount();
   });
 

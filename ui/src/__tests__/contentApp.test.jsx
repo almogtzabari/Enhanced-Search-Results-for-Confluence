@@ -7,16 +7,27 @@ const MODAL_HOST_ID = 'enhanced-content-ai-modal-host';
 
 function createChromeMock({
   enableFloatingSummarize = true,
+  floatingPrimaryAction = 'summarize',
   localApiKey = '',
   syncApiKey = '',
   customApiEndpoint = 'https://api.openai.com/v1',
   ensurePermission = { granted: true, error: '' },
+  storedSummariesByContentId = {},
   withOpenOptionsPage = true,
 } = {}) {
-  let storageChangeListener = null;
+  const storageChangeListeners = new Set();
   const runtimeSendMessage = vi.fn((message, callback) => {
     if (message?.action === 'ensureApiOriginPermission') {
       callback?.(ensurePermission);
+      return;
+    }
+    if (message?.dbAction && message.store === 'summaries' && message.op === 'get') {
+      const contentId = String(message?.payload?.[0] || '').trim();
+      const summaryExists = !!storedSummariesByContentId[contentId];
+      callback?.({
+        success: true,
+        result: summaryExists ? { summaryHtml: '<p>cached</p>' } : null,
+      });
       return;
     }
     callback?.({});
@@ -33,7 +44,10 @@ function createChromeMock({
   const storageSyncGet = vi.fn((keys, callback) => {
     const keyList = Array.isArray(keys) ? keys : [keys];
     if (keyList.includes('enableFloatingSummarize')) {
-      callback({ enableFloatingSummarize });
+      callback({
+        enableFloatingSummarize,
+        ...(keyList.includes('floatingPrimaryAction') ? { floatingPrimaryAction } : {}),
+      });
       return;
     }
     if (keyList.includes('openaiApiKey')) {
@@ -42,6 +56,10 @@ function createChromeMock({
     }
     if (keyList.includes('customApiEndpoint')) {
       callback({ customApiEndpoint });
+      return;
+    }
+    if (keyList.includes('floatingPrimaryAction')) {
+      callback({ floatingPrimaryAction });
       return;
     }
     callback({});
@@ -66,9 +84,11 @@ function createChromeMock({
       },
       onChanged: {
         addListener: vi.fn((listener) => {
-          storageChangeListener = listener;
+          storageChangeListeners.add(listener);
         }),
-        removeListener: vi.fn(),
+        removeListener: vi.fn((listener) => {
+          storageChangeListeners.delete(listener);
+        }),
       },
     },
   };
@@ -79,7 +99,9 @@ function createChromeMock({
     storageSyncGet,
     storageLocalGet,
     triggerStorageChange(changes, area = 'sync') {
-      storageChangeListener?.(changes, area);
+      Array.from(storageChangeListeners).forEach((listener) => {
+        listener(changes, area);
+      });
     },
   };
 }
@@ -95,6 +117,13 @@ async function flush() {
   });
 }
 
+async function flushMany(count = 5) {
+  for (let i = 0; i < count; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await flush();
+  }
+}
+
 function clickByAriaLabel(label) {
   const el = document.querySelector(`[aria-label="${label}"]`);
   if (!el) throw new Error(`Element with aria-label "${label}" not found`);
@@ -108,6 +137,7 @@ describe('contentApp', () => {
     vi.restoreAllMocks();
     delete window[LOADER_FLAG];
     window.__enhancedContentModalCleanup = null;
+    delete window.AJS;
     document.head.innerHTML = '';
     document.body.innerHTML = '';
     window.history.replaceState({}, '', '/wiki/pages/12345?pageId=12345');
@@ -129,6 +159,7 @@ describe('contentApp', () => {
     document.head.innerHTML = '';
     delete window[LOADER_FLAG];
     window.__enhancedContentModalCleanup = null;
+    delete window.AJS;
   });
 
   it('bootstraps once and mounts/unmounts with floating summarize setting changes', async () => {
@@ -137,10 +168,10 @@ describe('contentApp', () => {
 
     const { bootstrapContentApp } = await loadContentAppModule();
     bootstrapContentApp();
-    await flush();
+    await flushMany();
 
     expect(document.getElementById(ROOT_ID)).toBeTruthy();
-    expect(runtime.chrome.storage.onChanged.addListener).toHaveBeenCalledTimes(1);
+    expect(runtime.chrome.storage.onChanged.addListener).toHaveBeenCalledTimes(2);
 
     bootstrapContentApp();
     await flush();
@@ -151,6 +182,7 @@ describe('contentApp', () => {
         enableFloatingSummarize: { newValue: false },
       });
     });
+    await flushMany();
     expect(document.getElementById(ROOT_ID)).toBeFalsy();
 
     act(() => {
@@ -158,12 +190,13 @@ describe('contentApp', () => {
         enableFloatingSummarize: { newValue: true },
       });
     });
+    await flushMany();
     expect(document.getElementById(ROOT_ID)).toBeTruthy();
 
     act(() => {
       window.dispatchEvent(new Event('beforeunload'));
     });
-    expect(runtime.chrome.storage.onChanged.removeListener).toHaveBeenCalledTimes(1);
+    expect(runtime.chrome.storage.onChanged.removeListener).toHaveBeenCalledTimes(2);
   });
 
   it('opens search page with detected base url from content button', async () => {
@@ -176,7 +209,7 @@ describe('contentApp', () => {
 
     const { bootstrapContentApp } = await loadContentAppModule();
     bootstrapContentApp();
-    await flush();
+    await flushMany();
 
     clickByAriaLabel('Open Enhanced Search');
     expect(runtime.runtimeSendMessage).toHaveBeenCalledWith(expect.objectContaining({
@@ -192,7 +225,7 @@ describe('contentApp', () => {
     global.chrome = runtimeWithOpenOptions.chrome;
     let mod = await loadContentAppModule();
     mod.bootstrapContentApp();
-    await flush();
+    await flushMany();
 
     clickByAriaLabel('Extension Settings');
     expect(runtimeWithOpenOptions.chrome.runtime.openOptionsPage).toHaveBeenCalledTimes(1);
@@ -204,7 +237,7 @@ describe('contentApp', () => {
     global.chrome = runtimeWithoutOpenOptions.chrome;
     mod = await loadContentAppModule();
     mod.bootstrapContentApp();
-    await flush();
+    await flushMany();
 
     clickByAriaLabel('Extension Settings');
     expect(runtimeWithoutOpenOptions.runtimeSendMessage).toHaveBeenCalledWith({
@@ -220,14 +253,95 @@ describe('contentApp', () => {
 
     const { bootstrapContentApp } = await loadContentAppModule();
     bootstrapContentApp();
-    await flush();
+    await flushMany();
 
     clickByAriaLabel('Open Summary and Q&A');
-    await flush();
+    await flushMany();
 
     const dialogTitle = document.querySelector('.dialog-content h2');
     expect(dialogTitle?.textContent).toBe('Unable to Summarize');
     expect(document.getElementById(MODAL_HOST_ID)).toBeFalsy();
+  });
+
+  it('shows cached summary state on summarize action when summary already exists', async () => {
+    const runtime = createChromeMock({
+      enableFloatingSummarize: true,
+      storedSummariesByContentId: { 12345: true },
+    });
+    global.chrome = runtime.chrome;
+
+    const { bootstrapContentApp } = await loadContentAppModule();
+    bootstrapContentApp();
+    await flushMany();
+
+    const summarizeButton = document.querySelector('.enhanced-fab-btn.enhanced-fab-summarize');
+    expect(summarizeButton?.getAttribute('data-label')).toBe('Open summary and chat');
+    expect(summarizeButton?.classList.contains('has-summary')).toBe(true);
+  });
+
+  it('passes runtime fallback metadata into content-modal params when prefetched metadata is missing', async () => {
+    const runtime = createChromeMock({
+      enableFloatingSummarize: true,
+      storedSummariesByContentId: { 12345: true },
+    });
+    global.chrome = runtime.chrome;
+    window.AJS = {
+      Meta: { get: vi.fn(() => '') },
+      params: {
+        spaceName: 'Engineering',
+        spaceKey: 'ENG',
+        creatorDisplayName: 'Ada Lovelace',
+        creator: 'adal',
+        pageType: 'page',
+      },
+    };
+
+    const { bootstrapContentApp } = await loadContentAppModule();
+    bootstrapContentApp();
+    await flushMany();
+
+    clickByAriaLabel('Open Existing Summary and Q&A');
+    await flushMany();
+
+    const iframe = document.getElementById('enhanced-content-ai-modal-frame');
+    expect(iframe).toBeTruthy();
+    const modalUrl = new URL(String(iframe.getAttribute('src') || ''), window.location.origin);
+    expect(modalUrl.searchParams.get('spaceName')).toBe('Engineering');
+    expect(modalUrl.searchParams.get('spaceKey')).toBe('ENG');
+    expect(modalUrl.searchParams.get('contributorName')).toBe('Ada Lovelace');
+    expect(modalUrl.searchParams.get('contributorUsername')).toBe('adal');
+  });
+
+  it('uses summarize as the primary floating action when configured', async () => {
+    const runtime = createChromeMock({
+      enableFloatingSummarize: true,
+      floatingPrimaryAction: 'summarize',
+      localApiKey: 'local-key',
+      storedSummariesByContentId: { 12345: true },
+      ensurePermission: { granted: true, error: '' },
+    });
+    global.chrome = runtime.chrome;
+
+    const { bootstrapContentApp } = await loadContentAppModule();
+    bootstrapContentApp();
+    await flushMany();
+
+    const mainButton = document.querySelector('.enhanced-fab-main');
+    expect(mainButton?.classList.contains('enhanced-fab-summarize')).toBe(true);
+
+    const splitButtons = Array.from(document.querySelectorAll('.enhanced-fab-split .enhanced-fab-btn'));
+    expect(splitButtons[0]?.classList.contains('enhanced-fab-summarize')).toBe(true);
+    expect(splitButtons[1]?.classList.contains('enhanced-fab-open')).toBe(true);
+
+    act(() => {
+      mainButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushMany();
+
+    expect(document.getElementById(MODAL_HOST_ID)).toBeTruthy();
+    expect(runtime.runtimeSendMessage).not.toHaveBeenCalledWith(expect.objectContaining({
+      action: 'openSearchTab',
+    }));
   });
 
 });

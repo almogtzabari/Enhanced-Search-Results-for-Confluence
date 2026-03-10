@@ -170,7 +170,7 @@ describe('confluenceApi', () => {
 
     expect(data.id).toBe('222');
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toContain('/wiki/rest/api/content/222?expand=space.icon,history.createdBy,version,ancestors');
+    expect(fetchMock.mock.calls[0][0]).toContain('/wiki/rest/api/content/222?expand=space.icon,history.createdBy,history.lastUpdated.by,version.by,version,ancestors');
   });
 
   it('rejects image bridge calls when host origin cannot be determined', async () => {

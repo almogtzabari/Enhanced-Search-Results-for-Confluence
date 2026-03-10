@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearAllSavedSearches,
   deleteSavedSearch,
+  getAllStoredSummaries,
   getAllSavedSearches,
   getStoredConversation,
   getStoredSummary,
@@ -53,11 +54,15 @@ describe('dbClient service', () => {
     global.chrome = createChromeRuntime((payload, callback) => callback({ success: true, result: payload }));
     vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
 
+    const allSummaries = await getAllStoredSummaries();
     const summaryLookup = await getStoredSummary('10', 'https://example.atlassian.net/wiki');
     const summaryStore = await storeSummary({ contentId: '10', baseUrl: 'b', summaryHtml: '<p>x</p>' });
     const conversationLookup = await getStoredConversation('11', 'https://example.atlassian.net/wiki');
     const conversationStore = await storeConversation('11', 'https://example.atlassian.net/wiki', [{ role: 'user', content: 'q' }]);
 
+    expect(allSummaries.store).toBe(SUMMARY_STORE);
+    expect(allSummaries.mode).toBe('readonly');
+    expect(allSummaries.op).toBe('getAll');
     expect(summaryLookup.store).toBe(SUMMARY_STORE);
     expect(summaryLookup.payload).toEqual(['10', 'https://example.atlassian.net/wiki']);
     expect(summaryStore.op).toBe('put');

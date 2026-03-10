@@ -10,11 +10,23 @@ import {
 } from './shared/constants.js';
 import { clearObjectStores } from './services/indexedDb.js';
 import { requestOriginsPermission } from './services/permissions.js';
-import { getChrome, getLocal, getSync, setLocal, setSync } from './services/storage.js';
+import { getChrome, getLocal, getSync, setLocal, setSync, subscribeStorageChanges } from './services/storage.js';
 import { normalizeResponsesUrl } from './shared/openai.js';
 
 const DEFAULT_RESULTS_PER_REQUEST = 75;
 const STORAGE_WRITE_DEBOUNCE_MS = 320;
+const FLOATING_PRIMARY_ACTION_DEFAULT = 'summarize';
+
+const floatingPrimaryActionOptions = [
+  { value: 'search', label: 'Search' },
+  { value: 'summarize', label: 'Summarize and chat' },
+];
+
+const normalizeFloatingPrimaryAction = (value) => (
+  value === 'search' || value === 'summarize'
+    ? value
+    : FLOATING_PRIMARY_ACTION_DEFAULT
+);
 
 const reasoningEffortOptions = [
   { value: '', label: 'Model default' },
@@ -85,6 +97,7 @@ export function OptionsApp() {
   const [highlightResultRows, setHighlightResultRows] = useState(true);
   const [enableSummaries, setEnableSummaries] = useState(true);
   const [enableFloatingSummarize, setEnableFloatingSummarize] = useState(true);
+  const [floatingPrimaryAction, setFloatingPrimaryAction] = useState(FLOATING_PRIMARY_ACTION_DEFAULT);
   const [selectedAiModel, setSelectedAiModel] = useState(DEFAULT_AI_MODEL);
   const [reasoningEffort, setReasoningEffort] = useState('');
   const [openaiApiKey, setOpenaiApiKey] = useState('');
@@ -230,6 +243,18 @@ export function OptionsApp() {
   };
 
   useEffect(() => {
+    const unsubscribe = subscribeStorageChanges((changes, area) => {
+      if (area !== 'sync') return;
+      if (!changes.selectedAiModel) return;
+      const requestedModel = retiredModelFallbacks[changes.selectedAiModel.newValue]
+        || changes.selectedAiModel.newValue
+        || DEFAULT_AI_MODEL;
+      setSelectedAiModel(requestedModel);
+      if (changes.selectedAiModel.newValue && requestedModel !== changes.selectedAiModel.newValue) {
+        void persistSync({ selectedAiModel: requestedModel }, 'AI model');
+      }
+    });
+
     (async () => {
       const syncData = await getSync([
         'domainSettings',
@@ -241,6 +266,7 @@ export function OptionsApp() {
         'highlightResultRows',
         'enableSummaries',
         'enableFloatingSummarize',
+        'floatingPrimaryAction',
         'openaiApiKey',
         'customApiEndpoint',
         'resultsPerRequest',
@@ -262,6 +288,7 @@ export function OptionsApp() {
       setHighlightResultRows(merged.highlightResultRows !== false);
       setEnableSummaries(merged.enableSummaries !== false);
       setEnableFloatingSummarize(merged.enableFloatingSummarize !== false);
+      setFloatingPrimaryAction(normalizeFloatingPrimaryAction(merged.floatingPrimaryAction));
       setOpenaiApiKey(effectiveApiKey);
       setCustomApiEndpoint(merged.customApiEndpoint || '');
       setCustomUserPrompt(merged.customUserPrompt || '');
@@ -291,6 +318,8 @@ export function OptionsApp() {
 
       setLoading(false);
     })();
+
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -336,6 +365,12 @@ export function OptionsApp() {
   const onEnableFloatingSummarizeChange = (next) => {
     setEnableFloatingSummarize(next);
     void persistSync({ enableFloatingSummarize: next }, 'floating summary toggle');
+  };
+
+  const onFloatingPrimaryActionChange = (next) => {
+    const normalized = normalizeFloatingPrimaryAction(next);
+    setFloatingPrimaryAction(normalized);
+    void persistSync({ floatingPrimaryAction: normalized }, 'floating primary action');
   };
 
   const onModelChange = (next) => {
@@ -468,9 +503,7 @@ export function OptionsApp() {
 
   if (loading) {
     return (
-      <div class="options-root loading-shell">
-        <div class="loading-card">Loading options...</div>
-      </div>
+      <div class="options-root" aria-busy="true" />
     );
   }
 
@@ -566,6 +599,23 @@ export function OptionsApp() {
               checked={enableFloatingSummarize}
               onChange={onEnableFloatingSummarizeChange}
             />
+
+            <div class="setting-row stacked">
+              <div>
+                <label class="setting-label" htmlFor="floating-primary-action">Floating Primary Button</label>
+                <p class="setting-desc">Pick which action appears as the default floating button. Hover still reveals Search, Summarize and chat, and Settings.</p>
+              </div>
+              <select
+                id="floating-primary-action"
+                value={floatingPrimaryAction}
+                onChange={(e) => onFloatingPrimaryActionChange(e.currentTarget.value)}
+                disabled={!enableFloatingSummarize}
+              >
+                {floatingPrimaryActionOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
 
             <div class="setting-row stacked">
               <div>

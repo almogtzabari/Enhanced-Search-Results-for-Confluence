@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 
 const MIN_AI_TABLE_COL_WIDTH = 86;
 const AI_TABLE_SORT_NONE = 'none';
@@ -276,6 +276,24 @@ function enhanceAiTables(root) {
   });
 }
 
+function resolveModalItemWebUi(baseUrl, item) {
+  const explicitWebUi = String(item?._links?.webui || '').trim();
+  if (explicitWebUi) return explicitWebUi;
+
+  const contentId = String(item?.id || '').trim();
+  if (!contentId) return '';
+
+  try {
+    const parsedBase = new URL(String(baseUrl || window.location.origin), window.location.origin);
+    const contextPath = parsedBase.pathname.replace(/\/+$/, '');
+    if (contextPath && contextPath !== '/') return `${contextPath}/pages/${encodeURIComponent(contentId)}`;
+  } catch {
+    // Fall back to root-relative page path.
+  }
+
+  return `/pages/${encodeURIComponent(contentId)}`;
+}
+
 export function AiModal({
   aiModalOpen,
   closeAiModal,
@@ -290,12 +308,16 @@ export function AiModal({
   buildConfluenceUrl,
   baseUrl,
   aiModalLoading,
+  aiModalLoadingTitle,
   typeIcons,
   aiSpaceIconSrc,
   fallbackSpaceIcon,
   aiContributorIconSrc,
   fallbackUserIcon,
   aiContributorName,
+  selectedAiModel,
+  aiModelOptions,
+  changeAiModel,
   isAiSummaryCollapsed,
   isAiChatCollapsed,
   aiLayoutRef,
@@ -333,12 +355,48 @@ export function AiModal({
   aiQuestionInputHeight,
 }) {
   const aiSummaryRef = useRef(null);
+  const [layoutMotionClass, setLayoutMotionClass] = useState('');
+  const collapseStateRef = useRef({
+    summary: isAiSummaryCollapsed,
+    chat: isAiChatCollapsed,
+  });
+  const motionTimerRef = useRef(null);
+  const aiItemWebUi = resolveModalItemWebUi(baseUrl, aiActiveItem);
+  const aiItemLink = aiItemWebUi ? buildConfluenceUrl(baseUrl, aiItemWebUi) : '#';
 
   useEffect(() => {
     if (!aiModalOpen || aiModalLoading) return;
     enhanceAiTables(aiSummaryRef.current);
     enhanceAiTables(aiThreadRef?.current);
   }, [aiModalOpen, aiModalLoading, aiSummaryHtml, aiConversation]);
+
+  useEffect(() => {
+    const previous = collapseStateRef.current;
+    let nextMotionClass = '';
+
+    if (previous.chat !== isAiChatCollapsed) {
+      nextMotionClass = isAiChatCollapsed ? 'chat-closing' : 'chat-opening';
+    } else if (previous.summary !== isAiSummaryCollapsed) {
+      nextMotionClass = isAiSummaryCollapsed ? 'summary-closing' : 'summary-opening';
+    }
+
+    collapseStateRef.current = {
+      summary: isAiSummaryCollapsed,
+      chat: isAiChatCollapsed,
+    };
+
+    if (!nextMotionClass) return;
+    setLayoutMotionClass(nextMotionClass);
+    if (motionTimerRef.current) clearTimeout(motionTimerRef.current);
+    motionTimerRef.current = setTimeout(() => {
+      setLayoutMotionClass('');
+      motionTimerRef.current = null;
+    }, 280);
+  }, [isAiSummaryCollapsed, isAiChatCollapsed]);
+
+  useEffect(() => () => {
+    if (motionTimerRef.current) clearTimeout(motionTimerRef.current);
+  }, []);
 
   if (!aiModalOpen) return null;
 
@@ -381,7 +439,7 @@ export function AiModal({
           <div class="ai-modal-title">
             {aiActiveItem && (
               <a
-                href={buildConfluenceUrl(baseUrl, aiActiveItem._links?.webui)}
+                href={aiItemLink}
                 target="_blank"
                 rel="noreferrer"
                 title={aiActiveItem.title}
@@ -400,7 +458,7 @@ export function AiModal({
               <span class="ring ring-b" />
               <span class="ring ring-c" />
             </div>
-            <div class="ai-loading-title">Building your summary</div>
+            <div class="ai-loading-title">{aiModalLoadingTitle || 'Building your summary'}</div>
             <div class="ai-loading-subtitle">Reading page content, collecting context, and preparing Q&A.</div>
           </div>
         ) : (
@@ -452,10 +510,40 @@ export function AiModal({
                   </span>
                 </span>
               </span>
+              <div class="ai-top-controls">
+                <div class="ai-visibility-controls">
+                  <button
+                    class={`pane-toggle-btn ai-visibility-btn ${isAiSummaryCollapsed ? '' : 'is-selected'}`.trim()}
+                    onClick={toggleSummaryPane}
+                    aria-pressed={isAiSummaryCollapsed ? 'false' : 'true'}
+                  >
+                    Summary
+                  </button>
+                  <button
+                    class={`pane-toggle-btn ai-visibility-btn ${isAiChatCollapsed ? '' : 'is-selected'}`.trim()}
+                    onClick={toggleChatPane}
+                    aria-pressed={isAiChatCollapsed ? 'false' : 'true'}
+                  >
+                    Chat
+                  </button>
+                </div>
+                <div class="ai-model-picker">
+                  <select
+                    id="ai-model-modal"
+                    aria-label="AI model"
+                    value={selectedAiModel}
+                    onChange={(e) => changeAiModel(e.currentTarget.value)}
+                  >
+                    {aiModelOptions.map((modelOpt) => (
+                      <option key={modelOpt.value} value={modelOpt.value}>{modelOpt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
 
             <div
-              class={`ai-layout ${isAiSummaryCollapsed ? 'summary-collapsed' : ''} ${isAiChatCollapsed ? 'chat-collapsed' : ''}`.trim()}
+              class={`ai-layout ${isAiSummaryCollapsed ? 'summary-collapsed' : ''} ${isAiChatCollapsed ? 'chat-collapsed' : ''} ${layoutMotionClass}`.trim()}
               ref={aiLayoutRef}
               style={{ '--summary-width': `${Math.round(aiSummaryPaneRatio * 100)}%` }}
             >
@@ -465,11 +553,17 @@ export function AiModal({
                   <div class="ai-section-head-actions">
                     {!isAiSummaryCollapsed && (
                       <button
-                        class="pane-toggle-btn pane-resummarize-btn"
+                        class={`pane-toggle-btn pane-resummarize-btn ${aiSummaryRefreshing ? 'is-loading' : ''}`.trim()}
                         onClick={resummarizeActiveItem}
                         disabled={aiSummaryRefreshing || aiAnswerLoading}
+                        aria-busy={aiSummaryRefreshing ? 'true' : 'false'}
                       >
-                        {aiSummaryRefreshing ? 'Refreshing...' : 'Re-summarize'}
+                        {aiSummaryRefreshing ? (
+                          <span class="pane-btn-loading">
+                            <span class="pane-btn-spinner" aria-hidden="true" />
+                            <span>Re-summarizing...</span>
+                          </span>
+                        ) : 'Re-summarize'}
                       </button>
                     )}
                     <div class="pane-font-controls" title="Adjust summary text size">
@@ -488,10 +582,6 @@ export function AiModal({
                         A+
                       </button>
                     </div>
-                    {isAiChatCollapsed && (
-                      <button class="pane-toggle-btn" onClick={toggleChatPane}>Show chat</button>
-                    )}
-                    <button class="pane-toggle-btn" onClick={toggleSummaryPane}>Hide summary</button>
                   </div>
                 </div>
                 <section
@@ -521,7 +611,7 @@ export function AiModal({
                       onClick={clearAiConversation}
                       disabled={aiAnswerLoading || aiModalLoading}
                     >
-                      Clear
+                      Clear chat
                     </button>
                     <div class="pane-font-controls" title="Adjust chat text size">
                       <button
@@ -539,10 +629,6 @@ export function AiModal({
                         A+
                       </button>
                     </div>
-                    {isAiSummaryCollapsed && (
-                      <button class="pane-toggle-btn" onClick={toggleSummaryPane}>Show summary</button>
-                    )}
-                    <button class="pane-toggle-btn" onClick={toggleChatPane}>Hide chat</button>
                   </div>
                 </div>
                 <div class="ai-thread" ref={aiThreadRef} style={{ '--chat-font-size': `${aiChatFontSize}px` }}>

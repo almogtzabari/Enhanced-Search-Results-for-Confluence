@@ -7,6 +7,7 @@ const storageMocks = vi.hoisted(() => ({
 }));
 
 const dbMocks = vi.hoisted(() => ({
+  getAllStoredSummaries: vi.fn(),
   getStoredConversation: vi.fn(),
   getStoredSummary: vi.fn(),
   storeConversation: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock('../../../services/storage.js', () => ({
 }));
 
 vi.mock('../../../services/dbClient.js', () => ({
+  getAllStoredSummaries: dbMocks.getAllStoredSummaries,
   getStoredConversation: dbMocks.getStoredConversation,
   getStoredSummary: dbMocks.getStoredSummary,
   storeConversation: dbMocks.storeConversation,
@@ -85,6 +87,7 @@ describe('useAiSummaryController', () => {
     storageMocks.getLocal.mockReset();
     dbMocks.getStoredConversation.mockReset();
     dbMocks.getStoredSummary.mockReset();
+    dbMocks.getAllStoredSummaries.mockReset();
     dbMocks.storeConversation.mockReset();
     dbMocks.storeSummary.mockReset();
     aiRuntimeMocks.getAiRuntimeSettings.mockReset();
@@ -98,6 +101,7 @@ describe('useAiSummaryController', () => {
     storageMocks.getLocal.mockResolvedValue({});
     dbMocks.getStoredConversation.mockResolvedValue(null);
     dbMocks.getStoredSummary.mockResolvedValue(null);
+    dbMocks.getAllStoredSummaries.mockResolvedValue([]);
     dbMocks.storeConversation.mockResolvedValue();
     dbMocks.storeSummary.mockResolvedValue();
     aiRuntimeMocks.getAiRuntimeSettings.mockResolvedValue({
@@ -115,7 +119,13 @@ describe('useAiSummaryController', () => {
   });
 
   it('marks stored summaries as ready for loaded result ids', async () => {
-    dbMocks.getStoredSummary.mockImplementation(async (id) => (id === '10' ? { summaryHtml: '<p>x</p>' } : null));
+    dbMocks.getAllStoredSummaries.mockResolvedValue([
+      {
+        contentId: '10',
+        baseUrl: 'https://example.atlassian.net/wiki',
+        summaryHtml: '<p>x</p>',
+      },
+    ]);
 
     const hook = createHook({
       allResults: [{ id: '10', ancestors: [] }],
@@ -125,6 +135,7 @@ describe('useAiSummaryController', () => {
     await hook.flush();
 
     expect(hook.result.state.aiSummaryStatusById['10']).toBe('ready');
+    expect(dbMocks.getStoredSummary).not.toHaveBeenCalled();
     hook.unmount();
   });
 
@@ -162,7 +173,39 @@ describe('useAiSummaryController', () => {
     expect(aiRuntimeMocks.sendOpenAIRequest).not.toHaveBeenCalled();
     expect(dbMocks.storeSummary).not.toHaveBeenCalled();
     expect(hook.result.state.aiSummaryStatusById['42']).toBe('ready');
+    expect(hook.result.state.aiModalLoadingTitle).toBe('Loading your summary');
     expect(hook.result.state.aiSummaryHtml).toContain('cached summary');
+    hook.unmount();
+  });
+
+  it('opens quickly from cached summary without waiting for metadata fetch', async () => {
+    dbMocks.getStoredSummary.mockImplementation(async (id) => (
+      id === '43'
+        ? { summaryHtml: '<p>cached summary</p>', userPrompt: 'cached prompt' }
+        : null
+    ));
+
+    let resolveMetadata;
+    let metadataResolved = false;
+    const metadataPromise = new Promise((resolve) => {
+      resolveMetadata = (value) => {
+        metadataResolved = true;
+        resolve(value);
+      };
+    });
+    confluenceApiMocks.fetchConfluenceMetadataById.mockReturnValue(metadataPromise);
+
+    const hook = createHook();
+    await hook.result.actions.openAiSummaryModal(defaultPageData('43'));
+    await hook.flush();
+
+    expect(metadataResolved).toBe(false);
+    expect(hook.result.state.aiModalLoading).toBe(false);
+    expect(hook.result.state.aiSummaryHtml).toContain('cached summary');
+    expect(aiRuntimeMocks.sendOpenAIRequest).not.toHaveBeenCalled();
+
+    resolveMetadata({});
+    await hook.flush();
     hook.unmount();
   });
 
@@ -183,6 +226,67 @@ describe('useAiSummaryController', () => {
       tone: 'error',
     }));
     expect(hook.result.state.aiSummaryStatusById['99']).toBe('idle');
+    hook.unmount();
+  });
+
+  it('continues summarize after closing modal without reopening or overriding closed state', async () => {
+    dbMocks.getStoredSummary.mockImplementation(async (id) => (id === '5' ? null : null));
+
+    let resolveFirstRequest;
+    const firstRequestPromise = new Promise((resolve) => {
+      resolveFirstRequest = (value) => resolve(value);
+    });
+    aiRuntimeMocks.sendOpenAIRequest.mockImplementationOnce(() => firstRequestPromise);
+
+    const hook = createHook();
+    const firstOpenPromise = hook.result.actions.openAiSummaryModal(defaultPageData('5'));
+    await hook.flush();
+    expect(hook.result.state.aiModalOpen).toBe(true);
+
+    hook.result.actions.closeAiModal();
+    await hook.flush();
+    expect(hook.result.state.aiModalOpen).toBe(false);
+
+    resolveFirstRequest({ output_text: '<p>finished in background</p>' });
+    await firstOpenPromise;
+    await hook.flush();
+
+    expect(hook.result.state.aiModalOpen).toBe(false);
+    expect(hook.result.state.aiSummaryHtml).toBe('');
+    expect(hook.result.state.aiSummaryStatusById['5']).toBe('ready');
+    expect(dbMocks.storeSummary).toHaveBeenCalled();
+    hook.unmount();
+  });
+
+  it('does not let stale summarize request override a newer modal', async () => {
+    dbMocks.getStoredSummary.mockImplementation(async (id) => (
+      id === '1' ? null : { summaryHtml: '<p>ready second</p>', userPrompt: 'p2' }
+    ));
+    dbMocks.getStoredConversation.mockResolvedValue(null);
+
+    let resolveFirstRequest;
+    const firstRequestPromise = new Promise((resolve) => {
+      resolveFirstRequest = (value) => resolve(value);
+    });
+    aiRuntimeMocks.sendOpenAIRequest.mockImplementationOnce(() => firstRequestPromise);
+
+    const hook = createHook();
+    const firstOpenPromise = hook.result.actions.openAiSummaryModal(defaultPageData('1'));
+    await hook.flush();
+
+    await hook.result.actions.openAiSummaryModal(defaultPageData('2'));
+    await hook.flush();
+    await hook.flush();
+    expect(hook.result.state.aiSummaryHtml).toContain('ready second');
+
+    resolveFirstRequest({ output_text: '<p>late first</p>' });
+    await firstOpenPromise;
+    await hook.flush();
+    await hook.flush();
+
+    expect(hook.result.state.aiActiveItem?.id).toBe('2');
+    expect(hook.result.state.aiSummaryHtml).toContain('ready second');
+    expect(hook.result.state.aiSummaryStatusById['1']).toBe('ready');
     hook.unmount();
   });
 
@@ -251,6 +355,57 @@ describe('useAiSummaryController', () => {
     );
     expect(hook.result.state.aiSpaceIconSrc).toBe('data:image/png;base64,space');
     expect(hook.result.state.aiContributorIconSrc).toBe('data:image/png;base64,user');
+    hook.unmount();
+  });
+
+  it('uses contributor fallback fields when createdBy is missing', async () => {
+    dbMocks.getStoredSummary.mockImplementation(async (id) => (
+      id === '89'
+        ? { summaryHtml: '<p>cached</p>', userPrompt: 'prompt' }
+        : null
+    ));
+
+    const hook = createHook({ modalOnlyMode: true });
+    await hook.result.actions.openAiSummaryModal(defaultPageData('89', {
+      space: { name: 'Engineering', icon: { path: '/images/space.png' } },
+      history: { createdBy: {} },
+      version: {
+        by: {
+          displayName: 'Fallback Contributor',
+          profilePicture: { path: '/images/fallback-user.png' },
+        },
+        when: '2026-03-10',
+      },
+    }));
+    await hook.flush();
+    await hook.flush();
+
+    expect(hook.result.state.aiContributorName).toBe('Fallback Contributor');
+    expect(hook.result.state.aiContributorIconSrc).toContain('/images/fallback-user.png');
+    hook.unmount();
+  });
+
+  it('keeps modal-only title stable while metadata is enriched', async () => {
+    dbMocks.getStoredSummary.mockImplementation(async (id) => (
+      id === '901'
+        ? { summaryHtml: '<p>cached</p>', userPrompt: 'prompt' }
+        : null
+    ));
+    confluenceApiMocks.fetchConfluenceMetadataById.mockResolvedValue({
+      title: 'Actual page title',
+      _links: { webui: '/pages/901' },
+    });
+
+    const hook = createHook({ modalOnlyMode: true });
+    await hook.result.actions.openAiSummaryModal(defaultPageData('901', {
+      title: 'Actual page title - Engineering Space - Confluence',
+      space: { name: 'Engineering', icon: { path: '' } },
+      history: { createdBy: { displayName: 'Alice' } },
+    }));
+    await hook.flush();
+    await hook.flush();
+
+    expect(hook.result.state.aiActiveItem?.title).toBe('Actual page title - Engineering Space - Confluence');
     hook.unmount();
   });
 });

@@ -60,21 +60,6 @@ body {
   padding: 26px 22px 38px;
 }
 
-.loading-shell {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-}
-
-.loading-card {
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  padding: 20px 24px;
-  font-weight: 700;
-}
-
 .panel {
   border: 1px solid var(--line);
   border-radius: 18px;

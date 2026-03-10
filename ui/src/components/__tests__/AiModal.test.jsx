@@ -54,12 +54,20 @@ function createProps(overrides = {}) {
     buildConfluenceUrl: vi.fn((baseUrl, webui) => `${baseUrl}${webui}`),
     baseUrl: 'https://example.atlassian.net/wiki',
     aiModalLoading: false,
+    aiModalLoadingTitle: 'Building your summary',
     typeIcons: { blogpost: '📰' },
     aiSpaceIconSrc: 'broken-space-icon',
     fallbackSpaceIcon: 'space-fallback',
     aiContributorIconSrc: 'broken-user-icon',
     fallbackUserIcon: 'user-fallback',
     aiContributorName: 'Alex',
+    selectedAiModel: 'gpt-5.4',
+    aiModelOptions: [
+      { value: 'gpt-5.4', label: 'gpt-5.4' },
+      { value: 'gpt-5.3-codex', label: 'gpt-5.3-codex' },
+      { value: 'gpt-5-codex', label: 'gpt-5-codex' },
+    ],
+    changeAiModel: vi.fn(),
     isAiSummaryCollapsed: false,
     isAiChatCollapsed: false,
     aiLayoutRef: { current: null },
@@ -128,6 +136,11 @@ describe('AiModal', () => {
 
     expect(view.container.textContent).toContain('Building your summary');
     expect(view.container.querySelector('.ai-modal-content')).toBeFalsy();
+    expect(view.container.querySelector('.ai-loading-meta')).toBeFalsy();
+    expect(view.container.textContent).not.toContain('Type:');
+    expect(view.container.textContent).not.toContain('Space:');
+    expect(view.container.textContent).not.toContain('Contributor:');
+    expect(view.container.textContent).not.toContain('Open page');
 
     const overlay = view.container.querySelector('.ai-modal-overlay');
     const modal = view.container.querySelector('.ai-modal');
@@ -158,6 +171,33 @@ describe('AiModal', () => {
     expect(props.startAiModalHeightResize).toHaveBeenNthCalledWith(1, expect.any(MouseEvent), 'top');
     expect(props.startAiModalHeightResize).toHaveBeenNthCalledWith(2, expect.any(MouseEvent), 'bottom');
     expect(props.resetAiModalHeight).toHaveBeenCalledTimes(1);
+
+    view.unmount();
+  });
+
+  it('renders custom loading title when provided', () => {
+    const props = createProps({
+      aiModalLoading: true,
+      aiModalLoadingTitle: 'Loading your summary',
+    });
+    const view = mount(props);
+
+    expect(view.container.textContent).toContain('Loading your summary');
+    view.unmount();
+  });
+
+  it('shows animated resummarize loading state while summary refresh is active', async () => {
+    const props = createProps({ aiSummaryRefreshing: true });
+    const view = mount(props);
+    await flush();
+
+    const refreshButton = view.container.querySelector('.pane-resummarize-btn');
+    expect(refreshButton).toBeTruthy();
+    expect(refreshButton.classList.contains('is-loading')).toBe(true);
+    expect(refreshButton.getAttribute('aria-busy')).toBe('true');
+    expect(refreshButton.disabled).toBe(true);
+    expect(refreshButton.textContent).toContain('Re-summarizing...');
+    expect(refreshButton.querySelector('.pane-btn-spinner')).toBeTruthy();
 
     view.unmount();
   });
@@ -211,6 +251,10 @@ describe('AiModal', () => {
     expect(view.container.textContent).toContain('Type: blogpost');
     expect(view.container.textContent).toContain('Space: Engineering');
     expect(view.container.textContent).toContain('Contributor: Alex');
+    const modelSelect = view.container.querySelector('#ai-model-modal');
+    expect(modelSelect?.value).toBe('gpt-5.4');
+    expect(Array.from(modelSelect?.querySelectorAll('option') || []).map((option) => option.value))
+      .toEqual(['gpt-5.4', 'gpt-5.3-codex', 'gpt-5-codex']);
 
     const avatars = view.container.querySelectorAll('.ai-chip-avatar');
     act(() => {
@@ -232,21 +276,27 @@ describe('AiModal', () => {
     const askButton = view.container.querySelector('.ai-action-btn');
     const paneResizer = view.container.querySelector('.ai-pane-resizer');
     const questionResize = view.container.querySelector('.ai-question-resize-handle');
-    const hideSummaryButton = Array.from(view.container.querySelectorAll('button'))
-      .find((button) => button.textContent === 'Hide summary');
-    const hideChatButton = Array.from(view.container.querySelectorAll('button'))
-      .find((button) => button.textContent === 'Hide chat');
+    const summaryToggleButton = Array.from(view.container.querySelectorAll('.ai-visibility-controls button'))
+      .find((button) => button.textContent.trim() === 'Summary');
+    const chatToggleButton = Array.from(view.container.querySelectorAll('.ai-visibility-controls button'))
+      .find((button) => button.textContent.trim() === 'Chat');
+    expect(summaryToggleButton).toBeTruthy();
+    expect(chatToggleButton).toBeTruthy();
+    expect(summaryToggleButton.classList.contains('is-selected')).toBe(true);
+    expect(chatToggleButton.classList.contains('is-selected')).toBe(true);
 
     textarea.value = 'next question';
     act(() => {
+      modelSelect.value = 'gpt-5.3-codex';
+      modelSelect.dispatchEvent(new Event('change', { bubbles: true }));
       view.container.querySelector('.pane-resummarize-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
       view.container.querySelector('.pane-clear-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
       summaryFontButtons[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
       summaryFontButtons[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
       chatFontButtons[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
       chatFontButtons[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      hideSummaryButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      hideChatButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      summaryToggleButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      chatToggleButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       paneResizer.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       paneResizer.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
       questionResize.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
@@ -258,6 +308,7 @@ describe('AiModal', () => {
     });
 
     expect(props.resummarizeActiveItem).toHaveBeenCalledTimes(1);
+    expect(props.changeAiModel).toHaveBeenCalledWith('gpt-5.3-codex');
     expect(props.clearAiConversation).toHaveBeenCalledTimes(1);
     expect(props.adjustAiSummaryFontSize).toHaveBeenCalledWith(-1);
     expect(props.adjustAiSummaryFontSize).toHaveBeenCalledWith(1);
@@ -278,7 +329,12 @@ describe('AiModal', () => {
     }));
     await flush();
     expect(view.container.querySelector('.ai-pane-resizer')).toBeFalsy();
-    expect(view.container.textContent).toContain('Show summary');
+    const summaryToggleAfterCollapse = Array.from(view.container.querySelectorAll('.ai-visibility-controls button'))
+      .find((button) => button.textContent.trim() === 'Summary');
+    const chatToggleAfterCollapse = Array.from(view.container.querySelectorAll('.ai-visibility-controls button'))
+      .find((button) => button.textContent.trim() === 'Chat');
+    expect(summaryToggleAfterCollapse.classList.contains('is-selected')).toBe(false);
+    expect(chatToggleAfterCollapse.classList.contains('is-selected')).toBe(true);
 
     view.unmount();
   });

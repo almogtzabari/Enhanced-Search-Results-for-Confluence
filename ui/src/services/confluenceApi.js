@@ -83,6 +83,19 @@ function buildUserLookupEntries(user) {
   ].filter(Boolean);
 }
 
+function contributorHasSignal(candidate) {
+  if (!candidate || typeof candidate !== 'object') return false;
+  return Boolean(
+    candidate?.displayName
+    || candidate?.publicName
+    || candidate?.fullName
+    || candidate?.username
+    || candidate?.userKey
+    || candidate?.accountId
+    || candidate?.profilePicture?.path,
+  );
+}
+
 async function replaceConfluenceUserMentions(baseUrl, storageHtml) {
   const html = String(storageHtml || '');
   if (!html || !/ri:user/i.test(html)) return html;
@@ -404,7 +417,7 @@ export async function fetchConfluenceBodyById(baseUrl, contentId, {
 export async function fetchConfluenceMetadataById(baseUrl, contentId) {
   const { data } = await fetchConfluenceJsonWithFallback(
     baseUrl,
-    `/rest/api/content/${contentId}?expand=space.icon,history.createdBy,version,ancestors`,
+    `/rest/api/content/${contentId}?expand=space.icon,history.createdBy,history.lastUpdated.by,version.by,version,ancestors`,
   );
   return data;
 }
@@ -463,6 +476,18 @@ export async function enrichVisualMetadata(baseUrl, pageData) {
       createdBy: { ...(pageData?.history?.createdBy || {}) },
     },
   };
+  const contributorCandidates = [
+    next.history?.createdBy,
+    next.history?.lastUpdated?.by,
+    next.version?.by,
+  ];
+  const contributorFallback = contributorCandidates.find(contributorHasSignal)
+    || contributorCandidates.find((candidate) => candidate && typeof candidate === 'object')
+    || {};
+  next.history.createdBy = {
+    ...(contributorFallback || {}),
+    ...(next.history?.createdBy || {}),
+  };
 
   if (!next.space?.icon?.path && next.space?.key) {
     const spaceDetails = await fetchSpaceDetailsByKey(baseUrl, next.space.key);
@@ -479,8 +504,14 @@ export async function enrichVisualMetadata(baseUrl, pageData) {
         path: userDetails.profilePicture.path,
       };
     }
-    if (!next.history.createdBy.displayName && userDetails?.displayName) {
-      next.history.createdBy.displayName = userDetails.displayName;
+    if (!next.history.createdBy.displayName) {
+      next.history.createdBy.displayName = userDetails?.displayName
+        || userDetails?.publicName
+        || userDetails?.fullName
+        || next.history.createdBy.username
+        || next.history.createdBy.userKey
+        || next.history.createdBy.accountId
+        || '';
     }
   }
 

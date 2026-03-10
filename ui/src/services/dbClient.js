@@ -40,6 +40,10 @@ export function getStoredSummary(contentId, baseUrl) {
   return callDbAction(SUMMARY_STORE, 'readonly', 'get', [contentId, baseUrl]);
 }
 
+export function getAllStoredSummaries() {
+  return callDbAction(SUMMARY_STORE, 'readonly', 'getAll');
+}
+
 export function storeSummary(entry) {
   return callDbAction(SUMMARY_STORE, 'readwrite', 'put', entry);
 }

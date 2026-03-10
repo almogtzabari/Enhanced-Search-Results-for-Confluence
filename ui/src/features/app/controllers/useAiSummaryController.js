@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { getLocal } from '../../../services/storage.js';
 import {
+  getAllStoredSummaries,
   getStoredConversation,
   getStoredSummary,
   storeConversation,
@@ -19,6 +20,8 @@ import {
 } from '../../../services/confluenceApi.js';
 import {
   DEFAULT_AI_CHAT_FONT_SIZE_PX,
+  DEFAULT_AI_MODAL_HEIGHT_FALLBACK_PX,
+  DEFAULT_AI_MODAL_WIDTH_FALLBACK_PX,
   DEFAULT_AI_QUESTION_HEIGHT,
   DEFAULT_AI_SUMMARY_FONT_SIZE_PX,
   DEFAULT_AI_SUMMARY_PANE_RATIO,
@@ -62,12 +65,73 @@ function collectSummaryCandidateIds(items) {
   return [...ids];
 }
 
+const MODAL_ONLY_METADATA_PREFETCH_TIMEOUT_MS = 9000;
+const AI_LOADING_TITLE_BUILDING = 'Building your summary';
+const AI_LOADING_TITLE_CACHED = 'Loading your summary';
+
+function contributorHasSignal(candidate) {
+  if (!candidate || typeof candidate !== 'object') return false;
+  return Boolean(
+    candidate?.displayName
+    || candidate?.publicName
+    || candidate?.fullName
+    || candidate?.username
+    || candidate?.userKey
+    || candidate?.accountId
+    || candidate?.profilePicture?.path,
+  );
+}
+
+function resolveContributorCandidate(pageData) {
+  const candidates = [
+    pageData?.history?.createdBy,
+    pageData?.history?.lastUpdated?.by,
+    pageData?.version?.by,
+  ];
+  const withSignal = candidates.find(contributorHasSignal);
+  if (withSignal) return withSignal;
+  const firstObject = candidates.find((candidate) => candidate && typeof candidate === 'object');
+  return firstObject || {};
+}
+
+function resolveContributorDisplayName(pageData) {
+  const contributor = resolveContributorCandidate(pageData);
+  return contributor?.displayName
+    || contributor?.publicName
+    || contributor?.fullName
+    || contributor?.username
+    || contributor?.userKey
+    || contributor?.accountId
+    || 'Unknown';
+}
+
+function hasContributorIdentity(pageData) {
+  const contributor = resolveContributorCandidate(pageData);
+  return Boolean(
+    contributor?.displayName
+    || contributor?.publicName
+    || contributor?.fullName
+    || contributor?.username
+    || contributor?.userKey
+    || contributor?.accountId,
+  );
+}
+
 // Owns AI modal behavior for both views mode and content-modal iframe mode.
 export function useAiSummaryController({
   baseUrl,
   modalOnlyMode,
   modalContentId,
   modalContentTitle,
+  modalContentType = '',
+  modalContentWebUi = '',
+  modalSpaceName = '',
+  modalSpaceKey = '',
+  modalSpaceIconPath = '',
+  modalContributorName = '',
+  modalContributorUsername = '',
+  modalContributorAvatarPath = '',
+  modalModifiedWhen = '',
   enableSummaries,
   allResults,
   openNoticeDialog,
@@ -75,6 +139,7 @@ export function useAiSummaryController({
 }) {
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiModalLoading, setAiModalLoading] = useState(false);
+  const [aiModalLoadingTitle, setAiModalLoadingTitle] = useState(AI_LOADING_TITLE_BUILDING);
   const [aiItemLoadingId, setAiItemLoadingId] = useState(null);
   const [aiActiveItem, setAiActiveItem] = useState(null);
   const [aiContextBaseUrl, setAiContextBaseUrl] = useState('');
@@ -95,13 +160,13 @@ export function useAiSummaryController({
   const [isAiChatCollapsed, setIsAiChatCollapsed] = useState(false);
   const [aiModalWidth, setAiModalWidth] = useState(() => {
     const saved = Number.parseFloat(sessionStorage.getItem('aiModalWidth') || '');
-    if (!Number.isFinite(saved)) return getDefaultAiModalWidth();
+    if (!Number.isFinite(saved)) return DEFAULT_AI_MODAL_WIDTH_FALLBACK_PX;
     const maxWidth = Math.max(MIN_AI_MODAL_WIDTH, window.innerWidth - 24);
     return clampNumber(saved, MIN_AI_MODAL_WIDTH, maxWidth);
   });
   const [aiModalHeight, setAiModalHeight] = useState(() => {
     const saved = Number.parseFloat(sessionStorage.getItem('aiModalHeight') || '');
-    if (!Number.isFinite(saved)) return getDefaultAiModalHeight();
+    if (!Number.isFinite(saved)) return DEFAULT_AI_MODAL_HEIGHT_FALLBACK_PX;
     const maxHeight = Math.max(MIN_AI_MODAL_HEIGHT, window.innerHeight - 32);
     return clampNumber(saved, MIN_AI_MODAL_HEIGHT, maxHeight);
   });
@@ -125,8 +190,17 @@ export function useAiSummaryController({
   const aiModalRef = useRef(null);
   const aiLayoutRef = useRef(null);
   const aiQuestionInputRef = useRef(null);
+  const hasStoredAiModalWidthRef = useRef(Number.isFinite(
+    Number.parseFloat(sessionStorage.getItem('aiModalWidth') || ''),
+  ));
+  const hasStoredAiModalHeightRef = useRef(Number.isFinite(
+    Number.parseFloat(sessionStorage.getItem('aiModalHeight') || ''),
+  ));
   const modalOnlyInitializedRef = useRef(false);
   const shouldAutoFocusAiQuestionRef = useRef(false);
+  const cachedSummaryByIdRef = useRef({});
+  const summaryRequestSeqRef = useRef(0);
+  const activeModalRequestRef = useRef({ requestId: 0, contentId: '' });
 
   const createBaseConversation = (userPromptText, summaryHtml) => ([
     { role: 'system', content: qaSystemPrompt },
@@ -151,7 +225,7 @@ export function useAiSummaryController({
     const details = `
 --- Content Details ---
 Title: ${pageData.title || 'Untitled'}
-Contributor: ${pageData.history?.createdBy?.displayName || 'Unknown'}
+Contributor: ${resolveContributorDisplayName(pageData)}
 Created: ${pageData.history?.createdDate || 'N/A'}
 Modified: ${formatDate(pageData.version?.when)}
 Type: ${pageData.type || 'page'}
@@ -162,6 +236,114 @@ URL: ${pageUrl}
 Content (HTML): ${bodyHtml}
     `.trim();
     return customPrompt ? `${customPrompt}\n\n${details}` : details;
+  };
+
+  const normalizePageData = (rawPageData) => ({
+    ...(rawPageData || {}),
+    ancestors: Array.isArray(rawPageData?.ancestors) ? rawPageData.ancestors : [],
+  });
+
+  const resolvePageDataWithMetadata = async (seedPageData, effectiveBaseUrl, contentId) => {
+    let resolvedPageData = normalizePageData(seedPageData);
+    try {
+      const metadata = await fetchConfluenceMetadataById(effectiveBaseUrl, contentId);
+      resolvedPageData = {
+        ...resolvedPageData,
+        ...metadata,
+        space: { ...(resolvedPageData.space || {}), ...(metadata.space || {}) },
+        history: {
+          ...(resolvedPageData.history || {}),
+          ...(metadata.history || {}),
+          createdBy: {
+            ...(resolvedPageData.history?.createdBy || {}),
+            ...(metadata.history?.createdBy || {}),
+          },
+        },
+        _links: { ...(resolvedPageData._links || {}), ...(metadata._links || {}) },
+      };
+      const metadataContributor = metadata?.history?.createdBy
+        || metadata?.history?.lastUpdated?.by
+        || metadata?.version?.by
+        || null;
+      if (metadataContributor && typeof metadataContributor === 'object') {
+        resolvedPageData.history = {
+          ...(resolvedPageData.history || {}),
+          createdBy: {
+            ...metadataContributor,
+            ...(resolvedPageData.history?.createdBy || {}),
+          },
+        };
+      }
+    } catch (metaErr) {
+      console.warn('[V2 Preact] Metadata fetch failed, using existing page data:', metaErr);
+    }
+
+    return enrichVisualMetadata(effectiveBaseUrl, resolvedPageData);
+  };
+
+  const loadConversationForModal = async ({
+    contentId,
+    effectiveBaseUrl,
+    userPromptText,
+    summaryHtml,
+    allowStoredConversation,
+  }) => {
+    if (allowStoredConversation) {
+      try {
+        const storedConversation = await getStoredConversation(contentId, effectiveBaseUrl);
+        if (Array.isArray(storedConversation?.messages)) {
+          return storedConversation.messages.map((msg) => (
+            msg.role === 'assistant'
+              ? { ...msg, content: sanitizeHtmlFragment(msg.content || '') }
+              : msg
+          ));
+        }
+      } catch (conversationErr) {
+        console.warn('[V2 Preact] Conversation fetch failed, rebuilding base conversation:', conversationErr);
+      }
+    }
+
+    const conversation = createBaseConversation(userPromptText, summaryHtml);
+    try {
+      await storeConversation(contentId, effectiveBaseUrl, conversation);
+    } catch (persistErr) {
+      console.warn('[V2 Preact] Conversation store failed:', persistErr);
+    }
+    return conversation;
+  };
+
+  const isActiveModalRequest = (requestId, contentId) => (
+    activeModalRequestRef.current.requestId === requestId
+    && activeModalRequestRef.current.contentId === contentId
+  );
+
+  const normalizeBaseUrlForComparison = (value) => String(value || '')
+    .trim()
+    .replace(/\/+$/, '')
+    .toLowerCase();
+
+  const hasPrefetchedModalMetadata = (pageData) => {
+    if (!modalOnlyMode) return false;
+    const hasSpaceIdentity = Boolean(pageData?.space?.name || pageData?.space?.key);
+    const hasSpaceIcon = Boolean(pageData?.space?.icon?.path);
+    const hasContributorAvatar = Boolean(resolveContributorCandidate(pageData)?.profilePicture?.path);
+    return hasSpaceIdentity && hasContributorIdentity(pageData) && hasSpaceIcon && hasContributorAvatar;
+  };
+
+  const resolveModalReadyPageData = async (seedPageData, effectiveBaseUrl, contentId) => {
+    const normalizedSeed = normalizePageData(seedPageData);
+    if (!modalOnlyMode) return normalizedSeed;
+    if (hasPrefetchedModalMetadata(normalizedSeed)) return normalizedSeed;
+    try {
+      return await withTimeout(
+        resolvePageDataWithMetadata(normalizedSeed, effectiveBaseUrl, contentId),
+        MODAL_ONLY_METADATA_PREFETCH_TIMEOUT_MS,
+        'Metadata prefetch timed out.',
+      );
+    } catch (metaErr) {
+      console.warn('[V2 Preact] Modal metadata prefetch failed, opening with fallback page data:', metaErr);
+      return normalizedSeed;
+    }
   };
 
   const openAiSummaryModal = async (
@@ -180,9 +362,26 @@ Content (HTML): ${bodyHtml}
 
     const contentId = pageData.id;
     const effectiveBaseUrl = String(contextBaseUrl || baseUrl || window.location.origin).trim();
+    const normalizedPageData = normalizePageData(pageData);
+    const initialDisplayTitle = String(normalizedPageData?.title || '').trim();
+    const fallbackDisplayTitle = `Page ${contentId}`;
+    const shouldLockInitialModalTitle = (
+      modalOnlyMode
+      && initialDisplayTitle
+      && initialDisplayTitle !== fallbackDisplayTitle
+    );
+    const requestId = summaryRequestSeqRef.current + 1;
+    summaryRequestSeqRef.current = requestId;
+    activeModalRequestRef.current = { requestId, contentId };
     const preflightStoredSummary = !forceResummarize
-      ? await getStoredSummary(contentId, effectiveBaseUrl)
+      ? (cachedSummaryByIdRef.current[contentId] || await getStoredSummary(contentId, effectiveBaseUrl))
       : null;
+    const loadingTitle = preflightStoredSummary?.summaryHtml
+      ? AI_LOADING_TITLE_CACHED
+      : AI_LOADING_TITLE_BUILDING;
+    if (preflightStoredSummary?.summaryHtml) {
+      cachedSummaryByIdRef.current[contentId] = preflightStoredSummary;
+    }
 
     if (!preflightStoredSummary?.summaryHtml) {
       try {
@@ -201,41 +400,41 @@ Content (HTML): ${bodyHtml}
       }
     }
 
+    if (modalOnlyMode && isActiveModalRequest(requestId, contentId)) {
+      const useBlockingLoader = !(forceResummarize && aiModalOpen);
+      setAiContextBaseUrl(effectiveBaseUrl);
+      if (useBlockingLoader) {
+        setAiModalLoadingTitle(loadingTitle);
+        setAiModalLoading(true);
+      }
+      setAiActiveItem(normalizedPageData);
+      if (!aiModalOpen) setAiModalOpen(true);
+    }
+
+    const modalReadyPageData = await resolveModalReadyPageData(
+      normalizedPageData,
+      effectiveBaseUrl,
+      contentId,
+    );
+    if (!isActiveModalRequest(requestId, contentId)) return;
+    const modalDisplayPageData = shouldLockInitialModalTitle
+      ? { ...modalReadyPageData, title: initialDisplayTitle }
+      : modalReadyPageData;
+
     setAiItemLoadingId(contentId);
     setAiSummaryStatusById((prev) => ({ ...prev, [contentId]: 'loading' }));
-    setAiContextBaseUrl(effectiveBaseUrl);
-    const useBlockingLoader = !(forceResummarize && aiModalOpen);
-    if (useBlockingLoader) setAiModalLoading(true);
-    setAiActiveItem({
-      ...pageData,
-      ancestors: Array.isArray(pageData.ancestors) ? pageData.ancestors : [],
-    });
-    if (!aiModalOpen) setAiModalOpen(true);
+    if (isActiveModalRequest(requestId, contentId)) {
+      setAiContextBaseUrl(effectiveBaseUrl);
+      const useBlockingLoader = !(forceResummarize && aiModalOpen);
+      if (useBlockingLoader) {
+        setAiModalLoadingTitle(loadingTitle);
+        setAiModalLoading(true);
+      }
+      setAiActiveItem(modalDisplayPageData);
+      if (!aiModalOpen) setAiModalOpen(true);
+    }
 
     try {
-      let resolvedPageData = pageData;
-      try {
-        const metadata = await fetchConfluenceMetadataById(effectiveBaseUrl, contentId);
-        resolvedPageData = {
-          ...pageData,
-          ...metadata,
-          space: { ...(pageData.space || {}), ...(metadata.space || {}) },
-          history: {
-            ...(pageData.history || {}),
-            ...(metadata.history || {}),
-            createdBy: {
-              ...(pageData.history?.createdBy || {}),
-              ...(metadata.history?.createdBy || {}),
-            },
-          },
-          _links: { ...(pageData._links || {}), ...(metadata._links || {}) },
-        };
-      } catch (metaErr) {
-        console.warn('[V2 Preact] Metadata fetch failed, using existing page data:', metaErr);
-      }
-
-      resolvedPageData = await enrichVisualMetadata(effectiveBaseUrl, resolvedPageData);
-
       let summaryHtml = '';
       let userPromptText = '';
       let conversation = null;
@@ -246,8 +445,62 @@ Content (HTML): ${bodyHtml}
 
       if (storedSummary?.summaryHtml) {
         summaryHtml = sanitizeHtmlFragment(storedSummary.summaryHtml);
-        userPromptText = storedSummary.userPrompt || '';
+        userPromptText = storedSummary.userPrompt || 'Answer follow-up questions using the stored summary context.';
+
+        if (isActiveModalRequest(requestId, contentId)) {
+          setAiSummaryHtml(summaryHtml);
+          setAiUserPrompt(userPromptText);
+          setAiQuestion('');
+        }
+        setAiSummaryStatusById((prev) => ({ ...prev, [contentId]: 'ready' }));
+        setAiSummaryCheckedById((prev) => ({ ...prev, [contentId]: true }));
+        if (isActiveModalRequest(requestId, contentId)) {
+          setAiModalLoading(false);
+        }
+
+        conversation = await loadConversationForModal({
+          contentId,
+          effectiveBaseUrl,
+          userPromptText,
+          summaryHtml,
+          allowStoredConversation: true,
+        });
+        if (isActiveModalRequest(requestId, contentId)) {
+          setAiConversation(conversation);
+        }
+
+        if (!modalOnlyMode) {
+          void (async () => {
+            try {
+              const resolvedPageData = await resolvePageDataWithMetadata(
+                normalizedPageData,
+                effectiveBaseUrl,
+                contentId,
+              );
+              if (!isActiveModalRequest(requestId, contentId)) return;
+              setAiActiveItem((prev) => (
+                prev?.id === contentId
+                  ? resolvedPageData
+                  : prev
+              ));
+            } catch (metaErr) {
+              console.warn('[V2 Preact] Visual metadata enrichment failed:', metaErr);
+            }
+          })();
+        }
+        return;
       } else {
+        const resolvedPageData = modalOnlyMode
+          ? modalDisplayPageData
+          : await resolvePageDataWithMetadata(
+            normalizedPageData,
+            effectiveBaseUrl,
+            contentId,
+          );
+        if (isActiveModalRequest(requestId, contentId)) {
+          setAiActiveItem(resolvedPageData);
+        }
+
         const {
           apiKey, apiUrl, model, reasoningEffort,
         } = await getAiRuntimeSettings({ requireApiKey: true, requestEndpointPermission: false });
@@ -273,50 +526,56 @@ Content (HTML): ${bodyHtml}
         await storeSummary({
           contentId,
           baseUrl: effectiveBaseUrl,
-          title: resolvedPageData.title || pageData.title,
+          title: resolvedPageData.title || normalizedPageData.title,
           summaryHtml,
           userPrompt: userPromptText,
           timestamp: Date.now(),
         });
+        cachedSummaryByIdRef.current[contentId] = {
+          contentId,
+          baseUrl: effectiveBaseUrl,
+          title: resolvedPageData.title || normalizedPageData.title,
+          summaryHtml,
+          userPrompt: userPromptText,
+        };
       }
 
-      if (!userPromptText) userPromptText = await buildUserPrompt(resolvedPageData, false, effectiveBaseUrl);
+      conversation = await loadConversationForModal({
+        contentId,
+        effectiveBaseUrl,
+        userPromptText,
+        summaryHtml,
+        allowStoredConversation: !forceResummarize,
+      });
 
-      const storedConversation = await getStoredConversation(contentId, effectiveBaseUrl);
-      if (Array.isArray(storedConversation?.messages) && !forceResummarize) {
-        conversation = storedConversation.messages.map((msg) => (
-          msg.role === 'assistant'
-            ? { ...msg, content: sanitizeHtmlFragment(msg.content || '') }
-            : msg
-        ));
-      } else {
-        conversation = createBaseConversation(userPromptText, summaryHtml);
-        await storeConversation(contentId, effectiveBaseUrl, conversation);
+      if (isActiveModalRequest(requestId, contentId)) {
+        setAiSummaryHtml(summaryHtml);
+        setAiUserPrompt(userPromptText);
+        setAiConversation(conversation);
+        setAiQuestion('');
       }
-
-      setAiActiveItem(resolvedPageData);
-      setAiSummaryHtml(summaryHtml);
-      setAiUserPrompt(userPromptText);
-      setAiConversation(conversation);
-      setAiQuestion('');
       setAiSummaryStatusById((prev) => ({ ...prev, [contentId]: 'ready' }));
       setAiSummaryCheckedById((prev) => ({ ...prev, [contentId]: true }));
     } catch (err) {
       console.error('[V2 Preact] AI summary failed:', err);
-      openNoticeDialog({
-        title: 'Failed to Summarize Page',
-        message: err.message || 'Unknown error',
-        tone: 'error',
-      });
+      if (isActiveModalRequest(requestId, contentId)) {
+        openNoticeDialog({
+          title: 'Failed to Summarize Page',
+          message: err.message || 'Unknown error',
+          tone: 'error',
+        });
+      }
       setAiSummaryStatusById((prev) => ({
         ...prev,
         [contentId]: prev[contentId] === 'ready' ? 'ready' : 'idle',
       }));
       setAiSummaryCheckedById((prev) => ({ ...prev, [contentId]: true }));
     } finally {
-      setAiItemLoadingId(null);
-      setAiModalLoading(false);
-      setAiSummaryRefreshing(false);
+      setAiItemLoadingId((prev) => (prev === contentId ? null : prev));
+      if (isActiveModalRequest(requestId, contentId)) {
+        setAiModalLoading(false);
+        setAiSummaryRefreshing(false);
+      }
     }
   };
 
@@ -406,7 +665,11 @@ Content (HTML): ${bodyHtml}
   const closeAiModal = () => {
     const modalBaseUrl = String(aiContextBaseUrl || baseUrl || window.location.origin).trim();
     setAiModalOpen(false);
+    setAiModalLoading(false);
+    setAiModalLoadingTitle(AI_LOADING_TITLE_BUILDING);
+    setAiSummaryRefreshing(false);
     setAiContextBaseUrl('');
+    activeModalRequestRef.current = { requestId: 0, contentId: '' };
     if (modalOnlyMode && window.parent && window.parent !== window) {
       const parentOrigin = resolveOrigin(modalBaseUrl);
       if (parentOrigin) {
@@ -427,11 +690,29 @@ Content (HTML): ${bodyHtml}
         const pageData = {
           id: modalContentId,
           title: modalContentTitle || `Page ${modalContentId}`,
-          type: 'page',
-          _links: {},
-          space: {},
-          history: {},
-          version: {},
+          type: modalContentType || 'page',
+          _links: {
+            webui: modalContentWebUi || '',
+          },
+          space: {
+            key: modalSpaceKey || '',
+            name: modalSpaceName || '',
+            icon: {
+              path: modalSpaceIconPath || '',
+            },
+          },
+          history: {
+            createdBy: {
+              displayName: modalContributorName || '',
+              username: modalContributorUsername || '',
+              profilePicture: {
+                path: modalContributorAvatarPath || '',
+              },
+            },
+          },
+          version: {
+            when: modalModifiedWhen || '',
+          },
           ancestors: [],
         };
         await openAiSummaryModal(pageData);
@@ -445,7 +726,21 @@ Content (HTML): ${bodyHtml}
         closeAiModal();
       }
     })();
-  }, [modalOnlyMode, modalContentId, modalContentTitle, baseUrl]);
+  }, [
+    modalOnlyMode,
+    modalContentId,
+    modalContentTitle,
+    modalContentType,
+    modalContentWebUi,
+    modalSpaceName,
+    modalSpaceKey,
+    modalSpaceIconPath,
+    modalContributorName,
+    modalContributorUsername,
+    modalContributorAvatarPath,
+    modalModifiedWhen,
+    baseUrl,
+  ]);
 
   useEffect(() => {
     if (!aiModalOpen) return undefined;
@@ -486,6 +781,7 @@ Content (HTML): ${bodyHtml}
   useEffect(() => {
     setAiSummaryStatusById({});
     setAiSummaryCheckedById({});
+    cachedSummaryByIdRef.current = {};
   }, [baseUrl]);
 
   useEffect(() => {
@@ -495,16 +791,37 @@ Content (HTML): ${bodyHtml}
 
     let alive = true;
     (async () => {
-      const checks = await Promise.all(
-        unchecked.map(async (id) => {
-          try {
-            const stored = await getStoredSummary(id, baseUrl);
-            return { id, hasSummary: !!stored?.summaryHtml };
-          } catch {
-            return { id, hasSummary: false };
-          }
-        }),
-      );
+      let checks = [];
+      try {
+        const allSummaries = await getAllStoredSummaries();
+        const summaries = Array.isArray(allSummaries) ? allSummaries : [];
+        const targetBase = normalizeBaseUrlForComparison(baseUrl);
+        const summaryById = new Map();
+        summaries.forEach((entry) => {
+          const id = String(entry?.contentId || '').trim();
+          if (!id) return;
+          if (!entry?.summaryHtml) return;
+          if (normalizeBaseUrlForComparison(entry?.baseUrl) !== targetBase) return;
+          if (!summaryById.has(id)) summaryById.set(id, entry);
+        });
+        checks = unchecked.map((id) => {
+          const cached = summaryById.get(String(id));
+          if (cached?.summaryHtml) cachedSummaryByIdRef.current[id] = cached;
+          return { id, hasSummary: !!cached?.summaryHtml };
+        });
+      } catch {
+        checks = await Promise.all(
+          unchecked.map(async (id) => {
+            try {
+              const stored = await getStoredSummary(id, baseUrl);
+              if (stored?.summaryHtml) cachedSummaryByIdRef.current[id] = stored;
+              return { id, hasSummary: !!stored?.summaryHtml };
+            } catch {
+              return { id, hasSummary: false };
+            }
+          }),
+        );
+      }
       if (!alive) return;
 
       setAiSummaryStatusById((prev) => {
@@ -537,11 +854,12 @@ Content (HTML): ${bodyHtml}
   const aiSpaceIconUrl = useMemo(() => (
     resolveConfluenceIconUrl(aiBaseUrl, aiActiveItem?.space?.icon?.path || '', fallbackSpaceIcon)
   ), [aiBaseUrl, aiActiveItem]);
+  const aiContributorMeta = useMemo(() => resolveContributorCandidate(aiActiveItem), [aiActiveItem]);
   const aiContributorIconUrl = useMemo(() => (
-    resolveConfluenceIconUrl(aiBaseUrl, aiActiveItem?.history?.createdBy?.profilePicture?.path || '', fallbackUserIcon)
-  ), [aiBaseUrl, aiActiveItem]);
+    resolveConfluenceIconUrl(aiBaseUrl, aiContributorMeta?.profilePicture?.path || '', fallbackUserIcon)
+  ), [aiBaseUrl, aiContributorMeta]);
   const aiContributorName = useMemo(
-    () => aiActiveItem?.history?.createdBy?.displayName || aiActiveItem?.history?.createdBy?.username || 'Unknown',
+    () => resolveContributorDisplayName(aiActiveItem),
     [aiActiveItem],
   );
   const aiSummaryDirection = useMemo(() => detectDirectionFromHtml(aiSummaryHtml), [aiSummaryHtml]);
@@ -594,6 +912,7 @@ Content (HTML): ${bodyHtml}
       const nextWidth = Math.max(MIN_AI_MODAL_WIDTH, Math.min(maxWidth, startWidth + (2 * delta)));
       setAiModalWidth(nextWidth);
       sessionStorage.setItem('aiModalWidth', String(nextWidth));
+      hasStoredAiModalWidthRef.current = true;
     };
 
     const onStop = () => {
@@ -610,6 +929,7 @@ Content (HTML): ${bodyHtml}
   const resetAiModalWidth = () => {
     setAiModalWidth(getDefaultAiModalWidth());
     sessionStorage.removeItem('aiModalWidth');
+    hasStoredAiModalWidthRef.current = false;
   };
 
   const startAiModalHeightResize = (event, edge = 'bottom') => {
@@ -624,6 +944,7 @@ Content (HTML): ${bodyHtml}
       const nextHeight = Math.max(MIN_AI_MODAL_HEIGHT, Math.min(maxHeight, startHeight + (2 * adjustedDelta)));
       setAiModalHeight(nextHeight);
       sessionStorage.setItem('aiModalHeight', String(nextHeight));
+      hasStoredAiModalHeightRef.current = true;
     };
 
     const onStop = () => {
@@ -640,6 +961,7 @@ Content (HTML): ${bodyHtml}
   const resetAiModalHeight = () => {
     setAiModalHeight(getDefaultAiModalHeight());
     sessionStorage.removeItem('aiModalHeight');
+    hasStoredAiModalHeightRef.current = false;
   };
 
   const startAiQuestionInputResize = (event) => {
@@ -746,18 +1068,78 @@ Content (HTML): ${bodyHtml}
   useEffect(() => {
     const onResize = () => {
       const maxWidth = Math.max(MIN_AI_MODAL_WIDTH, window.innerWidth - 24);
-      setAiModalWidth((prev) => Math.max(MIN_AI_MODAL_WIDTH, Math.min(maxWidth, prev)));
+      const defaultWidth = Math.min(maxWidth, getDefaultAiModalWidth());
+      setAiModalWidth((prev) => {
+        let next = Math.max(MIN_AI_MODAL_WIDTH, Math.min(maxWidth, prev));
+        if (modalOnlyMode && aiModalOpen && !hasStoredAiModalWidthRef.current && defaultWidth > next) {
+          next = defaultWidth;
+        }
+        return next;
+      });
+
       const maxHeight = Math.max(MIN_AI_MODAL_HEIGHT, window.innerHeight - 32);
-      setAiModalHeight((prev) => Math.max(MIN_AI_MODAL_HEIGHT, Math.min(maxHeight, prev)));
+      const defaultHeight = Math.min(maxHeight, getDefaultAiModalHeight());
+      setAiModalHeight((prev) => {
+        let next = Math.max(MIN_AI_MODAL_HEIGHT, Math.min(maxHeight, prev));
+        if (modalOnlyMode && aiModalOpen && !hasStoredAiModalHeightRef.current && defaultHeight > next) {
+          next = defaultHeight;
+        }
+        return next;
+      });
     };
+
     window.addEventListener('resize', onResize);
+    onResize();
     return () => window.removeEventListener('resize', onResize);
-  }, []);
+  }, [modalOnlyMode, aiModalOpen]);
+
+  useEffect(() => {
+    if (!modalOnlyMode || !aiModalOpen) return undefined;
+    if (hasStoredAiModalWidthRef.current && hasStoredAiModalHeightRef.current) return undefined;
+
+    let rafA = 0;
+    let rafB = 0;
+    const timers = [];
+    const syncModalOnlySize = () => {
+      const targetWidth = getDefaultAiModalWidth();
+      const targetHeight = getDefaultAiModalHeight();
+      const widthThreshold = Math.max(MIN_AI_MODAL_WIDTH + 4, Math.round(window.innerWidth * 0.62));
+      const heightThreshold = Math.max(MIN_AI_MODAL_HEIGHT + 4, Math.round(window.innerHeight * 0.58));
+
+      if (!hasStoredAiModalWidthRef.current) {
+        setAiModalWidth((prev) => {
+          if (targetWidth > prev && prev <= widthThreshold) return targetWidth;
+          return prev;
+        });
+      }
+      if (!hasStoredAiModalHeightRef.current) {
+        setAiModalHeight((prev) => {
+          if (targetHeight > prev && prev <= heightThreshold) return targetHeight;
+          return prev;
+        });
+      }
+    };
+
+    rafA = window.requestAnimationFrame(() => {
+      rafB = window.requestAnimationFrame(syncModalOnlySize);
+    });
+    [120, 320, 680].forEach((delay) => {
+      const timer = window.setTimeout(syncModalOnlySize, delay);
+      timers.push(timer);
+    });
+
+    return () => {
+      if (rafA) window.cancelAnimationFrame(rafA);
+      if (rafB) window.cancelAnimationFrame(rafB);
+      timers.forEach((timer) => clearTimeout(timer));
+    };
+  }, [modalOnlyMode, aiModalOpen]);
 
   return {
     state: {
       aiModalOpen,
       aiModalLoading,
+      aiModalLoadingTitle,
       aiItemLoadingId,
       aiActiveItem,
       aiSummaryHtml,

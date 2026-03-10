@@ -170,6 +170,7 @@ function createAiController() {
     state: {
       aiModalOpen: false,
       aiModalLoading: false,
+      aiModalLoadingTitle: 'Building your summary',
       aiModalWidth: 900,
       aiModalHeight: 620,
       aiActiveItem: null,
@@ -319,7 +320,7 @@ describe('App', () => {
     expect(document.body.classList.contains('modal-only-frame')).toBe(true);
     expect(document.body.classList.contains('dark-mode')).toBe(false);
     expect(searchController.actions.setTreeTooltipData).toHaveBeenCalledWith(null);
-    expect(storageServiceMocks.setSync).toHaveBeenCalledWith({ selectedAiModel: 'gpt-5.2-chat-latest' });
+    expect(storageServiceMocks.setSync).toHaveBeenCalledWith({ selectedAiModel: 'gpt-5.4' });
 
     const lastSearchCall = controllerMocks.useSearchResultsController.mock.calls.at(-1)[0];
     expect(lastSearchCall.resultsPerRequest).toBe(50);

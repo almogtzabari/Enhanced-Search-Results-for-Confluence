@@ -55,8 +55,10 @@ export function TreeNode({
             disabled={aiStatus === 'loading'}
             title="AI Summary"
             data-status={aiStatus}
+            aria-busy={aiStatus === 'loading' ? 'true' : 'false'}
           >
-            {aiLabel}
+            <span class="mini-ai-btn__icon" aria-hidden="true" />
+            <span class="mini-ai-btn__label">{aiLabel}</span>
           </button>
         )}
       </div>
