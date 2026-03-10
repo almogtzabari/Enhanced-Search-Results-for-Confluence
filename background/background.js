@@ -320,7 +320,7 @@ function buildResponsesPayload({ model, messages, reasoningEffort }) {
     let instructions = '';
     const input = [];
 
-    safeMessages.forEach((msg, index) => {
+    safeMessages.forEach((msg) => {
         if (!msg || typeof msg.content !== 'string') return;
         const role = msg.role || 'user';
 
