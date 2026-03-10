@@ -1,4 +1,34 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import {
+  AI_MODEL_OPTIONS,
+  DEFAULT_AI_MODEL,
+  retiredModelFallbacks,
+} from './shared/constants.js';
+import { AiModal } from './components/AiModal.jsx';
+import { SavedSearchModal } from './components/SavedSearchModal.jsx';
+import { ConfirmDialog, NoticeDialog, SaveNameDialog } from './components/Dialogs.jsx';
+import {
+  clearAllSavedSearches,
+  deleteSavedSearch,
+  getAllSavedSearches,
+  getStoredConversation,
+  getStoredSummary,
+  storeConversation,
+  storeSavedSearch,
+  storeSummary,
+} from './services/dbClient.js';
+import { getLocal, getSync, setSync, subscribeStorageChanges } from './services/storage.js';
+import {
+  getAiRuntimeSettings,
+  sendOpenAIRequest,
+  withTimeout,
+} from './services/aiRuntime.js';
+import {
+  enrichVisualMetadata,
+  fetchConfluenceBodyById,
+  fetchConfluenceMetadataById,
+  fetchImageDataUrlViaHostBridge,
+} from './services/confluenceApi.js';
 
 const typeIcons = {
   page: '📄',
@@ -14,17 +44,25 @@ const typeLabels = {
   comment: 'Comment',
 };
 
-const DEFAULT_AI_MODEL = 'gpt-5.2-chat-latest';
-const DEFAULT_AI_MODAL_WIDTH = 1120;
+const DEFAULT_AI_MODAL_WIDTH_RATIO = 0.76;
+const DEFAULT_AI_MODAL_WIDTH_FALLBACK_PX = 1120;
 const MIN_AI_MODAL_WIDTH = 640;
-const DEFAULT_AI_MODAL_HEIGHT = 760;
+const DEFAULT_AI_MODAL_HEIGHT_RATIO = 0.7;
+const DEFAULT_AI_MODAL_HEIGHT_FALLBACK_PX = 760;
 const MIN_AI_MODAL_HEIGHT = 480;
-const DEFAULT_AI_SUMMARY_PANE_RATIO = 0.3; // 30% summary / 70% Q&A
+const DEFAULT_AI_SUMMARY_PANE_RATIO = 0.4; // 40% summary / 60% Q&A
 const MIN_AI_SUMMARY_PANE_RATIO = 0.24;
 const MAX_AI_SUMMARY_PANE_RATIO = 0.72;
 const DEFAULT_AI_QUESTION_HEIGHT = 96;
 const MIN_AI_QUESTION_HEIGHT = 70;
 const MAX_AI_QUESTION_HEIGHT = 260;
+const DEFAULT_AI_SUMMARY_FONT_SIZE_PX = 16;
+const MIN_AI_SUMMARY_FONT_SIZE_PX = 14;
+const MAX_AI_SUMMARY_FONT_SIZE_PX = 24;
+const DEFAULT_AI_CHAT_FONT_SIZE_PX = 14.4;
+const MIN_AI_CHAT_FONT_SIZE_PX = 13;
+const MAX_AI_CHAT_FONT_SIZE_PX = 22;
+const AI_FONT_SIZE_STEP_PX = 1;
 const OPENAI_REQUEST_TIMEOUT_MS = 120000;
 const MIN_TABLE_COL_WIDTH = 70;
 const DEFAULT_TABLE_COL_WIDTHS = {
@@ -36,101 +74,29 @@ const DEFAULT_TABLE_COL_WIDTHS = {
   modified: 180,
   ai: 116,
 };
-
-const AI_MODEL_OPTIONS = [
-  { value: 'gpt-5', label: 'gpt-5' },
-  { value: 'gpt-5.2-chat-latest', label: 'gpt-5.2-chat-latest' },
-  { value: 'gpt-5-pro', label: 'gpt-5-pro' },
-  { value: 'gpt-5.2-pro', label: 'gpt-5.2-pro' },
-  { value: 'gpt-5.2', label: 'gpt-5.2' },
-  { value: 'gpt-5.1', label: 'gpt-5.1' },
-  { value: 'gpt-5-mini', label: 'gpt-5-mini' },
-  { value: 'gpt-5-nano', label: 'gpt-5-nano' },
-  { value: 'gpt-5-chat-latest', label: 'gpt-5-chat-latest' },
-];
-
-const retiredModelFallbacks = {
-  'gpt-4o': DEFAULT_AI_MODEL,
-  'gpt-4.1': DEFAULT_AI_MODEL,
-  'gpt-4.1-mini': DEFAULT_AI_MODEL,
-  o3: DEFAULT_AI_MODEL,
-  'o4-mini': DEFAULT_AI_MODEL,
-};
-
-function resolveReasoningEffort(reasoningEffort, useHighReasoningEffort) {
-  const normalized = typeof reasoningEffort === 'string' ? reasoningEffort.trim().toLowerCase() : '';
-  if (normalized === 'low' || normalized === 'medium' || normalized === 'high') return normalized;
-  return useHighReasoningEffort ? 'high' : undefined;
-}
+const TABLE_SORTABLE_COLUMNS = new Set(['type', 'name', 'space', 'contributor', 'created', 'modified']);
 
 const summarySystemPrompt = `
 You are a technical summarizer. Generate concise, relevant HTML summary for Confluence content.
 Use:
 1. <h3>What is this about?</h3> and one short paragraph.
 2. <h3>Main points</h3> and a short <ul><li> list.
-Output valid clean HTML only (no markdown or code fences).
+Formatting:
+- Output valid clean HTML only (no markdown, no code fences).
+- Never use markdown-style inline code markers.
+- Wrap technical identifiers in <code>...</code> where relevant:
+  constants, commands, APIs, interfaces, endpoints, config keys, class/module/file names.
+- Use <strong>...</strong> only for short emphasis labels.
 `;
 
 const qaSystemPrompt = `
 You answer follow-up questions about a Confluence document.
 Respond clearly and use valid clean HTML only (no markdown or code fences).
+Formatting:
+- Never use markdown-style inline code markers.
+- Use <code>...</code> for technical terms and identifiers where relevant.
+- Use <strong>...</strong> sparingly for short labels/emphasis.
 `;
-
-const confluenceBodyCache = new Map();
-let bridgeRequestCounter = 0;
-
-function callDbAction(store, mode, op, payload = null) {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ dbAction: true, store, mode, op, payload }, (response) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message || 'DB message failed'));
-        return;
-      }
-      if (!response?.success) {
-        reject(new Error(response?.error || 'Unknown DB error'));
-        return;
-      }
-      resolve(response.result);
-    });
-  });
-}
-
-function getAllSavedSearches() {
-  return callDbAction('saved_searches', 'readonly', 'getAll');
-}
-
-function storeSavedSearch(entry) {
-  return callDbAction('saved_searches', 'readwrite', 'put', entry);
-}
-
-function deleteSavedSearch(id) {
-  return callDbAction('saved_searches', 'readwrite', 'delete', id);
-}
-
-function clearAllSavedSearches() {
-  return callDbAction('saved_searches', 'readwrite', 'clear');
-}
-
-function getStoredSummary(contentId, baseUrl) {
-  return callDbAction('summaries', 'readonly', 'get', [contentId, baseUrl]);
-}
-
-function storeSummary(entry) {
-  return callDbAction('summaries', 'readwrite', 'put', entry);
-}
-
-function getStoredConversation(contentId, baseUrl) {
-  return callDbAction('conversations', 'readonly', 'get', [contentId, baseUrl]);
-}
-
-function storeConversation(contentId, baseUrl, messages) {
-  return callDbAction('conversations', 'readwrite', 'put', {
-    contentId,
-    baseUrl,
-    messages,
-    timestamp: Date.now(),
-  });
-}
 
 function getQueryParams() {
   const url = new URL(window.location.href);
@@ -153,7 +119,14 @@ function formatDate(value) {
   if (!value) return 'N/A';
   const d = new Date(value);
   if (Number.isNaN(d.valueOf())) return 'N/A';
-  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(d);
+  } catch {
+    return d.toLocaleString();
+  }
 }
 
 function detectDirection(text = '') {
@@ -167,6 +140,37 @@ function stripHtmlToText(html = '') {
 
 function detectDirectionFromHtml(html = '') {
   return detectDirection(stripHtmlToText(html));
+}
+
+function toSortableText(value) {
+  return String(value || '').trim().toLocaleLowerCase();
+}
+
+function toSortableTimestamp(value) {
+  const stamp = Date.parse(value || '');
+  return Number.isFinite(stamp) ? stamp : null;
+}
+
+function getTableSortValue(item, key) {
+  switch (key) {
+    case 'type':
+      return toSortableText(item.type);
+    case 'name':
+      return toSortableText(item.title);
+    case 'space':
+      return toSortableText(item.space?.name || item.space?.key);
+    case 'contributor':
+      return toSortableText(item.history?.createdBy?.displayName
+        || item.history?.createdBy?.username
+        || item.history?.createdBy?.userKey
+        || item.history?.createdBy?.accountId);
+    case 'created':
+      return toSortableTimestamp(item.history?.createdDate);
+    case 'modified':
+      return toSortableTimestamp(item.version?.when);
+    default:
+      return null;
+  }
 }
 
 const fallbackSpaceIcon = `data:image/svg+xml,${encodeURIComponent(
@@ -187,70 +191,6 @@ function resolveConfluenceIconUrl(baseUrl, maybePath, fallback) {
   } catch {
     return fallback;
   }
-}
-
-function extractOutputText(responseData) {
-  if (!responseData) return '';
-  if (typeof responseData.output_text === 'string' && responseData.output_text.trim()) {
-    return responseData.output_text;
-  }
-  if (Array.isArray(responseData.output)) {
-    const chunks = [];
-    responseData.output.forEach((item) => {
-      if (!Array.isArray(item?.content)) return;
-      item.content.forEach((contentItem) => {
-        if (contentItem?.type === 'output_text' && typeof contentItem.text === 'string') {
-          chunks.push(contentItem.text);
-        }
-      });
-    });
-    return chunks.join('\n').trim();
-  }
-  return '';
-}
-
-function normalizeResponsesUrl(apiUrl) {
-  let sanitizedBase = (apiUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
-  sanitizedBase = sanitizedBase.replace(/\/chat\/completions$/i, '');
-  return /\/responses$/i.test(sanitizedBase) ? sanitizedBase : `${sanitizedBase}/responses`;
-}
-
-function ensureApiOriginPermission(origin, { requestIfMissing = true } = {}) {
-  return new Promise((resolve) => {
-    const api = globalThis.chrome;
-    const isFirefox = typeof InstallTrigger !== 'undefined';
-    if (isFirefox || !api?.permissions?.contains || !api?.permissions?.request) {
-      resolve({ granted: true, reason: '' });
-      return;
-    }
-
-    const originPattern = `${origin}/*`;
-    api.permissions.contains({ origins: [originPattern] }, (hasPermission) => {
-      if (hasPermission) {
-        resolve({ granted: true, reason: '' });
-        return;
-      }
-
-      if (!requestIfMissing) {
-        resolve({ granted: false, reason: 'missing_permission' });
-        return;
-      }
-
-      api.permissions.request({ origins: [originPattern] }, (granted) => {
-        if (!granted) {
-          resolve({ granted: false, reason: 'user_denied' });
-          return;
-        }
-
-        api.permissions.contains({ origins: [originPattern] }, (verified) => {
-          resolve({
-            granted: !!verified,
-            reason: verified ? '' : 'not_granted_after_request',
-          });
-        });
-      });
-    });
-  });
 }
 
 function loadStoredTableColWidths() {
@@ -279,348 +219,119 @@ function loadStoredAiQuestionHeight() {
   return Math.max(MIN_AI_QUESTION_HEIGHT, Math.min(MAX_AI_QUESTION_HEIGHT, saved));
 }
 
-async function withTimeout(promise, timeoutMs, errorMessage) {
-  let timeoutId;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
-  });
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    clearTimeout(timeoutId);
-  }
+function clampNumber(value, min, max) {
+  return Math.max(min, Math.min(max, value));
 }
 
-function isContentModalModeRuntime() {
-  try {
-    return new URLSearchParams(window.location.search).get('mode') === 'content-modal';
-  } catch {
-    return false;
-  }
+function getDefaultAiModalWidth() {
+  const viewportWidth = typeof window === 'undefined'
+    ? (DEFAULT_AI_MODAL_WIDTH_FALLBACK_PX / DEFAULT_AI_MODAL_WIDTH_RATIO)
+    : window.innerWidth;
+  const maxWidth = Math.max(MIN_AI_MODAL_WIDTH, viewportWidth - 24);
+  return clampNumber(viewportWidth * DEFAULT_AI_MODAL_WIDTH_RATIO, MIN_AI_MODAL_WIDTH, maxWidth);
 }
 
-function fetchViaHostBridge(url, timeoutMs = 15000) {
-  return new Promise((resolve, reject) => {
-    if (window.parent === window) {
-      reject(new Error('Host bridge unavailable'));
-      return;
-    }
-
-    const requestId = `bridge-${Date.now()}-${bridgeRequestCounter += 1}`;
-    let timeoutId = null;
-
-    const cleanup = () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      window.removeEventListener('message', onMessage);
-    };
-
-    const onMessage = (event) => {
-      if (event.source !== window.parent) return;
-      const payload = event.data || {};
-      if (payload.type !== 'enhanced-ai-modal-fetch-result') return;
-      if (payload.requestId !== requestId) return;
-      cleanup();
-      resolve(payload);
-    };
-
-    timeoutId = setTimeout(() => {
-      cleanup();
-      reject(new Error('Host bridge timed out'));
-    }, timeoutMs);
-
-    window.addEventListener('message', onMessage);
-    window.parent.postMessage({
-      type: 'enhanced-ai-modal-fetch',
-      requestId,
-      url,
-    }, '*');
-  });
+function getDefaultAiModalHeight() {
+  const viewportHeight = typeof window === 'undefined'
+    ? (DEFAULT_AI_MODAL_HEIGHT_FALLBACK_PX / DEFAULT_AI_MODAL_HEIGHT_RATIO)
+    : window.innerHeight;
+  const maxHeight = Math.max(MIN_AI_MODAL_HEIGHT, viewportHeight - 32);
+  return clampNumber(viewportHeight * DEFAULT_AI_MODAL_HEIGHT_RATIO, MIN_AI_MODAL_HEIGHT, maxHeight);
 }
 
-function fetchImageDataUrlViaHostBridge(url, timeoutMs = 15000) {
-  return new Promise((resolve, reject) => {
-    if (window.parent === window) {
-      reject(new Error('Host image bridge unavailable'));
-      return;
-    }
-
-    const requestId = `bridge-img-${Date.now()}-${bridgeRequestCounter += 1}`;
-    let timeoutId = null;
-
-    const cleanup = () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      window.removeEventListener('message', onMessage);
-    };
-
-    const onMessage = (event) => {
-      if (event.source !== window.parent) return;
-      const payload = event.data || {};
-      if (payload.type !== 'enhanced-ai-modal-fetch-image-result') return;
-      if (payload.requestId !== requestId) return;
-      cleanup();
-      if (!payload.ok || !payload.dataUrl) {
-        reject(new Error(payload.error || 'Image bridge failed'));
-        return;
-      }
-      resolve(payload.dataUrl);
-    };
-
-    timeoutId = setTimeout(() => {
-      cleanup();
-      reject(new Error('Host image bridge timed out'));
-    }, timeoutMs);
-
-    window.addEventListener('message', onMessage);
-    window.parent.postMessage({
-      type: 'enhanced-ai-modal-fetch-image',
-      requestId,
-      url,
-    }, '*');
-  });
+function loadStoredAiFontSize(storageKey, fallback, min, max) {
+  const saved = Number.parseFloat(sessionStorage.getItem(storageKey) || '');
+  if (!Number.isFinite(saved)) return fallback;
+  return clampNumber(saved, min, max);
 }
 
-function sendOpenAIRequest({ apiKey, apiUrl, model, messages, reasoningEffort }) {
-  return new Promise((resolve, reject) => {
-    const port = chrome.runtime.connect({ name: 'openaiPort' });
-    const fullUrl = normalizeResponsesUrl(apiUrl);
+const SAFE_HTML_TAGS = new Set([
+  'a', 'p', 'br', 'strong', 'em', 'b', 'i', 'u', 's', 'code', 'pre', 'blockquote',
+  'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'table', 'thead', 'tbody', 'tr', 'th', 'td',
+  'div', 'span', 'hr',
+]);
 
-    const cleanup = () => {
-      port.onMessage.removeListener(handleMessage);
-      port.onDisconnect.removeListener(handleDisconnect);
-    };
+const SAFE_HTML_ATTRS = new Set([
+  'href', 'target', 'rel', 'title',
+  'colspan', 'rowspan', 'scope',
+  'dir', 'lang',
+  'aria-label', 'aria-hidden',
+]);
 
-    const handleMessage = (response) => {
-      if (response?.keepAlive) return;
-      cleanup();
-      if (!response?.success) {
-        reject(new Error(response?.error || 'Unknown error from background'));
-        return;
-      }
-      const data = response.data || {};
-      resolve({ ...data, output_text: data.output_text || extractOutputText(data) });
-    };
-
-    const handleDisconnect = () => {
-      cleanup();
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-      }
-    };
-
-    port.onMessage.addListener(handleMessage);
-    port.onDisconnect.addListener(handleDisconnect);
-    port.postMessage({ apiKey, apiUrl: fullUrl, model, messages, reasoningEffort });
-  });
+function isSafeHtmlUrl(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('#') || trimmed.startsWith('/')) return true;
+  return /^(https?:|mailto:|tel:)/i.test(trimmed);
 }
 
 function sanitizeHtmlFragment(html = '') {
   const doc = new DOMParser().parseFromString(String(html), 'text/html');
-  doc.querySelectorAll('script,style,iframe,object,embed,link,meta').forEach((el) => el.remove());
-  doc.querySelectorAll('*').forEach((el) => {
+  doc.querySelectorAll('script,style,iframe,object,embed,link,meta,form,input,button,textarea,select,svg,math').forEach((el) => el.remove());
+  const nodes = [...doc.body.querySelectorAll('*')];
+  nodes.forEach((el) => {
+    const tag = el.tagName.toLowerCase();
+    if (!SAFE_HTML_TAGS.has(tag)) {
+      const parent = el.parentNode;
+      if (parent) {
+        while (el.firstChild) parent.insertBefore(el.firstChild, el);
+      }
+      el.remove();
+      return;
+    }
+
     [...el.attributes].forEach((attr) => {
       const n = attr.name.toLowerCase();
       const v = attr.value || '';
-      if (n.startsWith('on')) el.removeAttribute(attr.name);
-      if ((n === 'href' || n === 'src' || n === 'xlink:href') && /^\s*javascript:/i.test(v)) {
+      const allowedAttr = SAFE_HTML_ATTRS.has(n) || n.startsWith('data-');
+      if (!allowedAttr || n.startsWith('on') || n === 'style' || n === 'srcset') {
+        el.removeAttribute(attr.name);
+        return;
+      }
+
+      if ((n === 'href' || n === 'src' || n === 'xlink:href') && (!isSafeHtmlUrl(v) || /^\s*(javascript:|data:)/i.test(v))) {
         el.removeAttribute(attr.name);
       }
     });
+
+    if (tag === 'a') {
+      const href = el.getAttribute('href');
+      if (!href) {
+        el.removeAttribute('target');
+        el.removeAttribute('rel');
+        return;
+      }
+      if (!el.getAttribute('target')) {
+        el.setAttribute('target', '_blank');
+      }
+      const relValues = new Set((el.getAttribute('rel') || '').split(/\s+/).filter(Boolean));
+      relValues.add('noopener');
+      relValues.add('noreferrer');
+      el.setAttribute('rel', [...relValues].join(' '));
+    }
   });
   return doc.body.innerHTML;
 }
 
-function buildConfluenceBaseCandidates(baseUrl) {
-  const candidates = [];
-  const seen = new Set();
-  const push = (url) => {
-    const normalized = String(url || '').replace(/\/+$/, '');
-    if (!normalized || seen.has(normalized)) return;
-    seen.add(normalized);
-    candidates.push(normalized);
-  };
-
-  try {
-    const parsed = new URL(baseUrl || window.location.origin);
-    const origin = parsed.origin.replace(/\/+$/, '');
-    const path = parsed.pathname.replace(/\/+$/, '');
-    if (path && path !== '/') push(`${origin}${path}`);
-    push(`${origin}/wiki`);
-    push(origin);
-  } catch {
-    const origin = window.location.origin.replace(/\/+$/, '');
-    push(baseUrl);
-    push(`${origin}/wiki`);
-    push(origin);
-  }
-
-  return candidates;
-}
-
-async function fetchConfluenceJsonWithFallback(baseUrl, restPath) {
-  const candidates = buildConfluenceBaseCandidates(baseUrl);
-  let lastStatus = 0;
-  let lastStatusText = 'Unknown';
-  const errors = [];
-  const useBridge = isContentModalModeRuntime();
-
-  for (const candidate of candidates) {
-    const url = `${candidate}${restPath}`;
-
-    const attemptParsers = async (result, label) => {
-      if (!result.ok) {
-        lastStatus = Number(result.status) || 0;
-        lastStatusText = result.statusText || 'Unknown';
-        errors.push(`${candidate} [${label}]: HTTP ${lastStatus} ${lastStatusText}`);
-        return null;
-      }
-
-      const contentType = (result.contentType || '').toLowerCase();
-      const rawText = String(result.body || '');
-      const trimmed = rawText.trim().replace(/^\uFEFF/, '').replace(/^\)\]\}',?\s*/, '');
-      const likelyJson = contentType.includes('application/json')
-        || trimmed.startsWith('{')
-        || trimmed.startsWith('[');
-
-      if (!likelyJson) {
-        errors.push(`${candidate} [${label}]: non-JSON response (${contentType || 'unknown content-type'})`);
-        return null;
-      }
-
-      try {
-        const data = JSON.parse(trimmed);
-        return { data, resolvedBaseUrl: candidate };
-      } catch (parseErr) {
-        errors.push(`${candidate} [${label}]: JSON parse failed (${parseErr.message})`);
-        return null;
-      }
-    };
-
-    if (useBridge) {
-      try {
-        const bridged = await fetchViaHostBridge(url);
-        const parsed = await attemptParsers({
-          ok: !!bridged.ok,
-          status: bridged.status,
-          statusText: bridged.statusText,
-          body: bridged.body,
-          contentType: bridged.contentType,
-        }, 'bridge');
-        if (parsed) return parsed;
-      } catch (bridgeErr) {
-        errors.push(`${candidate} [bridge]: ${bridgeErr.message}`);
-      }
-    }
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      credentials: 'include',
-    });
-
-    const parsed = await attemptParsers({
-      ok: response.ok,
-      status: response.status,
-      statusText: response.statusText,
-      body: await response.text(),
-      contentType: response.headers.get('content-type') || '',
-    }, 'direct');
-    if (parsed) return parsed;
-  }
-
-  const details = errors.length ? ` Tried: ${errors.join(' | ')}` : '';
-  throw new Error(`${lastStatus} ${lastStatusText}.${details}`);
-}
-
-async function fetchConfluenceBodyById(baseUrl, contentId, force = false) {
-  if (confluenceBodyCache.has(contentId) && !force) return confluenceBodyCache.get(contentId);
-  const { data } = await fetchConfluenceJsonWithFallback(
-    baseUrl,
-    `/rest/api/content/${contentId}?expand=body.storage`,
-  );
-  const bodyHtml = sanitizeHtmlFragment(data.body?.storage?.value || '(No content)');
-  confluenceBodyCache.set(contentId, bodyHtml);
-  return bodyHtml;
-}
-
-async function fetchConfluenceMetadataById(baseUrl, contentId) {
-  const { data } = await fetchConfluenceJsonWithFallback(
-    baseUrl,
-    `/rest/api/content/${contentId}?expand=space.icon,history.createdBy,version,ancestors`,
-  );
-  return data;
-}
-
-async function fetchSpaceDetailsByKey(baseUrl, spaceKey) {
-  if (!spaceKey) return null;
-  try {
-    const { data } = await fetchConfluenceJsonWithFallback(
-      baseUrl,
-      `/rest/api/space/${encodeURIComponent(spaceKey)}?expand=icon`,
-    );
-    return data || null;
-  } catch {
-    return null;
-  }
-}
-
-async function fetchUserDetails(baseUrl, createdBy) {
-  if (!createdBy || typeof createdBy !== 'object') return null;
-  const accountId = createdBy.accountId || '';
-  const username = createdBy.username || '';
-  const userKey = createdBy.userKey || '';
-
-  const queries = [
-    accountId ? `accountId=${encodeURIComponent(accountId)}` : '',
-    username ? `username=${encodeURIComponent(username)}` : '',
-    userKey ? `key=${encodeURIComponent(userKey)}` : '',
-  ].filter(Boolean);
-
-  for (const query of queries) {
-    try {
-      const { data } = await fetchConfluenceJsonWithFallback(
-        baseUrl,
-        `/rest/api/user?${query}`,
-      );
-      if (data && typeof data === 'object') return data;
-    } catch {
-      // Try next query form
-    }
-  }
-
-  return null;
-}
-
-async function enrichVisualMetadata(baseUrl, pageData) {
-  const next = {
-    ...(pageData || {}),
-    space: { ...(pageData?.space || {}) },
-    history: {
-      ...(pageData?.history || {}),
-      createdBy: { ...(pageData?.history?.createdBy || {}) },
-    },
-  };
-
-  if (!next.space?.icon?.path && next.space?.key) {
-    const spaceDetails = await fetchSpaceDetailsByKey(baseUrl, next.space.key);
-    if (spaceDetails?.icon?.path) {
-      next.space.icon = { ...(next.space.icon || {}), path: spaceDetails.icon.path };
-    }
-  }
-
-  if (!next.history?.createdBy?.profilePicture?.path) {
-    const userDetails = await fetchUserDetails(baseUrl, next.history?.createdBy || {});
-    if (userDetails?.profilePicture?.path) {
-      next.history.createdBy.profilePicture = {
-        ...(next.history.createdBy.profilePicture || {}),
-        path: userDetails.profilePicture.path,
-      };
-    }
-    if (!next.history.createdBy.displayName && userDetails?.displayName) {
-      next.history.createdBy.displayName = userDetails.displayName;
-    }
-  }
-
-  return next;
+function buildSearchSignature({
+  baseUrl,
+  searchText,
+  filterType,
+  filterDate,
+  filterSpace,
+  filterContributor,
+  resultsPerRequest,
+}) {
+  return [
+    String(baseUrl || '').trim(),
+    String(searchText || '').trim(),
+    String(filterType || ''),
+    String(filterDate || ''),
+    String(filterSpace || ''),
+    String(filterContributor || ''),
+    String(resultsPerRequest || ''),
+  ].join('|');
 }
 
 function dedupeByKey(list, key) {
@@ -968,6 +679,7 @@ export function App() {
   const [start, setStart] = useState(0);
   const [totalSize, setTotalSize] = useState(null);
   const [allResults, setAllResults] = useState([]);
+  const [lastFetchAt, setLastFetchAt] = useState(null);
 
   const [filterText, setFilterText] = useState((params.text || '').trim());
   const [filterSpace, setFilterSpace] = useState(initialSpaceKey || '');
@@ -1038,22 +750,38 @@ export function App() {
   const [isAiSummaryCollapsed, setIsAiSummaryCollapsed] = useState(false);
   const [isAiChatCollapsed, setIsAiChatCollapsed] = useState(false);
   const [aiModalWidth, setAiModalWidth] = useState(() => {
-    const saved = Number.parseInt(sessionStorage.getItem('aiModalWidth') || '', 10);
-    if (!Number.isFinite(saved)) return DEFAULT_AI_MODAL_WIDTH;
-    return Math.max(MIN_AI_MODAL_WIDTH, saved);
+    const saved = Number.parseFloat(sessionStorage.getItem('aiModalWidth') || '');
+    if (!Number.isFinite(saved)) return getDefaultAiModalWidth();
+    const maxWidth = Math.max(MIN_AI_MODAL_WIDTH, window.innerWidth - 24);
+    return clampNumber(saved, MIN_AI_MODAL_WIDTH, maxWidth);
   });
   const [aiModalHeight, setAiModalHeight] = useState(() => {
-    const saved = Number.parseInt(sessionStorage.getItem('aiModalHeight') || '', 10);
-    if (!Number.isFinite(saved)) return DEFAULT_AI_MODAL_HEIGHT;
-    return Math.max(MIN_AI_MODAL_HEIGHT, saved);
+    const saved = Number.parseFloat(sessionStorage.getItem('aiModalHeight') || '');
+    if (!Number.isFinite(saved)) return getDefaultAiModalHeight();
+    const maxHeight = Math.max(MIN_AI_MODAL_HEIGHT, window.innerHeight - 32);
+    return clampNumber(saved, MIN_AI_MODAL_HEIGHT, maxHeight);
   });
+  const [aiSummaryFontSize, setAiSummaryFontSize] = useState(() => loadStoredAiFontSize(
+    'aiSummaryFontSizePx',
+    DEFAULT_AI_SUMMARY_FONT_SIZE_PX,
+    MIN_AI_SUMMARY_FONT_SIZE_PX,
+    MAX_AI_SUMMARY_FONT_SIZE_PX,
+  ));
+  const [aiChatFontSize, setAiChatFontSize] = useState(() => loadStoredAiFontSize(
+    'aiChatFontSizePx',
+    DEFAULT_AI_CHAT_FONT_SIZE_PX,
+    MIN_AI_CHAT_FONT_SIZE_PX,
+    MAX_AI_CHAT_FONT_SIZE_PX,
+  ));
   const [aiQuestionInputHeight, setAiQuestionInputHeight] = useState(() => loadStoredAiQuestionHeight());
   const [tableColWidths, setTableColWidths] = useState(() => loadStoredTableColWidths());
+  const [tableSort, setTableSort] = useState({ key: '', direction: 'asc' });
   const [aiSpaceIconSrc, setAiSpaceIconSrc] = useState(fallbackSpaceIcon);
   const [aiContributorIconSrc, setAiContributorIconSrc] = useState(fallbackUserIcon);
 
   const scrollerRef = useRef(null);
   const inflightRef = useRef(false);
+  const fetchMoreRef = useRef(null);
   const aiThreadRef = useRef(null);
   const aiModalRef = useRef(null);
   const aiLayoutRef = useRef(null);
@@ -1070,6 +798,19 @@ export function App() {
   const modalOnlyInitializedRef = useRef(false);
   const searchInputRef = useRef(null);
   const didAutoFocusSearchRef = useRef(false);
+  const shouldAutoFocusAiQuestionRef = useRef(false);
+  const searchFetchRequestIdRef = useRef(0);
+  const searchFetchAbortRef = useRef(null);
+  const activeSearchSignatureRef = useRef('');
+  const activeSearchSignature = useMemo(() => buildSearchSignature({
+    baseUrl,
+    searchText,
+    filterType,
+    filterDate,
+    filterSpace,
+    filterContributor,
+    resultsPerRequest,
+  }), [baseUrl, searchText, filterType, filterDate, filterSpace, filterContributor, resultsPerRequest]);
 
   const resetLoadedData = () => {
     setAllResults([]);
@@ -1161,48 +902,12 @@ export function App() {
     setNoticeDialog((prev) => ({ ...prev, open: false }));
   };
 
-  const getAiRuntimeSettings = async ({ requireApiKey = false, requestEndpointPermission = true } = {}) => {
-    const syncData = await new Promise((resolve) => {
-      chrome.storage.sync.get(
-        ['openaiApiKey', 'customApiEndpoint', 'selectedAiModel', 'reasoningEffort', 'useHighReasoningEffort'],
-        resolve,
-      );
-    });
-
-    const settings = {
-      apiKey: syncData.openaiApiKey || '',
-      apiUrl: syncData.customApiEndpoint?.trim() || 'https://api.openai.com/v1',
-      model: syncData.selectedAiModel || DEFAULT_AI_MODEL,
-      reasoningEffort: resolveReasoningEffort(syncData.reasoningEffort, syncData.useHighReasoningEffort),
-    };
-
-    if (requireApiKey && !settings.apiKey) {
-      throw new Error('An OpenAI API key is required. Configure it in extension options.');
-    }
-
-    let endpointOrigin = '';
-    try {
-      endpointOrigin = new URL(normalizeResponsesUrl(settings.apiUrl)).origin;
-    } catch {
-      throw new Error('Invalid OpenAI API endpoint URL. Check extension options.');
-    }
-
-    const permissionResult = await ensureApiOriginPermission(endpointOrigin, { requestIfMissing: requestEndpointPermission });
-    if (!permissionResult.granted) {
-      if (permissionResult.reason === 'missing_permission') {
-        throw new Error('OpenAI endpoint permission is missing. Re-open summary from the Confluence page and allow the permission prompt.');
-      }
-      throw new Error('Permission denied for the OpenAI endpoint domain. Please allow it and try again.');
-    }
-
-    return settings;
-  };
-
   const buildUserPrompt = async (pageData, forceBodyFetch = false) => {
-    const bodyHtml = await fetchConfluenceBodyById(baseUrl, pageData.id, forceBodyFetch);
-    const localData = await new Promise((resolve) => {
-      chrome.storage.local.get(['customUserPrompt'], resolve);
+    const bodyHtml = await fetchConfluenceBodyById(baseUrl, pageData.id, {
+      force: forceBodyFetch,
+      sanitizeHtmlFragment,
     });
+    const localData = await getLocal(['customUserPrompt']);
     const customPrompt = (localData.customUserPrompt || '').trim();
     const pageUrl = buildConfluenceUrl(baseUrl, pageData._links?.webui);
     const parentTitles = (Array.isArray(pageData.ancestors) ? pageData.ancestors : [])
@@ -1516,13 +1221,20 @@ Content (HTML): ${bodyHtml}
   }, [baseUrl, searchText]);
 
   useEffect(() => {
+    let currentDarkModePreference = false;
+    let currentSyncThemeToConfluencePage = false;
+
+    const applyThemeFromPreferences = () => {
+      const shouldApplyDarkMode = currentDarkModePreference && (!modalOnlyMode || currentSyncThemeToConfluencePage);
+      setIsDarkMode(shouldApplyDarkMode);
+      document.body.classList.toggle('dark-mode', shouldApplyDarkMode);
+    };
+
     const loadSettings = async () => {
-      const data = await new Promise((resolve) => {
-        chrome.storage.sync.get(['darkMode', 'resultsPerRequest', 'enableSummaries', 'selectedAiModel', 'highlightResultRows', 'showTooltips', 'showTreeTooltips', 'showTableTooltips'], resolve);
-      });
-      const darkModeEnabled = !!data.darkMode;
-      setIsDarkMode(darkModeEnabled);
-      document.body.classList.toggle('dark-mode', darkModeEnabled);
+      const data = await getSync(['darkMode', 'syncThemeToConfluencePage', 'resultsPerRequest', 'enableSummaries', 'selectedAiModel', 'highlightResultRows', 'showTooltips', 'showTreeTooltips', 'showTableTooltips']);
+      currentDarkModePreference = !!data.darkMode;
+      currentSyncThemeToConfluencePage = data.syncThemeToConfluencePage === true;
+      applyThemeFromPreferences();
       if (Number.isInteger(data.resultsPerRequest)) setResultsPerRequest(data.resultsPerRequest);
       setEnableSummaries(data.enableSummaries !== false);
       setHighlightResultRows(data.highlightResultRows !== false);
@@ -1533,7 +1245,7 @@ Content (HTML): ${bodyHtml}
       const requestedModel = retiredModelFallbacks[data.selectedAiModel] || data.selectedAiModel || DEFAULT_AI_MODEL;
       setSelectedAiModel(requestedModel);
       if (data.selectedAiModel && requestedModel !== data.selectedAiModel) {
-        chrome.storage.sync.set({ selectedAiModel: requestedModel });
+        void setSync({ selectedAiModel: requestedModel });
       }
     };
 
@@ -1542,9 +1254,12 @@ Content (HTML): ${bodyHtml}
     const onStorage = (changes, area) => {
       if (area !== 'sync') return;
       if (changes.darkMode) {
-        const nextDarkMode = !!changes.darkMode.newValue;
-        setIsDarkMode(nextDarkMode);
-        document.body.classList.toggle('dark-mode', nextDarkMode);
+        currentDarkModePreference = !!changes.darkMode.newValue;
+        applyThemeFromPreferences();
+      }
+      if (changes.syncThemeToConfluencePage) {
+        currentSyncThemeToConfluencePage = changes.syncThemeToConfluencePage.newValue === true;
+        applyThemeFromPreferences();
       }
       if (changes.resultsPerRequest && Number.isInteger(changes.resultsPerRequest.newValue)) {
         setResultsPerRequest(changes.resultsPerRequest.newValue);
@@ -1565,14 +1280,18 @@ Content (HTML): ${bodyHtml}
           || DEFAULT_AI_MODEL;
         setSelectedAiModel(nextModel);
         if (nextModel !== changes.selectedAiModel.newValue) {
-          chrome.storage.sync.set({ selectedAiModel: nextModel });
+          void setSync({ selectedAiModel: nextModel });
         }
       }
     };
 
-    chrome.storage.onChanged.addListener(onStorage);
-    return () => chrome.storage.onChanged.removeListener(onStorage);
+    const unsubscribe = subscribeStorageChanges(onStorage);
+    return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    activeSearchSignatureRef.current = activeSearchSignature;
+  }, [activeSearchSignature]);
 
   useEffect(() => {
     setAllResults([]);
@@ -1580,8 +1299,23 @@ Content (HTML): ${bodyHtml}
     setAllLoaded(false);
     setStart(0);
     setTotalSize(null);
+    setLastFetchAt(null);
     setInitialSearchPending(!!searchText);
-  }, [searchText, baseUrl, filterDate, filterType, filterSpace, filterContributor, resultsPerRequest]);
+    if (searchFetchAbortRef.current) {
+      searchFetchAbortRef.current.abort();
+      searchFetchAbortRef.current = null;
+    }
+    searchFetchRequestIdRef.current += 1;
+    inflightRef.current = false;
+    setLoading(false);
+  }, [activeSearchSignature]);
+
+  useEffect(() => () => {
+    if (searchFetchAbortRef.current) {
+      searchFetchAbortRef.current.abort();
+      searchFetchAbortRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     loadSavedSearches();
@@ -1762,6 +1496,26 @@ Content (HTML): ${bodyHtml}
     if (!thread) return;
     thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' });
   }, [aiConversation, aiAnswerLoading, aiModalOpen]);
+
+  useEffect(() => {
+    if (!aiModalOpen) return;
+    shouldAutoFocusAiQuestionRef.current = true;
+  }, [aiModalOpen]);
+
+  useEffect(() => {
+    if (!aiModalOpen || aiModalLoading || isAiChatCollapsed) return;
+    if (!shouldAutoFocusAiQuestionRef.current) return;
+
+    const focusTimer = setTimeout(() => {
+      const input = aiQuestionInputRef.current;
+      if (!input) return;
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+      shouldAutoFocusAiQuestionRef.current = false;
+    }, 0);
+
+    return () => clearTimeout(focusTimer);
+  }, [aiModalOpen, aiModalLoading, isAiChatCollapsed]);
 
   useEffect(() => {
     setAiSummaryStatusById({});
@@ -2102,16 +1856,42 @@ Content (HTML): ${bodyHtml}
   }, [modalOnlyMode, aiSpaceIconUrl, aiContributorIconUrl]);
   const tableColumns = useMemo(() => {
     const cols = [
-      { key: 'type', label: 'Type' },
-      { key: 'name', label: 'Name' },
-      { key: 'space', label: 'Space' },
-      { key: 'contributor', label: 'Contributor' },
-      { key: 'created', label: 'Created' },
-      { key: 'modified', label: 'Modified' },
+      { key: 'type', label: 'Type', sortable: true },
+      { key: 'name', label: 'Name', sortable: true },
+      { key: 'space', label: 'Space', sortable: true },
+      { key: 'contributor', label: 'Contributor', sortable: true },
+      { key: 'created', label: 'Created', sortable: true },
+      { key: 'modified', label: 'Modified', sortable: true },
     ];
-    if (enableSummaries) cols.push({ key: 'ai', label: 'AI' });
+    if (enableSummaries) cols.push({ key: 'ai', label: 'AI', sortable: false });
     return cols;
   }, [enableSummaries]);
+  const tableResults = useMemo(() => {
+    if (!tableSort.key || !TABLE_SORTABLE_COLUMNS.has(tableSort.key)) return filteredResults;
+
+    const directionFactor = tableSort.direction === 'desc' ? -1 : 1;
+    return filteredResults
+      .map((item, index) => ({ item, index }))
+      .sort((a, b) => {
+        const aValue = getTableSortValue(a.item, tableSort.key);
+        const bValue = getTableSortValue(b.item, tableSort.key);
+        const aMissing = aValue === null || aValue === '';
+        const bMissing = bValue === null || bValue === '';
+        if (aMissing && bMissing) return a.index - b.index;
+        if (aMissing) return 1;
+        if (bMissing) return -1;
+
+        let cmp = 0;
+        if (typeof aValue === 'number' && typeof bValue === 'number') {
+          cmp = aValue - bValue;
+        } else {
+          cmp = String(aValue).localeCompare(String(bValue), undefined, { numeric: true, sensitivity: 'base' });
+        }
+        if (cmp === 0) return a.index - b.index;
+        return cmp * directionFactor;
+      })
+      .map((entry) => entry.item);
+  }, [filteredResults, tableSort]);
   const tableMinWidth = useMemo(
     () => tableColumns.reduce((sum, col) => sum + (tableColWidths[col.key] || DEFAULT_TABLE_COL_WIDTHS[col.key] || 120), 0),
     [tableColumns, tableColWidths],
@@ -2140,6 +1920,17 @@ Content (HTML): ${bodyHtml}
   const fetchMore = async () => {
     if (!searchText || !baseUrl || loading || allLoaded || inflightRef.current) return;
     const isInitialFetch = start === 0 && allResults.length === 0;
+    const requestSignature = activeSearchSignature;
+    const requestId = searchFetchRequestIdRef.current + 1;
+    searchFetchRequestIdRef.current = requestId;
+
+    if (searchFetchAbortRef.current) {
+      searchFetchAbortRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    searchFetchAbortRef.current = controller;
+    activeSearchSignatureRef.current = requestSignature;
     inflightRef.current = true;
     setLoading(true);
 
@@ -2151,6 +1942,7 @@ Content (HTML): ${bodyHtml}
         method: 'GET',
         headers: { Accept: 'application/json' },
         credentials: 'include',
+        signal: controller.signal,
       });
 
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
@@ -2158,7 +1950,16 @@ Content (HTML): ${bodyHtml}
       const data = await res.json();
       const list = Array.isArray(data.results) ? data.results : [];
       const total = Number.isInteger(data.totalSize) ? data.totalSize : 0;
+
+      if (
+        searchFetchRequestIdRef.current !== requestId
+        || activeSearchSignatureRef.current !== requestSignature
+      ) {
+        return;
+      }
+
       setTotalSize(total);
+      setLastFetchAt(Date.now());
 
       setAllResults((prev) => {
         const seen = new Set(prev.map((x) => x.id));
@@ -2173,25 +1974,37 @@ Content (HTML): ${bodyHtml}
       setStart(nextStart);
       if (list.length === 0 || nextStart >= total) setAllLoaded(true);
     } catch (err) {
+      if (err?.name === 'AbortError') return;
       console.error('[V2 Preact] Search failed:', err);
-      setAllLoaded(true);
       openNoticeDialog({
         title: 'Search Failed',
         message: err.message || 'Unknown error',
         tone: 'error',
       });
     } finally {
-      inflightRef.current = false;
-      setLoading(false);
-      if (isInitialFetch) setInitialSearchPending(false);
+      if (
+        searchFetchRequestIdRef.current === requestId
+        && activeSearchSignatureRef.current === requestSignature
+      ) {
+        inflightRef.current = false;
+        setLoading(false);
+        if (isInitialFetch) setInitialSearchPending(false);
+      }
+      if (searchFetchAbortRef.current === controller) {
+        searchFetchAbortRef.current = null;
+      }
     }
   };
 
   useEffect(() => {
-    if (!searchText || loading || allLoaded) return;
+    fetchMoreRef.current = fetchMore;
+  }, [fetchMore]);
+
+  useEffect(() => {
+    if (!searchText || loading || allLoaded || !initialSearchPending) return;
     if (start !== 0 || allResults.length !== 0) return;
     fetchMore();
-  }, [searchText, baseUrl, resultsPerRequest, filterDate, filterType, filterSpace, filterContributor, start, allResults.length, loading, allLoaded]);
+  }, [searchText, baseUrl, resultsPerRequest, filterDate, filterType, filterSpace, filterContributor, start, allResults.length, loading, allLoaded, initialSearchPending]);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -2199,13 +2012,15 @@ Content (HTML): ${bodyHtml}
 
     const onScroll = () => {
       const nearBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 12;
-      if (nearBottom) fetchMore();
+      if (nearBottom && typeof fetchMoreRef.current === 'function') {
+        fetchMoreRef.current();
+      }
       setShowScrollTop(scroller.scrollTop > 250);
     };
 
     scroller.addEventListener('scroll', onScroll);
     return () => scroller.removeEventListener('scroll', onScroll);
-  }, [loading, allLoaded, searchText, start, filterDate, filterType, filterSpace, filterContributor, baseUrl, resultsPerRequest]);
+  }, []);
 
   useEffect(() => {
     const onResize = () => {
@@ -2226,7 +2041,7 @@ Content (HTML): ${bodyHtml}
       if (!input) return;
       input.focus();
       setSearchInputAttention(true);
-      clearAttentionTimer = setTimeout(() => setSearchInputAttention(false), 2800);
+      clearAttentionTimer = setTimeout(() => setSearchInputAttention(false), 5600);
       didAutoFocusSearchRef.current = true;
     }, 0);
     return () => {
@@ -2375,13 +2190,13 @@ Content (HTML): ${bodyHtml}
     const nextDarkMode = !isDarkMode;
     setIsDarkMode(nextDarkMode);
     document.body.classList.toggle('dark-mode', nextDarkMode);
-    chrome.storage.sync.set({ darkMode: nextDarkMode });
+    void setSync({ darkMode: nextDarkMode });
   };
 
   const changeAiModel = (nextModel) => {
     const normalized = retiredModelFallbacks[nextModel] || nextModel || DEFAULT_AI_MODEL;
     setSelectedAiModel(normalized);
-    chrome.storage.sync.set({ selectedAiModel: normalized });
+    void setSync({ selectedAiModel: normalized });
   };
 
   const positionTreeTooltip = (x, y) => {
@@ -2483,7 +2298,7 @@ Content (HTML): ${bodyHtml}
   };
 
   const resetAiModalWidth = () => {
-    setAiModalWidth(DEFAULT_AI_MODAL_WIDTH);
+    setAiModalWidth(getDefaultAiModalWidth());
     sessionStorage.removeItem('aiModalWidth');
   };
 
@@ -2513,7 +2328,7 @@ Content (HTML): ${bodyHtml}
   };
 
   const resetAiModalHeight = () => {
-    setAiModalHeight(DEFAULT_AI_MODAL_HEIGHT);
+    setAiModalHeight(getDefaultAiModalHeight());
     sessionStorage.removeItem('aiModalHeight');
   };
 
@@ -2625,6 +2440,39 @@ Content (HTML): ${bodyHtml}
     setIsAiChatCollapsed((prev) => {
       const next = !prev;
       if (next && isAiSummaryCollapsed) setIsAiSummaryCollapsed(false);
+      return next;
+    });
+  };
+
+  const adjustAiSummaryFontSize = (delta) => {
+    setAiSummaryFontSize((prev) => {
+      const next = clampNumber(
+        prev + delta,
+        MIN_AI_SUMMARY_FONT_SIZE_PX,
+        MAX_AI_SUMMARY_FONT_SIZE_PX,
+      );
+      sessionStorage.setItem('aiSummaryFontSizePx', String(next));
+      return next;
+    });
+  };
+
+  const toggleTableSort = (columnKey) => {
+    if (!TABLE_SORTABLE_COLUMNS.has(columnKey)) return;
+    setTableSort((prev) => {
+      if (prev.key !== columnKey) return { key: columnKey, direction: 'asc' };
+      if (prev.direction === 'asc') return { key: columnKey, direction: 'desc' };
+      return { key: '', direction: 'asc' };
+    });
+  };
+
+  const adjustAiChatFontSize = (delta) => {
+    setAiChatFontSize((prev) => {
+      const next = clampNumber(
+        prev + delta,
+        MIN_AI_CHAT_FONT_SIZE_PX,
+        MAX_AI_CHAT_FONT_SIZE_PX,
+      );
+      sessionStorage.setItem('aiChatFontSizePx', String(next));
       return next;
     });
   };
@@ -2882,11 +2730,11 @@ Content (HTML): ${bodyHtml}
             </div>
           </div>
 
-          <div class="search-row">
+          <div class={`search-row ${searchInputAttention ? 'search-row-attention' : ''}`.trim()}>
             <div class="search-input-wrap">
               <input
                 ref={searchInputRef}
-                class={`search-input ${searchInputAttention ? 'search-input-attention' : ''}`.trim()}
+                class="search-input"
                 value={searchInput}
                 onInput={(e) => setSearchInput(e.currentTarget.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') runSearch(); }}
@@ -2909,223 +2757,245 @@ Content (HTML): ${bodyHtml}
 
       <main class="content-grid">
         <aside class="panel sidebar">
-          <h3>Filters</h3>
-
-          <div class="field with-icon">
-            <span class="field-icon">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.2-4.2M10.8 18a7.2 7.2 0 1 0 0-14.4 7.2 7.2 0 0 0 0 14.4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
-            </span>
-            <input value={filterText} onInput={(e) => setFilterText(e.currentTarget.value)} placeholder="Filter by text" />
-          </div>
-
-          <div class="field combo-field" ref={spaceBoxRef}>
-            <div class="combo-input-wrap with-icon">
-              {filterSpace ? (
-                <img
-                  class="field-icon selected-filter-icon"
-                  src={selectedSpaceIcon || fallbackSpaceIcon}
-                  alt=""
-                  onError={(e) => { e.currentTarget.src = fallbackSpaceIcon; }}
-                />
-              ) : (
-                <span class="field-icon">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2H11l1.5 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2v-10Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /></svg>
-                </span>
-              )}
-              <input
-                value={spaceInput}
-                onInput={(e) => {
-                  setSpaceInput(e.currentTarget.value);
-                  setFilterSpace('');
-                  setSpaceDropdownOpen(true);
-                  setSpaceActiveIndex(-1);
-                }}
-                onFocus={() => setSpaceDropdownOpen(true)}
-                onKeyDown={handleSpaceInputKeyDown}
-                placeholder="Filter spaces (type to search)"
-              />
-              {filterSpace && (
-                <button
-                  class="combo-clear-selected"
-                  onClick={() => {
-                    applySpaceFilter(null);
-                    setSpaceInput('');
-                  }}
-                  title="Clear selected space"
-                >
-                  ×
-                </button>
-              )}
-              {spaceLookupLoading && <span class="combo-status">Searching...</span>}
+          <section class="sidebar-block">
+            <h3>Views</h3>
+            <div class="btn-row">
+              <button class={`btn view-btn ${view === 'tree' ? 'active' : ''}`} onClick={handleTreeViewClick}>
+                <img class="view-btn-icon" src="../../assets/icons/tree-view-button.png" alt="" />
+                <span>Tree</span>
+              </button>
+              <button class={`btn view-btn ${view === 'table' ? 'active' : ''}`} onClick={() => setView('table')}>
+                <img class="view-btn-icon" src="../../assets/icons/table-view-button.png" alt="" />
+                <span>Table</span>
+              </button>
             </div>
-            {spaceDropdownOpen && (
-              <div class="combo-options space-options">
-                {spaceSuggestions.map((space, idx) => (
-                  <button
-                    key={space.key}
-                    class={`combo-option ${spaceActiveIndex === idx ? 'highlighted' : ''}`}
-                    onMouseEnter={() => setSpaceActiveIndex(idx)}
-                    onClick={() => applySpaceFilter(space)}
-                  >
-                    <img src={space.iconUrl} alt="" />
-                    <span>{space.name}</span>
-                  </button>
-                ))}
-                {spaceSuggestions.length === 0 && <div class="combo-empty">No spaces found.</div>}
-              </div>
-            )}
-          </div>
+          </section>
 
-          <div class="field combo-field" ref={contributorBoxRef}>
-            <div class="combo-input-wrap with-icon">
-              {filterContributor ? (
-                <img
-                  class="field-icon selected-filter-icon"
-                  src={selectedContributorIcon || fallbackUserIcon}
-                  alt=""
-                  onError={(e) => { e.currentTarget.src = fallbackUserIcon; }}
-                />
-              ) : (
-                <span class="field-icon">
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.4" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M5 19a7 7 0 0 1 14 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></svg>
-                </span>
-              )}
-              <input
-                value={contributorInput}
-                onInput={(e) => {
-                  setContributorInput(e.currentTarget.value);
-                  setFilterContributor('');
-                  setContributorDropdownOpen(true);
-                  setContributorActiveIndex(-1);
-                }}
-                onFocus={() => setContributorDropdownOpen(true)}
-                onKeyDown={handleContributorInputKeyDown}
-                placeholder="Filter contributors (type to search)"
-              />
-              {filterContributor && (
-                <button
-                  class="combo-clear-selected"
-                  onClick={() => {
-                    applyContributorFilter(null);
-                    setContributorInput('');
-                  }}
-                  title="Clear selected contributor"
-                >
-                  ×
-                </button>
-              )}
-              {contributorLookupLoading && <span class="combo-status">Searching...</span>}
+          <section class="sidebar-block">
+            <h3>Saved Searches</h3>
+            <div class="btn-row">
+              <button class="btn view-btn" onClick={saveCurrentSearch}>
+                <img class="view-btn-icon" src="../../assets/icons/save-search-button.png" alt="" />
+                <span>Save</span>
+              </button>
+              <button class="btn view-btn" onClick={openSavedSearches}>
+                <img class="view-btn-icon" src="../../assets/icons/load-search-button.png" alt="" />
+                <span>Load</span>
+              </button>
             </div>
-            {contributorDropdownOpen && (
-              <div class="combo-options contributor-options">
-                {contributorSuggestions.map((contributor, idx) => (
+          </section>
+
+          <section class="sidebar-block">
+            <h3>Filters</h3>
+
+            <div class="field with-icon">
+              <span class="field-icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m21 21-4.2-4.2M10.8 18a7.2 7.2 0 1 0 0-14.4 7.2 7.2 0 0 0 0 14.4Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+              </span>
+              <input value={filterText} onInput={(e) => setFilterText(e.currentTarget.value)} placeholder="Filter by text" />
+            </div>
+
+            <div class="field combo-field" ref={spaceBoxRef}>
+              <div class="combo-input-wrap with-icon">
+                {filterSpace ? (
+                  <img
+                    class="field-icon selected-filter-icon"
+                    src={selectedSpaceIcon || fallbackSpaceIcon}
+                    alt=""
+                    onError={(e) => { e.currentTarget.src = fallbackSpaceIcon; }}
+                  />
+                ) : (
+                  <span class="field-icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2H11l1.5 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2v-10Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" /></svg>
+                  </span>
+                )}
+                <input
+                  value={spaceInput}
+                  onInput={(e) => {
+                    setSpaceInput(e.currentTarget.value);
+                    setFilterSpace('');
+                    setSpaceDropdownOpen(true);
+                    setSpaceActiveIndex(-1);
+                  }}
+                  onFocus={() => setSpaceDropdownOpen(true)}
+                  onKeyDown={handleSpaceInputKeyDown}
+                  placeholder="Filter spaces (type to search)"
+                />
+                {filterSpace && (
                   <button
-                    key={contributor.key}
-                    class={`combo-option ${contributorActiveIndex === idx ? 'highlighted' : ''}`}
-                    onMouseEnter={() => setContributorActiveIndex(idx)}
-                    onClick={() => applyContributorFilter(contributor)}
+                    class="combo-clear-selected"
+                    onClick={() => {
+                      applySpaceFilter(null);
+                      setSpaceInput('');
+                    }}
+                    title="Clear selected space"
                   >
-                    <img src={contributor.avatarUrl} alt="" />
-                    <span>{contributor.name}</span>
+                    ×
                   </button>
-                ))}
-                {contributorSuggestions.length === 0 && <div class="combo-empty">No contributors found.</div>}
+                )}
+                {spaceLookupLoading && <span class="combo-status">Searching...</span>}
               </div>
-            )}
-          </div>
+              {spaceDropdownOpen && (
+                <div class="combo-options space-options">
+                  {spaceSuggestions.map((space, idx) => (
+                    <button
+                      key={space.key}
+                      class={`combo-option ${spaceActiveIndex === idx ? 'highlighted' : ''}`}
+                      onMouseEnter={() => setSpaceActiveIndex(idx)}
+                      onClick={() => applySpaceFilter(space)}
+                    >
+                      <img src={space.iconUrl} alt="" />
+                      <span>{space.name}</span>
+                    </button>
+                  ))}
+                  {spaceSuggestions.length === 0 && <div class="combo-empty">No spaces found.</div>}
+                </div>
+              )}
+            </div>
 
-          <div class="field with-icon">
-            <span class="field-icon">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M8 3.5v3M16 3.5v3M4 9.3h16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></svg>
-            </span>
-            <select
-              value={filterDate}
-              onChange={(e) => {
-                setFilterDate(e.currentTarget.value);
-                updateUrlParams({
-                  searchText,
-                  baseUrl,
-                  text: filterText.trim(),
-                  space: filterSpace ? `${filterSpace}:${spaceInput.trim() || filterSpace}` : '',
-                  contributor: filterContributor ? `${filterContributor}:${contributorInput.trim() || filterContributor}` : '',
-                  date: e.currentTarget.value,
-                  type: filterType,
-                });
-              }}
-            >
-              <option value="any">Any time</option>
-              <option value="1d">Past day</option>
-              <option value="1w">Past week</option>
-              <option value="1m">Past month</option>
-              <option value="1y">Past year</option>
-            </select>
-          </div>
+            <div class="field combo-field" ref={contributorBoxRef}>
+              <div class="combo-input-wrap with-icon">
+                {filterContributor ? (
+                  <img
+                    class="field-icon selected-filter-icon"
+                    src={selectedContributorIcon || fallbackUserIcon}
+                    alt=""
+                    onError={(e) => { e.currentTarget.src = fallbackUserIcon; }}
+                  />
+                ) : (
+                  <span class="field-icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.4" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M5 19a7 7 0 0 1 14 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></svg>
+                  </span>
+                )}
+                <input
+                  value={contributorInput}
+                  onInput={(e) => {
+                    setContributorInput(e.currentTarget.value);
+                    setFilterContributor('');
+                    setContributorDropdownOpen(true);
+                    setContributorActiveIndex(-1);
+                  }}
+                  onFocus={() => setContributorDropdownOpen(true)}
+                  onKeyDown={handleContributorInputKeyDown}
+                  placeholder="Filter contributors (type to search)"
+                />
+                {filterContributor && (
+                  <button
+                    class="combo-clear-selected"
+                    onClick={() => {
+                      applyContributorFilter(null);
+                      setContributorInput('');
+                    }}
+                    title="Clear selected contributor"
+                  >
+                    ×
+                  </button>
+                )}
+                {contributorLookupLoading && <span class="combo-status">Searching...</span>}
+              </div>
+              {contributorDropdownOpen && (
+                <div class="combo-options contributor-options">
+                  {contributorSuggestions.map((contributor, idx) => (
+                    <button
+                      key={contributor.key}
+                      class={`combo-option ${contributorActiveIndex === idx ? 'highlighted' : ''}`}
+                      onMouseEnter={() => setContributorActiveIndex(idx)}
+                      onClick={() => applyContributorFilter(contributor)}
+                    >
+                      <img src={contributor.avatarUrl} alt="" />
+                      <span>{contributor.name}</span>
+                    </button>
+                  ))}
+                  {contributorSuggestions.length === 0 && <div class="combo-empty">No contributors found.</div>}
+                </div>
+              )}
+            </div>
 
-          <div class="field with-icon">
-            <span class="field-icon">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7.5h15M4.5 12h15M4.5 16.5h15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /><circle cx="9" cy="7.5" r="1.3" fill="currentColor" /><circle cx="14" cy="12" r="1.3" fill="currentColor" /><circle cx="11" cy="16.5" r="1.3" fill="currentColor" /></svg>
-            </span>
-            <select
-              value={filterType}
-              onChange={(e) => {
-                setFilterType(e.currentTarget.value);
-                updateUrlParams({
-                  searchText,
-                  baseUrl,
-                  text: filterText.trim(),
-                  space: filterSpace ? `${filterSpace}:${spaceInput.trim() || filterSpace}` : '',
-                  contributor: filterContributor ? `${filterContributor}:${contributorInput.trim() || filterContributor}` : '',
-                  date: filterDate,
-                  type: e.currentTarget.value,
-                });
-              }}
-            >
-              <option value="">📚 All Types</option>
-              <option value="page">📄 Page</option>
-              <option value="blogpost">📰 Blog post</option>
-              <option value="attachment">📎 Attachment</option>
-              <option value="comment">💬 Comment</option>
-            </select>
-          </div>
+            <div class="field with-icon">
+              <span class="field-icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M8 3.5v3M16 3.5v3M4 9.3h16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></svg>
+              </span>
+              <select
+                value={filterDate}
+                onChange={(e) => {
+                  setFilterDate(e.currentTarget.value);
+                  updateUrlParams({
+                    searchText,
+                    baseUrl,
+                    text: filterText.trim(),
+                    space: filterSpace ? `${filterSpace}:${spaceInput.trim() || filterSpace}` : '',
+                    contributor: filterContributor ? `${filterContributor}:${contributorInput.trim() || filterContributor}` : '',
+                    date: e.currentTarget.value,
+                    type: filterType,
+                  });
+                }}
+              >
+                <option value="any">Any time</option>
+                <option value="1d">Past day</option>
+                <option value="1w">Past week</option>
+                <option value="1m">Past month</option>
+                <option value="1y">Past year</option>
+              </select>
+            </div>
 
-          <h3 class="section-title">Saved Searches</h3>
-          <div class="btn-row">
-            <button class="btn view-btn" onClick={saveCurrentSearch}>
-              <img class="view-btn-icon" src="../../assets/icons/save-search-button.png" alt="" />
-              <span>Save</span>
-            </button>
-            <button class="btn view-btn" onClick={openSavedSearches}>
-              <img class="view-btn-icon" src="../../assets/icons/load-search-button.png" alt="" />
-              <span>Load</span>
-            </button>
-          </div>
+            <div class="field with-icon">
+              <span class="field-icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7.5h15M4.5 12h15M4.5 16.5h15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /><circle cx="9" cy="7.5" r="1.3" fill="currentColor" /><circle cx="14" cy="12" r="1.3" fill="currentColor" /><circle cx="11" cy="16.5" r="1.3" fill="currentColor" /></svg>
+              </span>
+              <select
+                value={filterType}
+                onChange={(e) => {
+                  setFilterType(e.currentTarget.value);
+                  updateUrlParams({
+                    searchText,
+                    baseUrl,
+                    text: filterText.trim(),
+                    space: filterSpace ? `${filterSpace}:${spaceInput.trim() || filterSpace}` : '',
+                    contributor: filterContributor ? `${filterContributor}:${contributorInput.trim() || filterContributor}` : '',
+                    date: filterDate,
+                    type: e.currentTarget.value,
+                  });
+                }}
+              >
+                <option value="">📚 All Types</option>
+                <option value="page">📄 Page</option>
+                <option value="blogpost">📰 Blog post</option>
+                <option value="attachment">📎 Attachment</option>
+                <option value="comment">💬 Comment</option>
+              </select>
+            </div>
+          </section>
 
-          <h3 class="section-title">Views</h3>
-          <div class="btn-row">
-            <button class={`btn view-btn ${view === 'tree' ? 'active' : ''}`} onClick={handleTreeViewClick}>
-              <img class="view-btn-icon" src="../../assets/icons/tree-view-button.png" alt="" />
-              <span>Tree</span>
-            </button>
-            <button class={`btn view-btn ${view === 'table' ? 'active' : ''}`} onClick={() => setView('table')}>
-              <img class="view-btn-icon" src="../../assets/icons/table-view-button.png" alt="" />
-              <span>Table</span>
-            </button>
-          </div>
+          <section class="sidebar-block">
+            <h3>AI</h3>
+            <div class="field">
+              <select value={selectedAiModel} onChange={(e) => changeAiModel(e.currentTarget.value)}>
+                {aiModelOptions.map((modelOpt) => (
+                  <option key={modelOpt.value} value={modelOpt.value}>{modelOpt.label}</option>
+                ))}
+              </select>
+            </div>
+          </section>
 
-          <h3 class="section-title">AI</h3>
-          <div class="field">
-            <select value={selectedAiModel} onChange={(e) => changeAiModel(e.currentTarget.value)}>
-              {aiModelOptions.map((modelOpt) => (
-                <option key={modelOpt.value} value={modelOpt.value}>{modelOpt.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div class="meta">
-            {loading && allResults.length === 0
-              ? 'Loading...'
-              : `Showing ${filteredResults.length} (${allResults.length}/${totalSize ?? '…'} loaded)`}
-          </div>
+          <section class="sidebar-block">
+            <h3>Stats</h3>
+            <div class="stats-list">
+              <div class="stats-row">
+                <span class="stats-label">Showing</span>
+                <span class="stats-value">
+                  {loading && allResults.length === 0
+                    ? 'Loading...'
+                    : `${filteredResults.length} (${allResults.length}/${totalSize ?? '…'} loaded)`}
+                </span>
+              </div>
+              <div class="stats-row">
+                <span class="stats-label">Last fetch time</span>
+                <span class="stats-value">
+                  {lastFetchAt ? formatDate(lastFetchAt) : 'Not fetched yet'}
+                </span>
+              </div>
+            </div>
+          </section>
         </aside>
 
         <section class="panel results">
@@ -3189,11 +3059,37 @@ Content (HTML): ${bodyHtml}
                   <thead>
                     <tr>
                       {tableColumns.map((column) => (
-                        <th key={`th-${column.key}`} class="table-head-cell">
-                          <span>{column.label}</span>
+                        <th
+                          key={`th-${column.key}`}
+                          class={`table-head-cell ${column.sortable ? 'sortable' : ''}`.trim()}
+                        >
+                          {column.sortable ? (
+                            <button
+                              type="button"
+                              class="table-sort-btn"
+                              onClick={() => toggleTableSort(column.key)}
+                              title={
+                                tableSort.key === column.key
+                                  ? (tableSort.direction === 'asc'
+                                    ? `Sorted ascending by ${column.label}. Click for descending.`
+                                    : `Sorted descending by ${column.label}. Click to clear sorting.`)
+                                  : `Sort by ${column.label}`
+                              }
+                            >
+                              <span>{column.label}</span>
+                              <span class="table-sort-indicator" aria-hidden="true">
+                                {tableSort.key === column.key
+                                  ? (tableSort.direction === 'asc' ? '↑' : '↓')
+                                  : '↕'}
+                              </span>
+                            </button>
+                          ) : (
+                            <span class="table-head-label">{column.label}</span>
+                          )}
                           <span
                             class="th-resizer-v2"
                             onMouseDown={(e) => startTableColumnResize(e, column.key)}
+                            onClick={(e) => e.stopPropagation()}
                             onDblClick={(e) => {
                               e.stopPropagation();
                               resetTableColumnWidth(column.key);
@@ -3205,7 +3101,7 @@ Content (HTML): ${bodyHtml}
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredResults.map((item) => {
+                    {tableResults.map((item) => {
                       const creator = item.history?.createdBy;
                       const creatorKey = creator?.username || creator?.userKey || creator?.accountId || '';
                       const creatorName = creator?.displayName || 'Unknown';
@@ -3374,394 +3270,99 @@ Content (HTML): ${bodyHtml}
         </div>
       )}
 
-      {aiModalOpen && (
-        <div class="ai-modal-overlay" onClick={closeAiModal}>
-          <div
-            class="ai-modal panel"
-            ref={aiModalRef}
-            style={{
-              width: `min(${aiModalWidth}px, calc(100vw - 24px))`,
-              height: `min(${aiModalHeight}px, calc(100vh - 32px))`,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              class="ai-modal-resizer ai-modal-resizer-left"
-              onMouseDown={(e) => startAiModalResize(e, 'left')}
-              onDblClick={resetAiModalWidth}
-              title="Drag to resize (double-click to reset)"
-            />
-            <div
-              class="ai-modal-resizer ai-modal-resizer-right"
-              onMouseDown={(e) => startAiModalResize(e, 'right')}
-              onDblClick={resetAiModalWidth}
-              title="Drag to resize (double-click to reset)"
-            />
-            <div
-              class="ai-modal-height-resizer ai-modal-height-resizer-top"
-              onMouseDown={(e) => startAiModalHeightResize(e, 'top')}
-              onDblClick={resetAiModalHeight}
-              title="Drag to resize height (double-click to reset)"
-            />
-            <div
-              class="ai-modal-height-resizer"
-              onMouseDown={(e) => startAiModalHeightResize(e, 'bottom')}
-              onDblClick={resetAiModalHeight}
-              title="Drag to resize height (double-click to reset)"
-            />
-            <div class="ai-modal-head">
-              <div class="ai-modal-title">
-                <div class="ai-title-main">AI Summary Studio</div>
-                {aiActiveItem && (
-                  <a
-                    href={buildConfluenceUrl(baseUrl, aiActiveItem._links?.webui)}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={aiActiveItem.title}
-                  >
-                    {aiActiveItem.title}
-                  </a>
-                )}
-              </div>
-              <button class="icon-btn" onClick={closeAiModal} title="Close">×</button>
-            </div>
+      <AiModal
+        aiModalOpen={aiModalOpen}
+        closeAiModal={closeAiModal}
+        aiModalRef={aiModalRef}
+        aiModalWidth={aiModalWidth}
+        aiModalHeight={aiModalHeight}
+        startAiModalResize={startAiModalResize}
+        resetAiModalWidth={resetAiModalWidth}
+        startAiModalHeightResize={startAiModalHeightResize}
+        resetAiModalHeight={resetAiModalHeight}
+        aiActiveItem={aiActiveItem}
+        buildConfluenceUrl={buildConfluenceUrl}
+        baseUrl={baseUrl}
+        aiModalLoading={aiModalLoading}
+        typeIcons={typeIcons}
+        aiSpaceIconSrc={aiSpaceIconSrc}
+        fallbackSpaceIcon={fallbackSpaceIcon}
+        aiContributorIconSrc={aiContributorIconSrc}
+        fallbackUserIcon={fallbackUserIcon}
+        aiContributorName={aiContributorName}
+        isAiSummaryCollapsed={isAiSummaryCollapsed}
+        isAiChatCollapsed={isAiChatCollapsed}
+        aiLayoutRef={aiLayoutRef}
+        aiSummaryPaneRatio={aiSummaryPaneRatio}
+        resummarizeActiveItem={resummarizeActiveItem}
+        aiSummaryRefreshing={aiSummaryRefreshing}
+        aiAnswerLoading={aiAnswerLoading}
+        adjustAiSummaryFontSize={adjustAiSummaryFontSize}
+        aiFontSizeStepPx={AI_FONT_SIZE_STEP_PX}
+        aiSummaryFontSize={aiSummaryFontSize}
+        minAiSummaryFontSizePx={MIN_AI_SUMMARY_FONT_SIZE_PX}
+        maxAiSummaryFontSizePx={MAX_AI_SUMMARY_FONT_SIZE_PX}
+        toggleChatPane={toggleChatPane}
+        toggleSummaryPane={toggleSummaryPane}
+        aiSummaryDirection={aiSummaryDirection}
+        aiSummaryHtml={aiSummaryHtml}
+        startAiPaneResize={startAiPaneResize}
+        resetAiSummaryPaneRatio={resetAiSummaryPaneRatio}
+        clearAiConversation={clearAiConversation}
+        adjustAiChatFontSize={adjustAiChatFontSize}
+        aiChatFontSize={aiChatFontSize}
+        minAiChatFontSizePx={MIN_AI_CHAT_FONT_SIZE_PX}
+        maxAiChatFontSizePx={MAX_AI_CHAT_FONT_SIZE_PX}
+        aiThreadRef={aiThreadRef}
+        aiConversation={aiConversation}
+        detectDirectionFromHtml={detectDirectionFromHtml}
+        sanitizeHtmlFragment={sanitizeHtmlFragment}
+        detectDirection={detectDirection}
+        startAiQuestionInputResize={startAiQuestionInputResize}
+        resetAiQuestionInputHeight={resetAiQuestionInputHeight}
+        aiQuestionInputRef={aiQuestionInputRef}
+        aiQuestion={aiQuestion}
+        setAiQuestion={setAiQuestion}
+        submitAiQuestion={submitAiQuestion}
+        aiQuestionInputHeight={aiQuestionInputHeight}
+      />
 
-            {aiModalLoading ? (
-              <div class="ai-loading-shell">
-                <div class="ai-loading-spinner">
-                  <span class="ring ring-a" />
-                  <span class="ring ring-b" />
-                  <span class="ring ring-c" />
-                </div>
-                <div class="ai-loading-title">Building your summary</div>
-                <div class="ai-loading-subtitle">Reading page content, collecting context, and preparing Q&A.</div>
-              </div>
-            ) : (
-              <div class="ai-modal-content">
-                <div class="ai-meta-strip">
-                  <span class="ai-chip">
-                    <span class="ai-chip-glyph" aria-hidden="true">{typeIcons[aiActiveItem?.type] || '📄'}</span>
-                    <span>Type: {aiActiveItem?.type || 'page'}</span>
-                  </span>
-                  <span class="ai-chip ai-chip-hoverable" tabIndex={0}>
-                    <img
-                      class="ai-chip-avatar"
-                      src={aiSpaceIconSrc}
-                      alt=""
-                      onError={(e) => { e.currentTarget.src = fallbackSpaceIcon; }}
-                    />
-                    <span>Space: {aiActiveItem?.space?.name || 'N/A'}</span>
-                    <span class="ai-chip-popover" role="tooltip" aria-hidden="true">
-                      <img
-                        class="ai-chip-popover-avatar"
-                        src={aiSpaceIconSrc}
-                        alt=""
-                        onError={(e) => { e.currentTarget.src = fallbackSpaceIcon; }}
-                      />
-                      <span class="ai-chip-popover-meta">
-                        <span class="ai-chip-popover-label">Space</span>
-                        <span class="ai-chip-popover-name">{aiActiveItem?.space?.name || 'N/A'}</span>
-                      </span>
-                    </span>
-                  </span>
-                  <span class="ai-chip ai-chip-hoverable" tabIndex={0}>
-                    <img
-                      class="ai-chip-avatar"
-                      src={aiContributorIconSrc}
-                      alt=""
-                      onError={(e) => { e.currentTarget.src = fallbackUserIcon; }}
-                    />
-                    <span>Contributor: {aiContributorName}</span>
-                    <span class="ai-chip-popover ai-chip-popover-right" role="tooltip" aria-hidden="true">
-                      <img
-                        class="ai-chip-popover-avatar"
-                        src={aiContributorIconSrc}
-                        alt=""
-                        onError={(e) => { e.currentTarget.src = fallbackUserIcon; }}
-                      />
-                      <span class="ai-chip-popover-meta">
-                        <span class="ai-chip-popover-label">Contributor</span>
-                        <span class="ai-chip-popover-name">{aiContributorName}</span>
-                      </span>
-                    </span>
-                  </span>
-                </div>
+      <SavedSearchModal
+        savedModalOpen={savedModalOpen}
+        onClose={() => setSavedModalOpen(false)}
+        savedSearchQuery={savedSearchQuery}
+        setSavedSearchQuery={setSavedSearchQuery}
+        removeAllSavedSearches={removeAllSavedSearches}
+        savedSearchesFiltered={savedSearchesFiltered}
+        savedSearchVisualsById={savedSearchVisualsById}
+        fallbackSpaceIcon={fallbackSpaceIcon}
+        fallbackUserIcon={fallbackUserIcon}
+        formatDate={formatDate}
+        runSavedSearch={runSavedSearch}
+        renameSavedSearch={renameSavedSearch}
+        removeSavedSearch={removeSavedSearch}
+      />
 
-                <div
-                  class={`ai-layout ${isAiSummaryCollapsed ? 'summary-collapsed' : ''} ${isAiChatCollapsed ? 'chat-collapsed' : ''}`.trim()}
-                  ref={aiLayoutRef}
-                  style={{ '--summary-width': `${Math.round(aiSummaryPaneRatio * 100)}%` }}
-                >
-                  <section class="ai-summary-panel">
-                    <div class="ai-section-head">
-                      <h3 class="ai-thread-title">Summary</h3>
-                      <div class="ai-section-head-actions">
-                        {!isAiSummaryCollapsed && (
-                          <button
-                            class="pane-toggle-btn pane-resummarize-btn"
-                            onClick={resummarizeActiveItem}
-                            disabled={aiSummaryRefreshing || aiAnswerLoading}
-                          >
-                            {aiSummaryRefreshing ? 'Refreshing...' : 'Re-summarize'}
-                          </button>
-                        )}
-                        {isAiChatCollapsed && (
-                          <button class="pane-toggle-btn" onClick={toggleChatPane}>Show chat</button>
-                        )}
-                        <button class="pane-toggle-btn" onClick={toggleSummaryPane}>Hide summary</button>
-                      </div>
-                    </div>
-                    <section
-                      class="ai-summary"
-                      dir={aiSummaryDirection}
-                      dangerouslySetInnerHTML={{ __html: aiSummaryHtml }}
-                    />
-                  </section>
+      <SaveNameDialog
+        open={saveNameDialog.open}
+        dialog={saveNameDialog}
+        inputRef={saveNameDialogInputRef}
+        onClose={closeSaveNameDialog}
+        onChangeValue={(value) => setSaveNameDialog((prev) => ({ ...prev, value }))}
+        onSubmit={handleSaveNameDialogSubmit}
+      />
 
-                  {!isAiSummaryCollapsed && !isAiChatCollapsed && (
-                    <div
-                      class="ai-pane-resizer"
-                      onMouseDown={startAiPaneResize}
-                      onDblClick={resetAiSummaryPaneRatio}
-                      title="Drag to resize summary and chat panes (double-click to reset)"
-                    />
-                  )}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        dialog={confirmDialog}
+        onClose={closeConfirmDialog}
+      />
 
-                  <section class="ai-chat-panel">
-                    <div class="ai-section-head">
-                      <h3 class="ai-thread-title">Follow-up Questions</h3>
-                      <div class="ai-section-head-actions">
-                        <button
-                          class="pane-toggle-btn pane-clear-btn"
-                          onClick={clearAiConversation}
-                          disabled={aiAnswerLoading || aiModalLoading}
-                        >
-                          Clear
-                        </button>
-                        {isAiSummaryCollapsed && (
-                          <button class="pane-toggle-btn" onClick={toggleSummaryPane}>Show summary</button>
-                        )}
-                        <button class="pane-toggle-btn" onClick={toggleChatPane}>Hide chat</button>
-                      </div>
-                    </div>
-                    <div class="ai-thread" ref={aiThreadRef}>
-                      {aiConversation.slice(3).map((msg, idx) => (
-                        msg.role === 'assistant' ? (
-                          <div
-                            key={`${msg.role}-${idx}`}
-                            class="qa-entry assistant"
-                            dir={detectDirectionFromHtml(msg.content)}
-                            dangerouslySetInnerHTML={{ __html: sanitizeHtmlFragment(msg.content) }}
-                          />
-                        ) : (
-                          <div key={`${msg.role}-${idx}`} class="qa-entry user" dir={detectDirection(msg.content)}>
-                            {msg.content}
-                          </div>
-                        )
-                      ))}
-                      {aiAnswerLoading && (
-                        <div class="qa-entry assistant typing-bubble">
-                          <span class="typing-label">Thinking</span>
-                          <span class="typing-dots">
-                            <span class="dot" />
-                            <span class="dot" />
-                            <span class="dot" />
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div class="ai-input-area">
-                      <div
-                        class="ai-question-resize-handle"
-                        onMouseDown={startAiQuestionInputResize}
-                        onDblClick={resetAiQuestionInputHeight}
-                        title="Drag to resize question input (double-click to reset)"
-                      />
-                      <div class="ai-question-row">
-                        <textarea
-                          ref={aiQuestionInputRef}
-                          dir="auto"
-                          value={aiQuestion}
-                          onInput={(e) => setAiQuestion(e.currentTarget.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault();
-                              submitAiQuestion();
-                            }
-                          }}
-                          placeholder="Ask a follow-up question..."
-                          style={{ height: `${aiQuestionInputHeight}px` }}
-                        />
-                        <button
-                          class="btn ai-action-btn ask compact"
-                          style={{ height: `${aiQuestionInputHeight}px` }}
-                          onClick={submitAiQuestion}
-                          disabled={aiAnswerLoading || aiModalLoading}
-                        >
-                          {aiAnswerLoading ? 'Thinking...' : 'Ask'}
-                        </button>
-                      </div>
-                    </div>
-                  </section>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {savedModalOpen && (
-        <div class="saved-modal-overlay" onClick={() => setSavedModalOpen(false)}>
-          <div class="saved-modal" onClick={(e) => e.stopPropagation()}>
-            <div class="saved-modal-head">
-              <h2>Saved Searches</h2>
-              <button class="icon-btn" onClick={() => setSavedModalOpen(false)} title="Close">×</button>
-            </div>
-
-            <div class="saved-modal-toolbar">
-              <input
-                value={savedSearchQuery}
-                onInput={(e) => setSavedSearchQuery(e.currentTarget.value)}
-                placeholder="Filter saved searches..."
-              />
-              <button class="btn danger" onClick={removeAllSavedSearches}>Clear All</button>
-            </div>
-
-            <div class="saved-modal-list">
-              {savedSearchesFiltered.length === 0 ? (
-                <div class="empty">No saved searches.</div>
-              ) : (
-                savedSearchesFiltered.map((entry) => (
-                  <article class="saved-entry" key={entry.id}>
-                    {(() => {
-                      const visuals = savedSearchVisualsById[entry.id] || {};
-                      const spaceIconSrc = visuals.spaceIconUrl || fallbackSpaceIcon;
-                      const contributorIconSrc = visuals.contributorIconUrl || fallbackUserIcon;
-                      return (
-                        <>
-                    <div class="saved-entry-main">
-                      <aside class="saved-entry-left">
-                        <div class="saved-entry-icon-row">
-                          <img
-                            class="saved-entry-icon-large"
-                            src={spaceIconSrc}
-                            alt=""
-                            onError={(e) => { e.currentTarget.src = fallbackSpaceIcon; }}
-                          />
-                          <div>
-                            <div class="saved-entry-left-label">Space</div>
-                            <div class="saved-entry-left-value">{entry.filters?.space?.label || entry.filters?.space?.key || 'Any'}</div>
-                          </div>
-                        </div>
-                        <div class="saved-entry-icon-row">
-                          <img
-                            class="saved-entry-icon-large"
-                            src={contributorIconSrc}
-                            alt=""
-                            onError={(e) => { e.currentTarget.src = fallbackUserIcon; }}
-                          />
-                          <div>
-                            <div class="saved-entry-left-label">Contributor</div>
-                            <div class="saved-entry-left-value">{entry.filters?.contributor?.label || entry.filters?.contributor?.key || 'Any'}</div>
-                          </div>
-                        </div>
-                      </aside>
-                      <section class="saved-entry-right">
-                        <div class="saved-entry-title">{entry.name}</div>
-                        <div class="saved-entry-grid">
-                          <div class="saved-entry-meta"><strong>Search:</strong> {entry.searchText || 'N/A'}</div>
-                          <div class="saved-entry-meta"><strong>Text:</strong> {entry.filters?.text?.label || entry.filters?.text?.key || 'Any'}</div>
-                          <div class="saved-entry-meta"><strong>Date Filter:</strong> {entry.filters?.date || 'any'}</div>
-                          <div class="saved-entry-meta"><strong>Type:</strong> {entry.filters?.type || 'Any'}</div>
-                          <div class="saved-entry-meta"><strong>Saved:</strong> {formatDate(entry.createdAt)}</div>
-                          <div class="saved-entry-meta"><strong>Modified:</strong> {formatDate(entry.updatedAt || entry.createdAt)}</div>
-                        </div>
-                      </section>
-                    </div>
-                    <div class="saved-entry-actions">
-                      <button class="btn secondary" onClick={() => runSavedSearch(entry)}>Run</button>
-                      <button class="btn secondary" onClick={() => renameSavedSearch(entry)}>Rename</button>
-                      <button class="btn danger" onClick={() => removeSavedSearch(entry)}>Delete</button>
-                    </div>
-                        </>
-                      );
-                    })()}
-                  </article>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {saveNameDialog.open && (
-        <div class="name-dialog-overlay" onClick={() => closeSaveNameDialog(null)}>
-          <div class="name-dialog" onClick={(e) => e.stopPropagation()}>
-            <div class="name-dialog-head">
-              <h3>{saveNameDialog.title}</h3>
-            </div>
-            <div class="name-dialog-body">
-              <label for="save-name-input">Name</label>
-              <input
-                id="save-name-input"
-                ref={saveNameDialogInputRef}
-                value={saveNameDialog.value}
-                onInput={(e) => setSaveNameDialog((prev) => ({ ...prev, value: e.currentTarget.value }))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleSaveNameDialogSubmit();
-                  }
-                }}
-                placeholder={saveNameDialog.placeholder}
-              />
-            </div>
-            <div class="name-dialog-actions">
-              <button class="btn secondary" onClick={() => closeSaveNameDialog(null)}>Cancel</button>
-              <button class="btn" onClick={handleSaveNameDialogSubmit}>{saveNameDialog.confirmLabel}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {confirmDialog.open && (
-        <div class="confirm-dialog-overlay" onClick={() => closeConfirmDialog(false)}>
-          <div class="confirm-dialog" onClick={(e) => e.stopPropagation()}>
-            <div class="confirm-dialog-head">
-              <h3>{confirmDialog.title}</h3>
-            </div>
-            <div class="confirm-dialog-body">
-              <p>{confirmDialog.message}</p>
-            </div>
-            <div class="confirm-dialog-actions">
-              <button class="btn secondary" onClick={() => closeConfirmDialog(false)}>Cancel</button>
-              <button
-                class={`btn ${confirmDialog.danger ? 'danger' : ''}`}
-                onClick={() => closeConfirmDialog(true)}
-              >
-                {confirmDialog.confirmLabel}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {noticeDialog.open && (
-        <div class="notice-dialog-overlay" onClick={closeNoticeDialog}>
-          <div class={`notice-dialog ${noticeDialog.tone}`} onClick={(e) => e.stopPropagation()}>
-            <div class="notice-dialog-head">
-              <h3>{noticeDialog.title}</h3>
-            </div>
-            <div class="notice-dialog-body">
-              <p>{noticeDialog.message}</p>
-            </div>
-            <div class="notice-dialog-actions">
-              <button class="btn" onClick={closeNoticeDialog}>OK</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <NoticeDialog
+        open={noticeDialog.open}
+        dialog={noticeDialog}
+        onClose={closeNoticeDialog}
+      />
     </div>
   );
 }

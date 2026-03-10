@@ -5,12 +5,9 @@ export default defineConfig({
   base: './',
   plugins: [preact()],
   build: {
-    outDir: '../options/v2',
+    outDir: '../.build/views',
     emptyOutDir: true,
     sourcemap: false,
     assetsInlineLimit: 0,
-    rollupOptions: {
-      input: 'options.html',
-    },
   },
 });

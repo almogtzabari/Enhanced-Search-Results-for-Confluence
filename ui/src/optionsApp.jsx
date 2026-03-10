@@ -1,31 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
-
-const DB_NAME = 'ConfluenceSummariesDB';
-const DB_VERSION = 5;
-const SUMMARY_STORE = 'summaries';
-const CONVERSATION_STORE = 'conversations';
+import {
+  AI_MODEL_OPTIONS,
+  CONVERSATION_STORE,
+  DB_NAME,
+  DB_VERSION,
+  DEFAULT_AI_MODEL,
+  retiredModelFallbacks,
+  SUMMARY_STORE,
+} from './shared/constants.js';
+import { clearObjectStores } from './services/indexedDb.js';
+import { requestOriginsPermission } from './services/permissions.js';
+import { getChrome, getLocal, getSync, setLocal, setSync } from './services/storage.js';
 
 const DEFAULT_RESULTS_PER_REQUEST = 75;
-
-const retiredModelFallbacks = {
-  'gpt-4o': 'gpt-5.2-chat-latest',
-  'gpt-4.1': 'gpt-5.2-chat-latest',
-  'gpt-4.1-mini': 'gpt-5.2-chat-latest',
-  o3: 'gpt-5.2-chat-latest',
-  'o4-mini': 'gpt-5.2-chat-latest',
-};
-
-const modelOptions = [
-  { value: 'gpt-5.2-chat-latest', label: 'gpt-5.2-chat-latest' },
-  { value: 'gpt-5.2-pro', label: 'gpt-5.2-pro' },
-  { value: 'gpt-5-pro', label: 'gpt-5-pro' },
-  { value: 'gpt-5.2', label: 'gpt-5.2' },
-  { value: 'gpt-5.1', label: 'gpt-5.1' },
-  { value: 'gpt-5', label: 'gpt-5' },
-  { value: 'gpt-5-chat-latest', label: 'gpt-5-chat-latest' },
-  { value: 'gpt-5-mini', label: 'gpt-5-mini' },
-  { value: 'gpt-5-nano', label: 'gpt-5-nano' },
-];
+const STORAGE_WRITE_DEBOUNCE_MS = 320;
 
 const reasoningEffortOptions = [
   { value: '', label: 'Model default' },
@@ -49,85 +37,14 @@ const createDomainEntry = (entry = {}) => ({
   domain: entry.domain || '',
 });
 
-const getChrome = () => globalThis.chrome;
-
-const getSync = (keys) => new Promise((resolve) => {
-  const api = getChrome();
-  if (!api?.storage?.sync?.get) {
-    resolve({});
-    return;
+function ensureSummaryStores(db) {
+  if (!db.objectStoreNames.contains(SUMMARY_STORE)) {
+    db.createObjectStore(SUMMARY_STORE, { keyPath: ['contentId', 'baseUrl'] });
   }
-  api.storage.sync.get(keys, resolve);
-});
-
-const setSync = (payload) => {
-  const api = getChrome();
-  if (!api?.storage?.sync?.set) return;
-  api.storage.sync.set(payload);
-};
-
-const getLocal = (keys) => new Promise((resolve) => {
-  const api = getChrome();
-  if (!api?.storage?.local?.get) {
-    resolve({});
-    return;
+  if (!db.objectStoreNames.contains(CONVERSATION_STORE)) {
+    db.createObjectStore(CONVERSATION_STORE, { keyPath: ['contentId', 'baseUrl'] });
   }
-  api.storage.local.get(keys, resolve);
-});
-
-const setLocal = (payload) => {
-  const api = getChrome();
-  if (!api?.storage?.local?.set) return;
-  api.storage.local.set(payload);
-};
-
-const requestOriginsPermission = async (origins) => new Promise((resolve) => {
-  const api = getChrome();
-  if (!api?.permissions?.request || !api?.permissions?.contains) {
-    resolve({ granted: false, reason: 'permissions_api_unavailable' });
-    return;
-  }
-  api.permissions.request({ origins }, (granted) => {
-    if (!granted) {
-      resolve({ granted: false, reason: 'user_denied' });
-      return;
-    }
-
-    api.permissions.contains({ origins }, (hasPermission) => {
-      resolve({
-        granted: !!hasPermission,
-        reason: hasPermission ? '' : 'not_granted_after_request',
-      });
-    });
-  });
-});
-
-const openDb = () => new Promise((resolve, reject) => {
-  const req = indexedDB.open(DB_NAME, DB_VERSION);
-  req.onerror = () => reject(req.error);
-  req.onsuccess = () => resolve(req.result);
-  req.onupgradeneeded = (event) => {
-    const db = event.target.result;
-    if (!db.objectStoreNames.contains(SUMMARY_STORE)) {
-      db.createObjectStore(SUMMARY_STORE, { keyPath: ['contentId', 'baseUrl'] });
-    }
-    if (!db.objectStoreNames.contains(CONVERSATION_STORE)) {
-      db.createObjectStore(CONVERSATION_STORE, { keyPath: ['contentId', 'baseUrl'] });
-    }
-  };
-});
-
-const clearStores = async (stores) => {
-  const db = await openDb();
-  await new Promise((resolve, reject) => {
-    const tx = db.transaction(stores, 'readwrite');
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error || new Error('Failed to clear stores'));
-    stores.forEach((storeName) => {
-      tx.objectStore(storeName).clear();
-    });
-  });
-};
+}
 
 function ToggleRow({ label, desc, checked, onChange, id }) {
   return (
@@ -161,12 +78,13 @@ function DomainRow({ domain, onChangeDomain, onRemove }) {
 export function OptionsApp() {
   const [loading, setLoading] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
+  const [syncThemeToConfluencePage, setSyncThemeToConfluencePage] = useState(false);
   const [showTreeTooltips, setShowTreeTooltips] = useState(true);
   const [showTableTooltips, setShowTableTooltips] = useState(true);
   const [highlightResultRows, setHighlightResultRows] = useState(true);
   const [enableSummaries, setEnableSummaries] = useState(true);
   const [enableFloatingSummarize, setEnableFloatingSummarize] = useState(true);
-  const [selectedAiModel, setSelectedAiModel] = useState('gpt-5.2-chat-latest');
+  const [selectedAiModel, setSelectedAiModel] = useState(DEFAULT_AI_MODEL);
   const [reasoningEffort, setReasoningEffort] = useState('');
   const [openaiApiKey, setOpenaiApiKey] = useState('');
   const [customApiEndpoint, setCustomApiEndpoint] = useState('');
@@ -188,6 +106,10 @@ export function OptionsApp() {
   });
 
   const promptDebounceRef = useRef(null);
+  const apiKeyDebounceRef = useRef(null);
+  const endpointDebounceRef = useRef(null);
+  const skipInitialApiKeySaveRef = useRef(true);
+  const skipInitialEndpointSaveRef = useRef(true);
   const poofAudioRef = useRef(null);
 
   const statusClass = useMemo(() => {
@@ -197,6 +119,28 @@ export function OptionsApp() {
 
   const showStatus = (msg, type = 'success') => {
     setStatus({ msg, type });
+  };
+
+  const showStorageWriteError = (label, error) => {
+    showStatus(`Failed to save ${label}: ${error || 'Unknown error'}`, 'error');
+  };
+
+  const persistSync = async (payload, label = 'settings') => {
+    const result = await setSync(payload);
+    if (!result.ok) {
+      showStorageWriteError(label, result.error);
+      return false;
+    }
+    return true;
+  };
+
+  const persistLocal = async (payload, label = 'settings') => {
+    const result = await setLocal(payload);
+    if (!result.ok) {
+      showStorageWriteError(label, result.error);
+      return false;
+    }
+    return true;
   };
 
   const updateDomainAt = (index, patch) => {
@@ -238,21 +182,19 @@ export function OptionsApp() {
       return;
     }
 
-    const isFirefox = typeof InstallTrigger !== 'undefined';
-    if (!isFirefox) {
-      const origins = [...new Set(normalized.map((item) => `*://${item.domain}/*`))];
-      const permissionResult = await requestOriginsPermission(origins);
-      if (!permissionResult.granted) {
-        if (permissionResult.reason === 'permissions_api_unavailable') {
-          showStatus('Permissions API is unavailable. Reload the extension and verify manifest permissions.', 'error');
-          return;
-        }
-        showStatus('Permission denied for one or more domains.', 'error');
+    const origins = [...new Set(normalized.map((item) => `*://${item.domain}/*`))];
+    const permissionResult = await requestOriginsPermission(origins);
+    if (!permissionResult.granted) {
+      if (permissionResult.reason === 'permissions_api_unavailable') {
+        showStatus('Permissions API is unavailable. Reload the extension and verify manifest permissions.', 'error');
         return;
       }
+      showStatus('Permission denied for one or more domains.', 'error');
+      return;
     }
 
-    setSync({ domainSettings: normalized });
+    const saved = await persistSync({ domainSettings: normalized }, 'domain settings');
+    if (!saved) return;
     setDomainSettings(normalized.map((entry) => createDomainEntry(entry)));
     setDomainDirty(false);
     showStatus('Domain settings saved.', 'success');
@@ -291,6 +233,7 @@ export function OptionsApp() {
       const syncData = await getSync([
         'domainSettings',
         'darkMode',
+        'syncThemeToConfluencePage',
         'showTooltips',
         'showTreeTooltips',
         'showTableTooltips',
@@ -304,17 +247,21 @@ export function OptionsApp() {
         'reasoningEffort',
         'useHighReasoningEffort',
       ]);
-      const localData = await getLocal(['customUserPrompt']);
+      const localData = await getLocal(['customUserPrompt', 'openaiApiKey']);
       const merged = { ...syncData, ...localData };
+      const syncApiKey = typeof syncData.openaiApiKey === 'string' ? syncData.openaiApiKey.trim() : '';
+      const localApiKey = typeof localData.openaiApiKey === 'string' ? localData.openaiApiKey.trim() : '';
+      const effectiveApiKey = localApiKey || syncApiKey;
 
       setDarkMode(!!merged.darkMode);
+      setSyncThemeToConfluencePage(merged.syncThemeToConfluencePage === true);
       const legacyTooltip = merged.showTooltips;
       setShowTreeTooltips((merged.showTreeTooltips ?? legacyTooltip) !== false);
       setShowTableTooltips((merged.showTableTooltips ?? legacyTooltip) !== false);
       setHighlightResultRows(merged.highlightResultRows !== false);
       setEnableSummaries(merged.enableSummaries !== false);
       setEnableFloatingSummarize(merged.enableFloatingSummarize !== false);
-      setOpenaiApiKey(merged.openaiApiKey || '');
+      setOpenaiApiKey(effectiveApiKey);
       setCustomApiEndpoint(merged.customApiEndpoint || '');
       setCustomUserPrompt(merged.customUserPrompt || '');
       if (Number.isInteger(merged.resultsPerRequest)) {
@@ -322,10 +269,10 @@ export function OptionsApp() {
       }
       setReasoningEffort(normalizeReasoningEffort(merged.reasoningEffort, merged.useHighReasoningEffort === true));
 
-      const requestedModel = retiredModelFallbacks[merged.selectedAiModel] || merged.selectedAiModel || 'gpt-5.2-chat-latest';
+      const requestedModel = retiredModelFallbacks[merged.selectedAiModel] || merged.selectedAiModel || DEFAULT_AI_MODEL;
       setSelectedAiModel(requestedModel);
       if (merged.selectedAiModel && requestedModel !== merged.selectedAiModel) {
-        setSync({ selectedAiModel: requestedModel });
+        void persistSync({ selectedAiModel: requestedModel }, 'AI model');
       }
 
       const domains = Array.isArray(merged.domainSettings) && merged.domainSettings.length > 0
@@ -333,6 +280,14 @@ export function OptionsApp() {
         : [createDomainEntry()];
       setDomainSettings(domains.map((entry) => createDomainEntry(entry)));
       setDomainDirty(false);
+
+      if (!localApiKey && syncApiKey) {
+        const writeLocalResult = await setLocal({ openaiApiKey: syncApiKey });
+        if (writeLocalResult.ok) {
+          await setSync({ openaiApiKey: '' });
+        }
+      }
+
       setLoading(false);
     })();
   }, []);
@@ -343,81 +298,125 @@ export function OptionsApp() {
 
   useEffect(() => () => {
     if (promptDebounceRef.current) clearTimeout(promptDebounceRef.current);
+    if (apiKeyDebounceRef.current) clearTimeout(apiKeyDebounceRef.current);
+    if (endpointDebounceRef.current) clearTimeout(endpointDebounceRef.current);
   }, []);
 
   const onDarkModeChange = (next) => {
     setDarkMode(next);
-    setSync({ darkMode: next });
+    void persistSync({ darkMode: next }, 'dark mode');
+  };
+
+  const onSyncThemeToConfluencePageChange = (next) => {
+    setSyncThemeToConfluencePage(next);
+    void persistSync({ syncThemeToConfluencePage: next }, 'Confluence modal theme sync');
   };
 
   const onTreeTooltipChange = (next) => {
     setShowTreeTooltips(next);
-    setSync({ showTreeTooltips: next });
+    void persistSync({ showTreeTooltips: next }, 'tree tooltip preference');
   };
 
   const onTableTooltipChange = (next) => {
     setShowTableTooltips(next);
-    setSync({ showTableTooltips: next });
+    void persistSync({ showTableTooltips: next }, 'table tooltip preference');
   };
 
   const onHighlightChange = (next) => {
     setHighlightResultRows(next);
-    setSync({ highlightResultRows: next });
+    void persistSync({ highlightResultRows: next }, 'row highlight preference');
   };
 
   const onEnableSummariesChange = (next) => {
     setEnableSummaries(next);
-    setSync({ enableSummaries: next });
+    void persistSync({ enableSummaries: next }, 'AI summary toggle');
   };
 
   const onEnableFloatingSummarizeChange = (next) => {
     setEnableFloatingSummarize(next);
-    setSync({ enableFloatingSummarize: next });
+    void persistSync({ enableFloatingSummarize: next }, 'floating summary toggle');
   };
 
   const onModelChange = (next) => {
     setSelectedAiModel(next);
-    setSync({ selectedAiModel: next });
+    void persistSync({ selectedAiModel: next }, 'AI model');
   };
 
   const onReasoningEffortChange = (next) => {
     const normalized = normalizeReasoningEffort(next, false);
     setReasoningEffort(normalized);
-    setSync({
+    void persistSync({
       reasoningEffort: normalized,
       useHighReasoningEffort: normalized === 'high',
-    });
+    }, 'reasoning effort');
   };
 
   const onApiKeyChange = (next) => {
     setOpenaiApiKey(next);
-    setSync({ openaiApiKey: next.trim() });
   };
 
   const onCustomEndpointChange = (next) => {
     setCustomApiEndpoint(next);
-    setSync({ customApiEndpoint: next.trim() });
   };
 
   const onCustomPromptChange = (next) => {
     setCustomUserPrompt(next);
     if (promptDebounceRef.current) clearTimeout(promptDebounceRef.current);
     promptDebounceRef.current = setTimeout(() => {
-      setLocal({ customUserPrompt: next.trim() });
-    }, 280);
+      void persistLocal({ customUserPrompt: next.trim() }, 'custom user prompt');
+    }, STORAGE_WRITE_DEBOUNCE_MS);
   };
 
   const onResultsPerRequestChange = (next) => {
     const parsed = Number.parseInt(next, 10);
     if (!Number.isInteger(parsed)) return;
     setResultsPerRequest(parsed);
-    setSync({ resultsPerRequest: parsed });
+    void persistSync({ resultsPerRequest: parsed }, 'results per batch');
   };
+
+  useEffect(() => {
+    if (loading) return undefined;
+    if (skipInitialApiKeySaveRef.current) {
+      skipInitialApiKeySaveRef.current = false;
+      return undefined;
+    }
+
+    if (apiKeyDebounceRef.current) clearTimeout(apiKeyDebounceRef.current);
+    apiKeyDebounceRef.current = setTimeout(() => {
+      void persistLocal({ openaiApiKey: openaiApiKey.trim() }, 'OpenAI API key');
+    }, STORAGE_WRITE_DEBOUNCE_MS);
+
+    return () => {
+      if (apiKeyDebounceRef.current) clearTimeout(apiKeyDebounceRef.current);
+    };
+  }, [openaiApiKey, loading]);
+
+  useEffect(() => {
+    if (loading) return undefined;
+    if (skipInitialEndpointSaveRef.current) {
+      skipInitialEndpointSaveRef.current = false;
+      return undefined;
+    }
+
+    if (endpointDebounceRef.current) clearTimeout(endpointDebounceRef.current);
+    endpointDebounceRef.current = setTimeout(() => {
+      void persistSync({ customApiEndpoint: customApiEndpoint.trim() }, 'custom API endpoint');
+    }, STORAGE_WRITE_DEBOUNCE_MS);
+
+    return () => {
+      if (endpointDebounceRef.current) clearTimeout(endpointDebounceRef.current);
+    };
+  }, [customApiEndpoint, loading]);
 
   const clearAllSummariesAndConversations = async () => {
     try {
       poof();
-      await clearStores([SUMMARY_STORE, CONVERSATION_STORE]);
+      await clearObjectStores({
+        dbName: DB_NAME,
+        dbVersion: DB_VERSION,
+        onUpgradeNeeded: ensureSummaryStores,
+        stores: [SUMMARY_STORE, CONVERSATION_STORE],
+      });
       const api = getChrome();
       if (api?.runtime?.sendMessage) {
         api.runtime.sendMessage({ action: 'summariesCleared' });
@@ -431,7 +430,12 @@ export function OptionsApp() {
   const clearOnlyConversations = async () => {
     try {
       poof();
-      await clearStores([CONVERSATION_STORE]);
+      await clearObjectStores({
+        dbName: DB_NAME,
+        dbVersion: DB_VERSION,
+        onUpgradeNeeded: ensureSummaryStores,
+        stores: [CONVERSATION_STORE],
+      });
       showStatus('Follow-up conversations cleared.', 'success');
     } catch (err) {
       showStatus(`Failed to clear conversations: ${err?.message || 'Unknown error'}`, 'error');
@@ -491,6 +495,13 @@ export function OptionsApp() {
               onChange={onDarkModeChange}
             />
             <ToggleRow
+              id="sync-theme-confluence"
+              label="Sync theme selection in Confluence page"
+              desc="When enabled, dark mode is also applied to the AI modal opened inside Confluence pages."
+              checked={syncThemeToConfluencePage}
+              onChange={onSyncThemeToConfluencePageChange}
+            />
+            <ToggleRow
               id="tree-tooltips"
               label="Show Tooltips in Tree View"
               desc="Display a modern hover card with type, contributor, space, and modified date."
@@ -538,7 +549,7 @@ export function OptionsApp() {
                 <p class="setting-desc">Model used for summaries and follow-up Q&A.</p>
               </div>
               <select id="ai-model" value={selectedAiModel} onChange={(e) => onModelChange(e.currentTarget.value)}>
-                {modelOptions.map((option) => (
+                {AI_MODEL_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
@@ -563,7 +574,7 @@ export function OptionsApp() {
             <div class="setting-row stacked">
               <div>
                 <label class="setting-label" htmlFor="api-key">OpenAI API Key</label>
-                <p class="setting-desc">Stored locally in extension sync storage.</p>
+                <p class="setting-desc">Stored locally in extension local storage (not synced).</p>
               </div>
               <input
                 id="api-key"

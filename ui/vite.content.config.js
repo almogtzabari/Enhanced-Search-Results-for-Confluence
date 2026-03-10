@@ -6,7 +6,7 @@ export default defineConfig({
   base: './',
   plugins: [preact()],
   build: {
-    outDir: '../content/v2',
+    outDir: '../.build/content',
     emptyOutDir: true,
     sourcemap: false,
     assetsInlineLimit: 0,

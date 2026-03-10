@@ -2,7 +2,7 @@
     if (window.__enhancedConfluenceContentV2BootstrapLoaded) return;
     window.__enhancedConfluenceContentV2BootstrapLoaded = true;
 
-    import(chrome.runtime.getURL('content/v2/content-main.js'))
+    import(chrome.runtime.getURL('content/content-main.js'))
         .then((module) => {
             if (typeof module.bootstrapContentApp === 'function') {
                 module.bootstrapContentApp();

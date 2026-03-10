@@ -1,20 +1,122 @@
 import {
     DB_NAME,
     DB_VERSION,
+    SAVED_SEARCH_STORE_NAME as SAVED_SEARCH_STORE,
     SUMMARY_STORE_NAME as SUMMARY_STORE,
-    CONVERSATION_STORE_NAME as CONVERSATION_STORE
-} from '../views/config.js';
-
-const DEBUG = false;
-const log = {
-    debug: (...args) => DEBUG && console.debug('[DEBUG]', ...args),
-    error: (...args) => console.error('[ERROR]', ...args)
-};
-
+    CONVERSATION_STORE_NAME as CONVERSATION_STORE,
+    log
+} from '../shared/extensionConfig.js';
 const grantedDomains = new Set();
+let domainSettingsCache = [];
+let domainSettingsCacheReady = false;
+let domainSettingsLoadPromise = null;
+let dbPromise = null;
 
-// Detect Firefox
-const isFirefox = typeof browser !== 'undefined' && typeof InstallTrigger !== 'undefined';
+function supportsDynamicOriginPermissionRequests() {
+    if (!chrome.permissions || !chrome.permissions.contains || !chrome.permissions.request) {
+        return false;
+    }
+    const manifest = chrome.runtime?.getManifest?.();
+    if (!manifest || typeof manifest !== 'object') {
+        return false;
+    }
+    const mv = Number(manifest.manifest_version || 0);
+    return mv >= 3 && Array.isArray(manifest.optional_host_permissions);
+}
+
+function normalizeHost(value) {
+    return String(value || '').trim().toLowerCase().replace(/\.+$/, '');
+}
+
+function hostnameMatchesDomain(hostname, domain) {
+    const host = normalizeHost(hostname);
+    const target = normalizeHost(domain);
+    if (!host || !target) return false;
+    return host === target || host.endsWith(`.${target}`);
+}
+
+function normalizeDomainSettingsEntries(entries) {
+    if (!Array.isArray(entries)) return [];
+    return [...new Set(entries
+        .map((entry) => normalizeHost(entry?.domain))
+        .filter(Boolean))];
+}
+
+function setDomainSettingsCache(entries) {
+    domainSettingsCache = normalizeDomainSettingsEntries(entries);
+    domainSettingsCacheReady = true;
+    return domainSettingsCache;
+}
+
+function loadDomainSettingsCache() {
+    if (domainSettingsLoadPromise) return domainSettingsLoadPromise;
+
+    domainSettingsLoadPromise = new Promise((resolve) => {
+        chrome.storage.sync.get('domainSettings', (data) => {
+            const error = chrome.runtime?.lastError;
+            if (error) {
+                log.error('Failed to load domain settings cache:', error.message || error);
+                domainSettingsCacheReady = true;
+                const fallbackDomains = domainSettingsCache;
+                domainSettingsLoadPromise = null;
+                resolve(fallbackDomains);
+                return;
+            }
+
+            const nextDomains = setDomainSettingsCache(data?.domainSettings);
+            domainSettingsLoadPromise = null;
+            resolve(nextDomains);
+        });
+    });
+
+    return domainSettingsLoadPromise;
+}
+
+function withDomainSettingsCache(handler) {
+    if (domainSettingsCacheReady) {
+        handler(domainSettingsCache);
+        return;
+    }
+
+    loadDomainSettingsCache().then((domains) => {
+        handler(domains);
+    });
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync' || !changes.domainSettings) return;
+    setDomainSettingsCache(changes.domainSettings.newValue);
+});
+
+// Preload cache on service worker startup to avoid repeated sync reads on first tab updates.
+loadDomainSettingsCache();
+
+function injectContentScript(tabId) {
+    if (chrome.scripting && typeof chrome.scripting.executeScript === 'function') {
+        chrome.scripting.executeScript({
+            target: { tabId },
+            files: ['extension/content/content.js']
+        }, () => {
+            if (chrome.runtime.lastError) {
+                log.error('Injection failed:', chrome.runtime.lastError);
+            }
+        });
+        return;
+    }
+
+    if (chrome.tabs && typeof chrome.tabs.executeScript === 'function') {
+        chrome.tabs.executeScript(tabId, {
+            file: 'extension/content/content.js'
+        }, () => {
+            if (chrome.runtime.lastError) {
+                log.error('Injection failed:', chrome.runtime.lastError);
+            }
+        });
+        return;
+    }
+
+    log.error('No supported script injection API found for this browser/runtime.');
+}
 
 // Listen for messages from content scripts or other parts of the extension
 chrome.runtime.onMessage.addListener(function (request) {
@@ -28,7 +130,7 @@ chrome.runtime.onMessage.addListener(function (request) {
         if (request.focusSearch) {
             params.set('focusSearch', '1');
         }
-        const url = `${chrome.runtime.getURL('views/v2/index.html')}?${params.toString()}`;
+        const url = `${chrome.runtime.getURL('views/index.html')}?${params.toString()}`;
         chrome.tabs.create({ url });
     }
 });
@@ -66,103 +168,142 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status !== 'complete') return;
 
-    chrome.storage.sync.get('domainSettings', (data) => {
-        if (data.domainSettings && data.domainSettings.length > 0) {
-            const url = new URL(tab.url);
-            const matchingSetting = data.domainSettings.find(entry => url.hostname.includes(entry.domain));
-            if (!matchingSetting) return;
+    const tabUrl = typeof tab?.url === 'string' ? tab.url : '';
+    if (!tabUrl) return;
 
-            const origin = `*://${matchingSetting.domain}/*`;
+    let url;
+    try {
+        url = new URL(tabUrl);
+    } catch {
+        return;
+    }
 
-            if (isFirefox) {
-                // Firefox always uses tabs.executeScript (Manifest V2)
-                chrome.tabs.executeScript(tabId, {
-                    file: 'content/content.js'
-                }, () => {
-                    if (chrome.runtime.lastError) {
-                        log.error('Injection failed:', chrome.runtime.lastError);
+    if (!/^https?:$/.test(url.protocol)) return;
+
+    withDomainSettingsCache((domains) => {
+        if (!Array.isArray(domains) || domains.length === 0) return;
+
+        const matchedDomain = domains.find((domain) => hostnameMatchesDomain(url.hostname, domain));
+        if (!matchedDomain) return;
+
+        const origin = `*://${matchedDomain}/*`;
+
+        if (chrome.permissions && chrome.permissions.contains && chrome.scripting && typeof chrome.scripting.executeScript === 'function') {
+            if (grantedDomains.has(origin)) {
+                injectContentScript(tabId);
+            } else {
+                chrome.permissions.contains({ origins: [origin] }, (hasPermission) => {
+                    log.debug(`Permission check for ${origin}:`, hasPermission);
+                    if (hasPermission) {
+                        grantedDomains.add(origin);
+                        injectContentScript(tabId);
+                    } else {
+                        log.debug('No permission for domain:', matchedDomain);
                     }
                 });
-            } else if (chrome.permissions && chrome.permissions.contains) {
-                if (grantedDomains.has(origin)) {
-                    chrome.scripting.executeScript({
-                        target: { tabId },
-                        files: ['content/content.js']
-                    });
-                } else {
-                    chrome.permissions.contains({ origins: [origin] }, (hasPermission) => {
-                        log.debug(`Permission check for ${origin}:`, hasPermission);
-                        if (hasPermission) {
-                            grantedDomains.add(origin);
-                            chrome.scripting.executeScript({
-                                target: { tabId },
-                                files: ['content/content.js']
-                            });
-                        } else {
-                            log.debug('No permission for domain:', matchingSetting.domain);
-                        }
-                    });
-                }
             }
+            return;
         }
+
+        // Fallback path for runtimes that do not expose optional-host permission checks.
+        injectContentScript(tabId);
     });
 });
 
 function openDb() {
-    return new Promise((resolve, reject) => {
+    if (dbPromise) return dbPromise;
+
+    dbPromise = new Promise((resolve, reject) => {
         try {
             const request = indexedDB.open(DB_NAME, DB_VERSION);
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => {
+                dbPromise = null;
+                reject(request.error);
+            };
+            request.onsuccess = () => {
+                const db = request.result;
+                db.onversionchange = () => {
+                    try {
+                        db.close();
+                    } catch {
+                        // ignore close errors
+                    }
+                    dbPromise = null;
+                };
+                db.onclose = () => {
+                    dbPromise = null;
+                };
+                resolve(db);
+            };
             request.onupgradeneeded = e => {
                 const db = e.target.result;
                 if (!db.objectStoreNames.contains(SUMMARY_STORE))
                     db.createObjectStore(SUMMARY_STORE, { keyPath: ['contentId', 'baseUrl'] });
                 if (!db.objectStoreNames.contains(CONVERSATION_STORE))
                     db.createObjectStore(CONVERSATION_STORE, { keyPath: ['contentId', 'baseUrl'] });
-                if (!db.objectStoreNames.contains('saved_searches'))
-                    db.createObjectStore('saved_searches', { keyPath: 'id' });
+                if (!db.objectStoreNames.contains(SAVED_SEARCH_STORE))
+                    db.createObjectStore(SAVED_SEARCH_STORE, { keyPath: 'id' });
             };
         } catch (err) {
+            dbPromise = null;
             reject(err);
         }
+    });
+
+    return dbPromise;
+}
+
+function runDbActionWithConnection(db, store, mode, operation, payload) {
+    return new Promise((resolve, reject) => {
+        log.debug(`[DB] dbAction called with store="${store}", mode="${mode}", operation="${operation}"`);
+        let tx;
+        try {
+            tx = db.transaction(store, mode);
+        } catch (err) {
+            const wrappedError = new Error(`Transaction failed: ${err.message}`);
+            wrappedError.name = err?.name || wrappedError.name;
+            wrappedError.cause = err;
+            reject(wrappedError);
+            return;
+        }
+
+        const os = tx.objectStore(store);
+        let req;
+        try {
+            if (operation === 'put') req = os.put(payload);
+            else if (operation === 'get') req = os.get(payload);
+            else if (operation === 'getAll') req = os.getAll();
+            else if (operation === 'clear') req = os.clear();
+            else if (operation === 'delete') req = os.delete(payload);
+            else {
+                reject(new Error(`Unsupported operation: ${operation}`));
+                return;
+            }
+        } catch (err) {
+            reject(err);
+            return;
+        }
+
+        tx.oncomplete = () => log.debug(`[DB] ${operation} complete on ${store}`);
+        tx.onerror = () => {
+            log.error(`[DB] Transaction error: ${tx.error?.message || 'unknown error'}`);
+            reject(tx.error);
+        };
+
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
     });
 }
 
 function dbAction(store, mode, operation, payload) {
-    return openDb().then(db => {
-        log.debug(`[DB] dbAction called with store="${store}", mode="${mode}", operation="${operation}"`);
-        return new Promise((resolve, reject) => {
-            let tx;
-            try {
-                tx = db.transaction(store, mode);
-            } catch (err) {
-                return reject(new Error(`Transaction failed: ${err.message}`));
-            }
-
-            const os = tx.objectStore(store);
-            let req;
-            try {
-                if (operation === 'put') req = os.put(payload);
-                else if (operation === 'get') req = os.get(payload);
-                else if (operation === 'getAll') req = os.getAll();
-                else if (operation === 'clear') req = os.clear();
-                else if (operation === 'delete') req = os.delete(payload);
-                else return reject(new Error(`Unsupported operation: ${operation}`));
-            } catch (err) {
-                return reject(err);
-            }
-
-            tx.oncomplete = () => log.debug(`[DB] ${operation} complete on ${store}`);
-            tx.onerror = () => {
-                log.error(`[DB] Transaction error: ${tx.error?.message || 'unknown error'}`);
-                reject(tx.error);
-            };
-
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
+    return openDb()
+        .then((db) => runDbActionWithConnection(db, store, mode, operation, payload))
+        .catch((err) => {
+            const retryable = err?.name === 'InvalidStateError';
+            if (!retryable) throw err;
+            dbPromise = null;
+            return openDb().then((db) => runDbActionWithConnection(db, store, mode, operation, payload));
         });
-    });
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -231,7 +372,7 @@ function performOpenAIRequest({ apiKey, apiUrl, model, messages, reasoningEffort
 
 function ensureOriginPermission(origin) {
     return new Promise((resolve) => {
-        if (!chrome.permissions || !chrome.permissions.contains || !chrome.permissions.request) {
+        if (!supportsDynamicOriginPermissionRequests()) {
             resolve({ granted: true, error: '' });
             return;
         }
@@ -263,10 +404,16 @@ function ensureOriginPermission(origin) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'openaiRequest') {
-        const origin = new URL(msg.payload.apiUrl).origin;
-        const isFirefox = typeof browser !== 'undefined' && typeof InstallTrigger !== 'undefined';
+        let origin = '';
+        try {
+            origin = new URL(msg.payload.apiUrl).origin;
+        } catch {
+            sendResponse({ success: false, error: 'Invalid API URL' });
+            return false;
+        }
+        const senderUrl = String(sender?.url || '');
 
-        if (isFirefox && sender?.url?.startsWith('chrome')) {
+        if (senderUrl.startsWith('moz-extension://')) {
             // Block sendMessage from Firefox extension pages — use port instead
             sendResponse({ success: false, error: 'Use port-based connection for Firefox' });
             return false;

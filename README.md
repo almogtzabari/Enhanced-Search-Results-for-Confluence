@@ -66,9 +66,9 @@ The extension is available on the Chrome Web Store and Firefox Add-ons site:
 - <img src="assets/images/chrome.png" width="20" alt="Chrome" align="absmiddle"> **[Chrome Web Store](https://chromewebstore.google.com/detail/enhanced-search-results-f/mmaihfkphcnjjheipeljfjbfkimfhcch)**
 - <img src="assets/images/firefox.png" width="20" alt="Firefox" align="absmiddle"> **[Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/enhanced-confluence-search/)**
 
-## Development (Preact v2)
+## Development (Preact)
 
-The v2 UI is built with **Preact + Vite** from `modern-ui/`.
+The UI is built with **Preact + Vite** from `ui/`.
 
 ### Prerequisites
 
@@ -78,46 +78,105 @@ The v2 UI is built with **Preact + Vite** from `modern-ui/`.
 ### Install dependencies
 
 ```bash
-cd modern-ui
-npm install
+npm --prefix ui install
 ```
 
 ### Build extension assets
 
 ```bash
-cd modern-ui
-npm run build
+npm run build:ui
 ```
 
 Build output folders:
 
-- `views/v2` (enhanced search page)
-- `options/v2` (options page)
-- `content/v2` (content bootstrap module)
+- `.build/views` (enhanced search page bundle)
+- `.build/options` (options page bundle)
+- `.build/content` (content bootstrap bundle)
+
+### Build unpacked distributables (`dist/`)
+
+From repository root:
+
+```bash
+npm run build:dist
+```
+
+`build:dist` rebuilds UI assets first, then assembles browser-specific `dist/` folders.
+
+This generates:
+
+- `dist/chrome`
+- `dist/firefox`
+
+You can also build a single target:
+
+```bash
+npm run build:dist:chrome
+npm run build:dist:firefox
+```
+
+Verify generated dist artifacts:
+
+```bash
+npm run verify:dist
+```
+
+Build and verify in one command:
+
+```bash
+npm run build:dist:checked
+```
+
+Optional for Firefox packaging:
+
+- `FIREFOX_GECKO_ID` to override the default add-on ID (`enhancedconfluence@gmail.com`)
+- `FIREFOX_STRICT_MIN_VERSION` to override minimum Firefox version (`102.0`)
 
 ### UI development server
 
 ```bash
-cd modern-ui
-npm run dev
+npm --prefix ui run dev
 ```
 
-Use this for UI iteration. For real extension testing, run `npm run build` and reload the extension.
+Use this for UI iteration. For real extension testing, run `npm run build:dist`.
 
 ### Load unpacked extension locally
 
-After running `npm run build`:
+After running `npm run build:dist`:
 
 1. **Chrome**
    - Open `chrome://extensions`
    - Enable **Developer mode**
    - Click **Load unpacked**
-   - Select the repository root folder (the folder containing `manifest.json`)
+   - Select `dist/chrome`
 
 2. **Firefox**
    - Open `about:debugging#/runtime/this-firefox`
    - Click **Load Temporary Add-on**
-   - Select `manifest.json` from the repository root
+   - Select `dist/firefox/manifest.json`
+
+### Project Structure
+
+- `ui/` — Preact + Vite UI source (views page, options page, content modal app)
+- `background/` — background runtime script source
+- `extension/content/` — content bootstrap + content modal stylesheet source
+- `shared/` — shared runtime modules used by background/content/UI runtimes
+- `assets/` — icons/images/sounds
+- `scripts/` — build/verification scripts for browser dist targets
+- `.build/` — intermediate generated bundles from `ui/`
+- `dist/chrome`, `dist/firefox` — packaged unpacked builds for each browser
+
+### Quick Smoke Checklist
+
+Run after loading both dist builds:
+
+1. Open options page in Chrome and Firefox.
+2. Save domain settings and verify permission prompt behavior.
+3. Open Confluence page and confirm floating launcher appears.
+4. Open views page, run a search, switch tree/table, and load more results.
+5. Open AI modal from views and from Confluence content page.
+6. Generate summary and ask follow-up question in both browsers.
+7. Toggle dark mode and confirm expected behavior in views/content modal.
 
 ## Usage
 

@@ -14,11 +14,11 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "content/v2/content-main.js",
-        "views/v2/index.html",
-        "views/services/dbService.js",
-        "views/config.js",
-        "content/modalStyles.css",
+        "content/content-main.js",
+        "views/index.html",
+        "shared/runtime/dbService.js",
+        "shared/extensionConfig.js",
+        "extension/content/modalStyles.css",
         "assets/icons/favicon.png"
       ],
       "matches": [
@@ -31,7 +31,7 @@
     "type": "module"
   },
   "options_ui": {
-    "page": "options/v2/options.html",
+    "page": "options/options.html",
     "open_in_tab": true
   },
   "icons": {

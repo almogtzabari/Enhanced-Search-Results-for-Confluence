@@ -1,0 +1,13 @@
+{
+  "name": "enhanced-confluence-search-results-extension",
+  "private": true,
+  "version": "2.0.0",
+  "scripts": {
+    "build:ui": "npm --prefix ui run build",
+    "build:dist": "node scripts/build-dist.mjs all",
+    "build:dist:chrome": "node scripts/build-dist.mjs chrome",
+    "build:dist:firefox": "node scripts/build-dist.mjs firefox",
+    "verify:dist": "node scripts/verify-dist.mjs",
+    "build:dist:checked": "npm run build:dist && npm run verify:dist"
+  }
+}

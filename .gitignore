@@ -2,15 +2,11 @@
 .vscode/
 
 # Dependencies
-modern-ui/node_modules/
+/ui/node_modules/
 
-# Local tools workspace
-tools/
-
-# Build outputs (generated from modern-ui)
-views/v2/
-options/v2/
-content/v2/
+# Build outputs (generated from ui)
+/\.build/
+/dist/
 
 # Archives / logs
 *.zip

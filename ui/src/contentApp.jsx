@@ -1,7 +1,9 @@
 import { h, render } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { normalizeResponsesUrl } from './shared/openai.js';
 
 const LOADER_FLAG = '__enhancedConfluenceContentAppLoaded';
+const ROOT_ID = 'enhanced-content-app-root';
 const MODAL_HOST_ID = 'enhanced-content-ai-modal-host';
 const MODAL_IFRAME_ID = 'enhanced-content-ai-modal-frame';
 const MODAL_CLOSE_MESSAGE = 'enhanced-ai-modal-close';
@@ -26,7 +28,7 @@ function ensureContentStyles() {
   const styleLink = document.createElement('link');
   styleLink.id = 'enhanced-content-script-styles';
   styleLink.rel = 'stylesheet';
-  styleLink.href = chrome.runtime.getURL('content/modalStyles.css');
+  styleLink.href = chrome.runtime.getURL('extension/content/modalStyles.css');
   document.head.appendChild(styleLink);
 }
 
@@ -47,7 +49,7 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, onClosed) {
   const iframe = document.createElement('iframe');
   iframe.id = MODAL_IFRAME_ID;
   iframe.setAttribute('allow', 'clipboard-read; clipboard-write');
-  iframe.src = `${chrome.runtime.getURL('views/v2/index.html')}?mode=content-modal&baseUrl=${encodeURIComponent(baseUrl)}&contentId=${encodeURIComponent(contentId)}&contentTitle=${encodeURIComponent(contentTitle || '')}`;
+  iframe.src = `${chrome.runtime.getURL('views/index.html')}?mode=content-modal&baseUrl=${encodeURIComponent(baseUrl)}&contentId=${encodeURIComponent(contentId)}&contentTitle=${encodeURIComponent(contentTitle || '')}`;
 
   host.appendChild(iframe);
   document.body.appendChild(host);
@@ -191,24 +193,49 @@ async function extractContentIdFromUrl(pathname) {
 
   const spaceKey = decodeURIComponent(displayMatch[1]);
   const title = decodeURIComponent(displayMatch[2].replace(/\+/g, ' '));
+  const candidates = [];
+  const seen = new Set();
+  const pushCandidate = (base) => {
+    const normalized = String(base || '').replace(/\/+$/, '');
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    candidates.push(normalized);
+  };
 
+  const detectedBase = detectConfluenceBaseUrl();
+  pushCandidate(detectedBase);
   try {
-    const response = await fetch(
-      `${window.location.origin}/rest/api/content?spaceKey=${encodeURIComponent(spaceKey)}&title=${encodeURIComponent(title)}`
-    );
-    if (!response.ok) return null;
-    const data = await response.json();
-    return normalizeConfluenceId(data?.results?.[0]?.id);
-  } catch (error) {
-    console.error('Error fetching page ID:', error);
-    return null;
+    const parsed = new URL(detectedBase);
+    pushCandidate(`${parsed.origin}/wiki`);
+    pushCandidate(parsed.origin);
+  } catch {
+    pushCandidate(window.location.origin);
   }
+
+  const query = `spaceKey=${encodeURIComponent(spaceKey)}&title=${encodeURIComponent(title)}`;
+
+  for (const base of candidates) {
+    try {
+      const response = await fetch(`${base}/rest/api/content?${query}`, {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      });
+      if (!response.ok) continue;
+      const data = await response.json();
+      const resolvedId = normalizeConfluenceId(data?.results?.[0]?.id);
+      if (resolvedId) return resolvedId;
+    } catch {
+      // Try the next base candidate.
+    }
+  }
+
+  return null;
 }
 
 async function getStoredSummaryStatus(contentId, baseUrl) {
   if (!contentId) return false;
   try {
-    const { getStoredSummary } = await import(chrome.runtime.getURL('views/services/dbService.js'));
+    const { getStoredSummary } = await import(chrome.runtime.getURL('shared/runtime/dbService.js'));
     const stored = await getStoredSummary(contentId, baseUrl);
     return Boolean(stored?.summaryHtml);
   } catch (error) {
@@ -219,17 +246,19 @@ async function getStoredSummaryStatus(contentId, baseUrl) {
 
 async function hasConfiguredOpenAiKey() {
   return new Promise((resolve) => {
-    chrome.storage.sync.get(['openaiApiKey'], (data) => {
-      const key = typeof data?.openaiApiKey === 'string' ? data.openaiApiKey.trim() : '';
-      resolve(Boolean(key));
+    chrome.storage.local.get(['openaiApiKey'], (localData) => {
+      const localKey = typeof localData?.openaiApiKey === 'string' ? localData.openaiApiKey.trim() : '';
+      if (localKey) {
+        resolve(true);
+        return;
+      }
+
+      chrome.storage.sync.get(['openaiApiKey'], (syncData) => {
+        const legacySyncKey = typeof syncData?.openaiApiKey === 'string' ? syncData.openaiApiKey.trim() : '';
+        resolve(Boolean(legacySyncKey));
+      });
     });
   });
-}
-
-function normalizeResponsesUrl(apiUrl) {
-  let sanitizedBase = (apiUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
-  sanitizedBase = sanitizedBase.replace(/\/chat\/completions$/i, '');
-  return /\/responses$/i.test(sanitizedBase) ? sanitizedBase : `${sanitizedBase}/responses`;
 }
 
 async function getConfiguredOpenAiOrigin() {
@@ -290,7 +319,7 @@ function openOptionsPageFromContent() {
   }
   chrome.runtime.sendMessage({
     action: 'openTab',
-    url: chrome.runtime.getURL('options/v2/options.html'),
+    url: chrome.runtime.getURL('options/options.html'),
   });
 }
 
@@ -490,15 +519,43 @@ export function bootstrapContentApp() {
   if (window[LOADER_FLAG]) return;
   window[LOADER_FLAG] = true;
 
-  chrome.storage.sync.get(['enableFloatingSummarize'], ({ enableFloatingSummarize }) => {
-    if (enableFloatingSummarize === false) return;
+  const unmountFloatingButton = () => {
+    const existingRoot = document.getElementById(ROOT_ID);
+    if (!existingRoot) return;
+    render(null, existingRoot);
+    existingRoot.remove();
+    removeContentModalHost();
+  };
 
-    const existingRoot = document.getElementById('enhanced-content-app-root');
+  const mountFloatingButton = () => {
+    const existingRoot = document.getElementById(ROOT_ID);
     if (existingRoot) return;
 
     const root = document.createElement('div');
-    root.id = 'enhanced-content-app-root';
+    root.id = ROOT_ID;
     document.body.appendChild(root);
     render(<FloatingSummarizeButton />, root);
+  };
+
+  const applyFloatingSummarizeSetting = (enabled) => {
+    if (enabled === false) {
+      unmountFloatingButton();
+      return;
+    }
+    mountFloatingButton();
+  };
+
+  chrome.storage.sync.get(['enableFloatingSummarize'], ({ enableFloatingSummarize }) => {
+    applyFloatingSummarizeSetting(enableFloatingSummarize !== false);
   });
+
+  const onStorageChanged = (changes, area) => {
+    if (area !== 'sync' || !changes.enableFloatingSummarize) return;
+    applyFloatingSummarizeSetting(changes.enableFloatingSummarize.newValue !== false);
+  };
+  chrome.storage.onChanged.addListener(onStorageChanged);
+
+  window.addEventListener('beforeunload', () => {
+    chrome.storage.onChanged.removeListener(onStorageChanged);
+  }, { once: true });
 }
