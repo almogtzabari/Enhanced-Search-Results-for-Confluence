@@ -35,6 +35,10 @@ Enhance your Confluence experience with improved search functionality. This brow
   - Sortable columns by clicking the header (Type, Name, Space, Contributor, Created/Modified dates).
   - Columns are resizable; double-click the resizer to reset to default width.
 
+- **Saved Searches**:
+  - Save the current query + filters with a custom name.
+  - Load, rename, delete, or clear saved searches from the sidebar.
+
 ### 🧰 Filtering and Search Options
 
 - **Advanced Filtering**:
@@ -44,13 +48,14 @@ Enhance your Confluence experience with improved search functionality. This brow
   - **Date Filtering**: Filter by last modified time (past day/week/month/year).
   - **Type Filtering**: Filter by type (Page, Blog Post, Attachment, Comment).
 
-- **Batch Size Control** *(New!)*:
+- **Batch Size Control**:
   - Configure how many results are fetched per scroll batch.
 
 ### 🌙 Display and Personalization
 
-- **Dark Mode Support**: Toggle a dark theme for low-light environments.
+- **Dark Mode + Confluence Modal Theme Sync**: Toggle dark mode for extension pages and optionally apply it to the AI modal opened inside Confluence pages.
 - **Customizable Domains**: Configure multiple Confluence domains from the Options page.
+- **View-Specific Controls**: Independently toggle tree tooltips, table tooltips, and tree result-row highlighting.
 - **New Icons and Branding**: Refreshed extension logo and interface icons for a polished experience.
 
 ### ⚡️ Performance & UX
@@ -171,16 +176,18 @@ After running `npm run build:dist`:
 1. **Configure the Extension**:
    - Click the extension icon → **Options**
    - Add one or more Confluence domains
+   - Click **Save Domain Settings** and approve the browser permission prompt for those domains
    - To enable AI-powered features:
      - Paste your **OpenAI API key** in the relevant field
      - (Optional) Provide a custom API endpoint if you're using a proxy or self-hosted service  
-       Default: `https://api.openai.com/v1/`
+       Default base URL: `https://api.openai.com/v1` (the extension appends `/responses`)
+     - On first AI use, approve the endpoint-domain permission prompt if requested
 
      <img src="assets/images/settings.png" alt="Settings Page" style="max-width: 800px; width: 100%;">
 
 2. **Search in Confluence**:
    - Open any configured Confluence domain
-   - Use the floating extension launcher to open the enhanced search page
+   - Use the floating extension launcher to open enhanced search, summarize current content, or open settings
    - Enter your query in the enhanced search page to fetch Confluence results
 
 3. **Browse and Filter**:
@@ -197,12 +204,21 @@ After running `npm run build:dist`:
 
 Add one or more Confluence domains via the Options page (for example, `confluence.example.com`).
 
+### Permissions
+
+- Domain entries use optional host permissions. The browser prompts you when saving domains.
+- AI requests use an endpoint-origin permission (`https://.../*`) for the configured OpenAI-compatible API base URL.
+
 ### Advanced Options
 
 - **Results per Batch**: Configure how many results are loaded at once to balance performance and speed.
-- **Dark Mode**: Toggle dark mode globally or per session.
-- **Tooltips**: Enable/disable tooltips in Tree and Table views.
-- **AI Settings**: Configure model, reasoning effort, API key, custom endpoint, and custom summarization prompt.
+- **Dark Mode + Modal Theme Sync**: Toggle dark mode globally and optionally sync it into Confluence-page AI modal UI.
+- **Tooltips and Row Highlighting**: Enable/disable tree tooltips, table tooltips, and tree result-row highlighting.
+- **AI Feature Toggles**: Independently enable AI actions in enhanced results and floating summarize actions on Confluence pages.
+- **AI Settings**: Configure model, reasoning effort, API key, custom endpoint base URL, and custom summarization prompt.
+  - OpenAI API key is stored in extension local storage (not browser sync storage).
+  - The extension appends `/responses` to the configured endpoint base URL.
+- **Cached Data Controls**: Clear all summaries + conversations, or clear only follow-up conversations.
 
 ## Contributing
 
