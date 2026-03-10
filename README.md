@@ -132,10 +132,46 @@ Build and verify in one command:
 npm run build:dist:checked
 ```
 
+Create store upload archives (builds `dist/` first):
+
+```bash
+npm run zip:dist
+```
+
+Single-target packaging:
+
+```bash
+npm run zip:dist:chrome
+npm run zip:dist:firefox
+```
+
+Generated files are written to `dist/packages/`:
+
+- `enhanced-search-results-for-confluence-chrome-v<version>.zip`
+- `enhanced-search-results-for-confluence-firefox-v<version>.xpi`
+- `enhanced-search-results-for-confluence-source-v<version>.zip` (for Firefox reviewer source upload)
+
+Tip: if `dist/` is already built, you can skip rebuilding:
+
+```bash
+node scripts/zip-dist.mjs all --skip-build
+```
+
 Optional for Firefox packaging:
 
 - `FIREFOX_GECKO_ID` to override the default add-on ID (`enhancedconfluence@gmail.com`)
 - `FIREFOX_STRICT_MIN_VERSION` to override minimum Firefox version (`102.0`)
+
+Generate Chrome Web Store screenshot copies (without changing originals):
+
+```bash
+npm run build:store-images:chrome
+```
+
+Output directory:
+
+- `dist/store-assets/chrome/screenshots/1280x800`
+- `dist/store-assets/chrome/screenshots/640x400`
 
 ### UI development server
 

@@ -7,6 +7,10 @@
     "build:dist": "node scripts/build-dist.mjs all",
     "build:dist:chrome": "node scripts/build-dist.mjs chrome",
     "build:dist:firefox": "node scripts/build-dist.mjs firefox",
+    "build:store-images:chrome": "node scripts/build-store-images.mjs",
+    "zip:dist": "node scripts/zip-dist.mjs all",
+    "zip:dist:chrome": "node scripts/zip-dist.mjs chrome",
+    "zip:dist:firefox": "node scripts/zip-dist.mjs firefox",
     "verify:dist": "node scripts/verify-dist.mjs",
     "build:dist:checked": "npm run build:dist && npm run verify:dist"
   }
