@@ -1,4 +1,5 @@
 const confluenceBodyCache = new Map();
+const confluenceUserCache = new Map();
 let bridgeRequestCounter = 0;
 
 function normalizeBaseForCacheKey(value) {
@@ -7,6 +8,131 @@ function normalizeBaseForCacheKey(value) {
 
 function makeBodyCacheKey(baseUrl, contentId) {
   return `${normalizeBaseForCacheKey(baseUrl)}::${String(contentId || '').trim()}`;
+}
+
+function normalizeUserLookupValue(type, value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  return type === 'username' ? normalized.toLowerCase() : normalized;
+}
+
+function makeUserCacheKey(baseUrl, type, value) {
+  const normalizedValue = normalizeUserLookupValue(type, value);
+  if (!normalizedValue) return '';
+  return `${normalizeBaseForCacheKey(baseUrl)}::${type}:${normalizedValue}`;
+}
+
+function extractMentionUserRef(node) {
+  if (!node) return null;
+  const accountId = node.getAttribute('ri:account-id') || node.getAttribute('ri:accountId') || '';
+  const username = node.getAttribute('ri:username') || '';
+  const userKey = node.getAttribute('ri:userkey') || node.getAttribute('ri:userKey') || '';
+  if (!accountId && !username && !userKey) return null;
+  return { accountId, username, userKey };
+}
+
+function makeMentionRefKey(ref) {
+  return [
+    normalizeUserLookupValue('accountId', ref?.accountId),
+    normalizeUserLookupValue('username', ref?.username),
+    normalizeUserLookupValue('userKey', ref?.userKey),
+  ].join('|');
+}
+
+function resolveMentionLabel(userDetails, userRef) {
+  const raw = String(
+    userDetails?.displayName
+      || userDetails?.publicName
+      || userDetails?.fullName
+      || userRef?.username
+      || userRef?.userKey
+      || userRef?.accountId
+      || 'user',
+  ).trim();
+  const trimmed = raw.replace(/^@+/, '');
+  return `@${trimmed || 'user'}`;
+}
+
+function buildMentionProfileHref(baseUrl, userDetails, userRef) {
+  const root = `${String(baseUrl || window.location.origin).replace(/\/+$/, '')}/`;
+  const accountId = String(userDetails?.accountId || userRef?.accountId || '').trim();
+  if (accountId) {
+    return new URL(`people/${encodeURIComponent(accountId)}`, root).toString();
+  }
+  const username = String(userDetails?.username || userDetails?.name || userRef?.username || '').trim();
+  if (username) {
+    return new URL(`display/~${encodeURIComponent(username)}`, root).toString();
+  }
+  return '';
+}
+
+function buildUserLookupEntries(user) {
+  if (!user || typeof user !== 'object') return [];
+  const accountId = String(user.accountId || '').trim();
+  const username = String(user.username || '').trim();
+  const userKey = String(user.userKey || '').trim();
+
+  return [
+    accountId ? { type: 'accountId', value: accountId, query: `accountId=${encodeURIComponent(accountId)}` } : null,
+    username ? { type: 'username', value: username, query: `username=${encodeURIComponent(username)}` } : null,
+    userKey ? { type: 'key', value: userKey, query: `key=${encodeURIComponent(userKey)}` } : null,
+  ].filter(Boolean);
+}
+
+async function replaceConfluenceUserMentions(baseUrl, storageHtml) {
+  const html = String(storageHtml || '');
+  if (!html || !/ri:user/i.test(html)) return html;
+
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const userNodes = [...doc.querySelectorAll('ri\\:user')];
+  if (!userNodes.length) return html;
+
+  const refsByKey = new Map();
+  userNodes.forEach((node) => {
+    const ref = extractMentionUserRef(node);
+    if (!ref) return;
+    const refKey = makeMentionRefKey(ref);
+    if (!refsByKey.has(refKey)) refsByKey.set(refKey, ref);
+  });
+
+  const resolvedUsers = await Promise.all(
+    [...refsByKey.entries()].map(async ([refKey, ref]) => {
+      const details = await fetchUserDetails(baseUrl, ref);
+      return [refKey, details];
+    }),
+  );
+  const userByRefKey = new Map(resolvedUsers);
+  const replacedContainers = new Set();
+
+  userNodes.forEach((node) => {
+    if (!node.isConnected) return;
+    const ref = extractMentionUserRef(node);
+    if (!ref) return;
+    const refKey = makeMentionRefKey(ref);
+    const userDetails = userByRefKey.get(refKey) || null;
+    const label = resolveMentionLabel(userDetails, ref);
+    const href = buildMentionProfileHref(baseUrl, userDetails, ref);
+    const mentionEl = href ? doc.createElement('a') : doc.createElement('span');
+    mentionEl.textContent = label;
+    mentionEl.setAttribute('title', label);
+
+    if (href) {
+      mentionEl.setAttribute('href', href);
+      mentionEl.setAttribute('target', '_blank');
+      mentionEl.setAttribute('rel', 'noopener noreferrer');
+    }
+
+    const linkContainer = node.closest('ac\\:link');
+    if (linkContainer && !replacedContainers.has(linkContainer)) {
+      replacedContainers.add(linkContainer);
+      linkContainer.replaceWith(mentionEl);
+      return;
+    }
+
+    node.replaceWith(mentionEl);
+  });
+
+  return doc.body.innerHTML;
 }
 
 function buildBodyCacheKeys(baseUrl, contentId) {
@@ -226,7 +352,9 @@ export async function fetchConfluenceBodyById(baseUrl, contentId, {
     `/rest/api/content/${contentId}?expand=body.storage`,
   );
   const sanitizer = typeof sanitizeHtmlFragment === 'function' ? sanitizeHtmlFragment : (value) => value;
-  const bodyHtml = sanitizer(data.body?.storage?.value || '(No content)');
+  const storageHtml = data.body?.storage?.value || '(No content)';
+  const mentionSafeHtml = await replaceConfluenceUserMentions(resolvedBaseUrl || baseUrl, storageHtml);
+  const bodyHtml = sanitizer(mentionSafeHtml);
   const resolvedKeys = new Set(cacheKeys);
   resolvedKeys.add(makeBodyCacheKey(resolvedBaseUrl, contentId));
   resolvedKeys.forEach((key) => {
@@ -257,24 +385,29 @@ async function fetchSpaceDetailsByKey(baseUrl, spaceKey) {
 }
 
 async function fetchUserDetails(baseUrl, createdBy) {
-  if (!createdBy || typeof createdBy !== 'object') return null;
-  const accountId = createdBy.accountId || '';
-  const username = createdBy.username || '';
-  const userKey = createdBy.userKey || '';
+  const lookups = buildUserLookupEntries(createdBy);
+  if (!lookups.length) return null;
 
-  const queries = [
-    accountId ? `accountId=${encodeURIComponent(accountId)}` : '',
-    username ? `username=${encodeURIComponent(username)}` : '',
-    userKey ? `key=${encodeURIComponent(userKey)}` : '',
-  ].filter(Boolean);
+  for (const lookup of lookups) {
+    const cacheKey = makeUserCacheKey(baseUrl, lookup.type, lookup.value);
+    if (cacheKey && confluenceUserCache.has(cacheKey)) {
+      return confluenceUserCache.get(cacheKey);
+    }
+  }
 
-  for (const query of queries) {
+  for (const lookup of lookups) {
     try {
       const { data } = await fetchConfluenceJsonWithFallback(
         baseUrl,
-        `/rest/api/user?${query}`,
+        `/rest/api/user?${lookup.query}`,
       );
-      if (data && typeof data === 'object') return data;
+      if (data && typeof data === 'object') {
+        lookups.forEach((entry) => {
+          const cacheKey = makeUserCacheKey(baseUrl, entry.type, entry.value);
+          if (cacheKey) confluenceUserCache.set(cacheKey, data);
+        });
+        return data;
+      }
     } catch {
       // Try next query form
     }
