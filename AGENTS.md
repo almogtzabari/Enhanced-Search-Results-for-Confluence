@@ -22,8 +22,15 @@ Any agent working here must preserve cross-browser behavior, multi-domain Conflu
   - Opens AI modal as an iframe to `views/index.html?mode=content-modal...`.
   - Provides postMessage bridge for Confluence REST/image fetches.
 - `ui/src/App.jsx`
-  - Main views UI (tree/table/search/saved searches/options link).
+  - Main views UI composition layer.
+  - Wires feature controllers + presentational sections.
   - Also runs in `mode=content-modal` when embedded from content script.
+- `ui/src/features/app/controllers/*`
+  - `useSearchResultsController`: search/filter/pagination/tree-table lifecycle.
+  - `useAiSummaryController`: AI modal state machine for both views and content-modal.
+  - `useSavedSearchesController`: saved-search CRUD + related dialogs.
+- `ui/src/features/app/utils/*`
+  - Pure helpers extracted from `App.jsx` (query/tree/table/url/html/storage logic).
 - `ui/src/components/AiModal.jsx`
   - Shared AI modal UI used by both the views page and content-modal mode.
 - `ui/src/services/confluenceApi.js`
@@ -68,16 +75,24 @@ When changing AI flows/components/services, test both contexts explicitly.
 
 ## Validation Checklist After Changes
 1. `npm --prefix ui install` (if dependencies changed).
-2. `npm run build:dist:checked`.
-3. Manual smoke test in both Chrome and Firefox:
+2. `npm --prefix ui run test`.
+3. `npm run build:dist:checked`.
+4. Manual smoke test in both Chrome and Firefox:
    - Save domain settings + permission prompts.
    - Open Confluence page and verify floating launcher injection.
    - Open views page and verify search, tree/table, and infinite loading.
    - Open AI modal from views and from Confluence content page.
    - Generate summary + follow-up Q&A in both browsers.
 
+Notes:
+- Agents should not skip `npm --prefix ui run test` when touching `ui/src/App.jsx`, `ui/src/features/app/**`, or shared UI services used by those flows.
+- If tests cannot run (environment/tooling/network), the agent must state that explicitly in its final report.
+
 ## High-Risk Files
-- `ui/src/App.jsx` (large, central state machine for views + modal-only mode)
+- `ui/src/App.jsx` (top-level orchestration; incorrect wiring can break multiple flows)
+- `ui/src/features/app/controllers/useSearchResultsController.js` (search lifecycle + pagination)
+- `ui/src/features/app/controllers/useAiSummaryController.js` (AI modal + content-modal bridge-sensitive behavior)
+- `ui/src/features/app/controllers/useSavedSearchesController.js` (saved-search state + dialogs)
 - `ui/src/contentApp.jsx` (content-runtime and bridge logic)
 - `ui/src/services/confluenceApi.js` (fetch fallback + bridge behavior)
 - `background/background.js` (permissions, injection, DB, OpenAI runtime)

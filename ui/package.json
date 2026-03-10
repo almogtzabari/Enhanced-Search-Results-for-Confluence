@@ -10,15 +10,17 @@
     "build:options": "vite build --config vite.options.config.js",
     "build:content": "vite build --config vite.content.config.js",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "preact": "^10.26.4"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.2",
+    "@vitest/coverage-v8": "^2.1.9",
     "jsdom": "^26.1.0",
-    "vitest": "^2.1.8",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "^2.1.8"
   }
 }

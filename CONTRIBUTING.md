@@ -19,6 +19,16 @@ Thanks for contributing to Enhanced Search Results for Confluence.
 
 4. Push your branch and open a Pull Request.
 
+## Automated Checks
+
+Run from repository root before opening a PR:
+
+```bash
+npm run test:ui
+npm run test:ui:coverage
+npm run lint
+```
+
 ## Quick Smoke Checklist
 
 Run after loading both `dist/chrome` and `dist/firefox` builds:

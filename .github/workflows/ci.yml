@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   lint-and-build:
-    name: Lint and Build Dist
+    name: Lint, Test, and Build Dist
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,8 +31,11 @@ jobs:
       - name: Install UI dependencies
         run: npm ci --prefix ui
 
-      - name: Run ESLint
-        run: npx --yes eslint@8.57.0 . --ext .js,.jsx,.mjs --max-warnings=0
+      - name: Run ESLint (no warnings allowed)
+        run: npm run lint -- --max-warnings=0
+
+      - name: Run UI tests
+        run: npm run test:ui
 
       - name: Build and verify dist bundles
         run: npm run build:dist:checked

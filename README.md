@@ -181,6 +181,21 @@ npm --prefix ui run dev
 
 Use this for UI iteration. For real extension testing, run `npm run build:dist`.
 
+### Testing and Linting
+
+Run the automated checks from repository root:
+
+```bash
+npm run test:ui
+npm run test:ui:coverage
+npm run lint
+```
+
+Notes:
+
+- Coverage HTML report is generated under `ui/coverage/` (ignored by git).
+- `npm run lint` uses ESLint 8.57.0 via `npx`.
+
 ### Load unpacked extension locally
 
 After running `npm run build:dist`:

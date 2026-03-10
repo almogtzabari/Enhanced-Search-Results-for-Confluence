@@ -7,6 +7,7 @@
 # Build outputs (generated from ui)
 /\.build/
 /dist/
+/ui/coverage/
 
 # Archives / logs
 *.zip
