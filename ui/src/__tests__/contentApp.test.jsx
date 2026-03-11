@@ -7,7 +7,9 @@ const MODAL_HOST_ID = 'enhanced-content-ai-modal-host';
 
 function createChromeMock({
   enableFloatingSummarize = true,
-  floatingPrimaryAction = 'summarize',
+  enableAiFeatures = false,
+  enableSummaries = true,
+  floatingPrimaryAction = 'search',
   localApiKey = '',
   syncApiKey = '',
   customApiEndpoint = 'https://api.openai.com/v1',
@@ -16,6 +18,15 @@ function createChromeMock({
   withOpenOptionsPage = true,
 } = {}) {
   const storageChangeListeners = new Set();
+  const state = {
+    enableFloatingSummarize,
+    enableAiFeatures,
+    enableSummaries,
+    floatingPrimaryAction,
+    localApiKey,
+    syncApiKey,
+    customApiEndpoint,
+  };
   const runtimeSendMessage = vi.fn((message, callback) => {
     if (message?.action === 'ensureApiOriginPermission') {
       callback?.(ensurePermission);
@@ -43,31 +54,19 @@ function createChromeMock({
 
   const storageSyncGet = vi.fn((keys, callback) => {
     const keyList = Array.isArray(keys) ? keys : [keys];
-    if (keyList.includes('enableFloatingSummarize')) {
-      callback({
-        enableFloatingSummarize,
-        ...(keyList.includes('floatingPrimaryAction') ? { floatingPrimaryAction } : {}),
-      });
-      return;
-    }
-    if (keyList.includes('openaiApiKey')) {
-      callback({ openaiApiKey: syncApiKey });
-      return;
-    }
-    if (keyList.includes('customApiEndpoint')) {
-      callback({ customApiEndpoint });
-      return;
-    }
-    if (keyList.includes('floatingPrimaryAction')) {
-      callback({ floatingPrimaryAction });
-      return;
-    }
-    callback({});
+    const response = {};
+    if (keyList.includes('enableFloatingSummarize')) response.enableFloatingSummarize = state.enableFloatingSummarize;
+    if (keyList.includes('enableAiFeatures')) response.enableAiFeatures = state.enableAiFeatures;
+    if (keyList.includes('enableSummaries')) response.enableSummaries = state.enableSummaries;
+    if (keyList.includes('floatingPrimaryAction')) response.floatingPrimaryAction = state.floatingPrimaryAction;
+    if (keyList.includes('openaiApiKey')) response.openaiApiKey = state.syncApiKey;
+    if (keyList.includes('customApiEndpoint')) response.customApiEndpoint = state.customApiEndpoint;
+    callback(response);
   });
   const storageLocalGet = vi.fn((keys, callback) => {
     const keyList = Array.isArray(keys) ? keys : [keys];
     if (keyList.includes('openaiApiKey')) {
-      callback({ openaiApiKey: localApiKey });
+      callback({ openaiApiKey: state.localApiKey });
       return;
     }
     callback({});
@@ -99,6 +98,18 @@ function createChromeMock({
     storageSyncGet,
     storageLocalGet,
     triggerStorageChange(changes, area = 'sync') {
+      Object.entries(changes || {}).forEach(([key, change]) => {
+        const nextValue = change?.newValue;
+        if (area === 'local' && key === 'openaiApiKey') state.localApiKey = typeof nextValue === 'string' ? nextValue : '';
+        if (area === 'sync') {
+          if (key === 'enableFloatingSummarize') state.enableFloatingSummarize = nextValue;
+          if (key === 'enableAiFeatures') state.enableAiFeatures = nextValue;
+          if (key === 'enableSummaries') state.enableSummaries = nextValue;
+          if (key === 'floatingPrimaryAction') state.floatingPrimaryAction = nextValue;
+          if (key === 'openaiApiKey') state.syncApiKey = typeof nextValue === 'string' ? nextValue : '';
+          if (key === 'customApiEndpoint') state.customApiEndpoint = typeof nextValue === 'string' ? nextValue : state.customApiEndpoint;
+        }
+      });
       Array.from(storageChangeListeners).forEach((listener) => {
         listener(changes, area);
       });
@@ -162,7 +173,7 @@ describe('contentApp', () => {
     delete window.AJS;
   });
 
-  it('bootstraps once and mounts/unmounts with floating summarize setting changes', async () => {
+  it('bootstraps once and keeps launcher mounted when legacy floating flag changes', async () => {
     const runtime = createChromeMock({ enableFloatingSummarize: true });
     global.chrome = runtime.chrome;
 
@@ -183,7 +194,7 @@ describe('contentApp', () => {
       });
     });
     await flushMany();
-    expect(document.getElementById(ROOT_ID)).toBeFalsy();
+    expect(document.getElementById(ROOT_ID)).toBeTruthy();
 
     act(() => {
       runtime.triggerStorageChange({
@@ -196,7 +207,7 @@ describe('contentApp', () => {
     act(() => {
       window.dispatchEvent(new Event('beforeunload'));
     });
-    expect(runtime.chrome.storage.onChanged.removeListener).toHaveBeenCalledTimes(2);
+    expect(runtime.chrome.storage.onChanged.removeListener).toHaveBeenCalledTimes(1);
   });
 
   it('opens search page with detected base url from content button', async () => {
@@ -247,7 +258,11 @@ describe('contentApp', () => {
   });
 
   it('shows missing content id dialog when summarize cannot resolve page id', async () => {
-    const runtime = createChromeMock({ enableFloatingSummarize: true });
+    const runtime = createChromeMock({
+      enableFloatingSummarize: true,
+      enableAiFeatures: true,
+      localApiKey: 'local-key',
+    });
     global.chrome = runtime.chrome;
     window.history.replaceState({}, '', '/wiki/unknown/location');
 
@@ -266,6 +281,8 @@ describe('contentApp', () => {
   it('shows cached summary state on summarize action when summary already exists', async () => {
     const runtime = createChromeMock({
       enableFloatingSummarize: true,
+      enableAiFeatures: true,
+      localApiKey: 'local-key',
       storedSummariesByContentId: { 12345: true },
     });
     global.chrome = runtime.chrome;
@@ -282,6 +299,8 @@ describe('contentApp', () => {
   it('passes runtime fallback metadata into content-modal params when prefetched metadata is missing', async () => {
     const runtime = createChromeMock({
       enableFloatingSummarize: true,
+      enableAiFeatures: true,
+      localApiKey: 'local-key',
       storedSummariesByContentId: { 12345: true },
     });
     global.chrome = runtime.chrome;
@@ -315,6 +334,7 @@ describe('contentApp', () => {
   it('uses summarize as the primary floating action when configured', async () => {
     const runtime = createChromeMock({
       enableFloatingSummarize: true,
+      enableAiFeatures: true,
       floatingPrimaryAction: 'summarize',
       localApiKey: 'local-key',
       storedSummariesByContentId: { 12345: true },
@@ -342,6 +362,30 @@ describe('contentApp', () => {
     expect(runtime.runtimeSendMessage).not.toHaveBeenCalledWith(expect.objectContaining({
       action: 'openSearchTab',
     }));
+  });
+
+  it('hides summarize action until AI is enabled and API key exists', async () => {
+    const runtime = createChromeMock({
+      enableFloatingSummarize: true,
+      enableAiFeatures: false,
+      localApiKey: 'local-key',
+    });
+    global.chrome = runtime.chrome;
+
+    const { bootstrapContentApp } = await loadContentAppModule();
+    bootstrapContentApp();
+    await flushMany();
+
+    expect(document.querySelector('.enhanced-fab-btn.enhanced-fab-summarize')).toBeFalsy();
+    expect(document.querySelector('.enhanced-fab-main')?.classList.contains('enhanced-fab-open')).toBe(true);
+
+    act(() => {
+      runtime.triggerStorageChange({
+        enableAiFeatures: { newValue: true },
+      });
+    });
+    await flushMany();
+    expect(document.querySelector('.enhanced-fab-btn.enhanced-fab-summarize')).toBeTruthy();
   });
 
 });

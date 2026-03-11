@@ -246,7 +246,7 @@ body.modal-only-frame {
   inset: -2px;
   border-radius: calc(var(--radius) + 2px);
   pointer-events: none;
-  animation: search-input-attention-pulse 1.4s ease-out 4;
+  animation: search-input-attention-pulse 1.4s ease-out infinite;
 }
 
 .search-row.search-row-attention .search-input {

@@ -15,9 +15,11 @@ function loadBackgroundRuntime({
   hasTabsExecuteScript = true,
   hasPermissions = true,
   permissionGranted = true,
+  hasOpenOptionsPage = true,
 } = {}) {
   const runtimeOnMessageListeners = [];
   const runtimeOnConnectListeners = [];
+  const runtimeOnInstalledListeners = [];
   const tabUpdatedListeners = [];
   const storageChangedListeners = [];
 
@@ -30,11 +32,15 @@ function loadBackgroundRuntime({
           : { manifest_version: manifestVersion, optional_permissions: ['https://*/*'] }
       )),
       getURL: vi.fn((path) => `chrome-extension://test/${path}`),
+      openOptionsPage: hasOpenOptionsPage ? vi.fn((callback) => callback?.()) : undefined,
       onMessage: {
         addListener: vi.fn((listener) => runtimeOnMessageListeners.push(listener)),
       },
       onConnect: {
         addListener: vi.fn((listener) => runtimeOnConnectListeners.push(listener)),
+      },
+      onInstalled: {
+        addListener: vi.fn((listener) => runtimeOnInstalledListeners.push(listener)),
       },
     },
     storage: {
@@ -96,6 +102,7 @@ function loadBackgroundRuntime({
     tabUpdatedListeners,
     runtimeOnMessageListeners,
     runtimeOnConnectListeners,
+    runtimeOnInstalledListeners,
     storageChangedListeners,
   };
 }
@@ -185,5 +192,30 @@ describe('background runtime injection behavior', () => {
       { target: { tabId: 404 }, files: ['extension/content/content.js'] },
       expect.any(Function),
     );
+  });
+
+  it('opens options page automatically on install/update', () => {
+    const runtime = loadBackgroundRuntime({
+      hasOpenOptionsPage: true,
+    });
+
+    expect(runtime.runtimeOnInstalledListeners).toHaveLength(1);
+    runtime.runtimeOnInstalledListeners[0]({ reason: 'install' });
+    expect(runtime.chrome.runtime.openOptionsPage).toHaveBeenCalledTimes(1);
+
+    runtime.runtimeOnInstalledListeners[0]({ reason: 'update' });
+    expect(runtime.chrome.runtime.openOptionsPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back to opening options tab when openOptionsPage is unavailable', () => {
+    const runtime = loadBackgroundRuntime({
+      hasOpenOptionsPage: false,
+    });
+
+    expect(runtime.runtimeOnInstalledListeners).toHaveLength(1);
+    runtime.runtimeOnInstalledListeners[0]({ reason: 'install' });
+    expect(runtime.chrome.tabs.create).toHaveBeenCalledWith({
+      url: 'chrome-extension://test/options/options.html',
+    });
   });
 });

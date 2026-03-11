@@ -118,6 +118,39 @@ describe('useSearchResultsController', () => {
     hook.unmount();
   });
 
+  it('keeps search-box attention active from focusSearch until user input changes', async () => {
+    vi.useFakeTimers();
+    try {
+      const { hook } = createHook({
+        params: {
+          searchText: '',
+          focusSearch: '1',
+        },
+      });
+      await hook.flush();
+
+      const focus = vi.fn();
+      hook.result.refs.searchInputRef.current = { focus };
+
+      vi.runOnlyPendingTimers();
+      await hook.flush();
+      expect(focus).toHaveBeenCalledTimes(1);
+      expect(hook.result.state.searchInputAttention).toBe(true);
+
+      vi.advanceTimersByTime(15000);
+      await hook.flush();
+      expect(hook.result.state.searchInputAttention).toBe(true);
+
+      hook.result.actions.setSearchInput('a');
+      await hook.flush();
+      expect(hook.result.state.searchInputAttention).toBe(false);
+
+      hook.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('loads results, filters and sorts table rows, and toggles tree collapse state', async () => {
     const results = [
       makeResult({

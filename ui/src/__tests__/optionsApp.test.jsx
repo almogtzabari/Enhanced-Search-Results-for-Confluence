@@ -90,6 +90,9 @@ describe('OptionsApp', () => {
       domainSettings: [{ domain: 'example.atlassian.net' }],
       darkMode: true,
       showTooltips: false,
+      enableAiFeatures: true,
+      enableSummaries: true,
+      enableFloatingSummarize: true,
       selectedAiModel: 'gpt-4o',
       floatingPrimaryAction: 'summarize',
       useHighReasoningEffort: true,
@@ -123,7 +126,7 @@ describe('OptionsApp', () => {
     view.unmount();
   });
 
-  it('validates and saves domains with permission checks', async () => {
+  it('validates and saves settings with a combined permission check', async () => {
     serviceMocks.requestOriginsPermission
       .mockResolvedValueOnce({ granted: false, reason: 'permissions_api_unavailable' })
       .mockResolvedValueOnce({ granted: true });
@@ -132,9 +135,16 @@ describe('OptionsApp', () => {
     await flushMany();
 
     const domainInput = view.container.querySelector('input[placeholder="example.com"]');
-    const saveButton = Array.from(view.container.querySelectorAll('button')).find((button) => button.textContent.includes('Save Domain Settings'));
+    const saveButton = Array.from(view.container.querySelectorAll('button')).find((button) => button.textContent.includes('Save Settings'));
     expect(domainInput).toBeTruthy();
     expect(saveButton).toBeTruthy();
+
+    act(() => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushMany();
+    expect(view.container.textContent).toContain('Add at least one Confluence domain before saving.');
+    expect(serviceMocks.requestOriginsPermission).not.toHaveBeenCalled();
 
     domainInput.value = 'not-a-domain';
     act(() => {
@@ -148,7 +158,7 @@ describe('OptionsApp', () => {
     expect(view.container.textContent).toContain('Invalid domain.');
     expect(serviceMocks.requestOriginsPermission).not.toHaveBeenCalled();
 
-    domainInput.value = 'example.atlassian.net';
+    domainInput.value = 'https://example.atlassian.net/wiki';
     act(() => {
       domainInput.dispatchEvent(new Event('input', { bubbles: true }));
     });
@@ -163,14 +173,69 @@ describe('OptionsApp', () => {
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushMany();
-    expect(serviceMocks.requestOriginsPermission).toHaveBeenCalledWith(['*://example.atlassian.net/*']);
-    expect(serviceMocks.setSync).toHaveBeenCalledWith({ domainSettings: [{ domain: 'example.atlassian.net' }] });
-    expect(view.container.textContent).toContain('Domain settings saved.');
+    expect(serviceMocks.requestOriginsPermission).toHaveBeenCalledWith(
+      ['*://example.atlassian.net/*', 'https://api.openai.com/*'],
+    );
+    expect(serviceMocks.setSync).toHaveBeenCalledWith({
+      domainSettings: [{ domain: 'example.atlassian.net' }],
+      customApiEndpoint: '',
+    });
+    expect(view.container.textContent).toContain('Settings saved');
 
     view.unmount();
   });
 
-  it('handles endpoint permission errors and success', async () => {
+  it('shows default endpoint warning once and missing API key warning on every save when AI is enabled', async () => {
+    const view = mount();
+    await flushMany();
+
+    const domainInput = view.container.querySelector('input[placeholder="example.com"]');
+    const aiToggle = view.container.querySelector('#enable-ai-features');
+    const saveButton = Array.from(view.container.querySelectorAll('button')).find((button) => button.textContent.includes('Save Settings'));
+    expect(domainInput).toBeTruthy();
+    expect(aiToggle).toBeTruthy();
+    expect(saveButton).toBeTruthy();
+
+    domainInput.value = 'confluence.example.com';
+    act(() => {
+      domainInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flushMany();
+
+    aiToggle.checked = true;
+    act(() => {
+      aiToggle.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushMany();
+
+    act(() => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushMany();
+
+    const firstStatuses = Array.from(view.container.querySelectorAll('.status-floating'));
+    expect(firstStatuses).toHaveLength(2);
+    expect(firstStatuses.some((node) => node.classList.contains('warning'))).toBe(true);
+    expect(firstStatuses.some((node) => node.classList.contains('error'))).toBe(true);
+    expect(view.container.textContent).toContain('No custom OpenAI API Base URL is set');
+    expect(view.container.textContent).toContain('OpenAI API Key is empty');
+    expect(serviceMocks.setLocal).toHaveBeenCalledWith({ defaultEndpointWarningShown: true });
+
+    act(() => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushMany();
+
+    const secondStatuses = Array.from(view.container.querySelectorAll('.status-floating'));
+    expect(secondStatuses).toHaveLength(1);
+    expect(secondStatuses[0]?.classList.contains('error')).toBe(true);
+    expect(view.container.textContent).not.toContain('No custom OpenAI API Base URL is set');
+    expect(view.container.textContent).toContain('OpenAI API Key is empty');
+
+    view.unmount();
+  });
+
+  it('handles endpoint validation and permission outcomes in Save Settings flow', async () => {
     serviceMocks.requestOriginsPermission
       .mockResolvedValueOnce({ granted: false, reason: 'request_failed' })
       .mockResolvedValueOnce({ granted: true });
@@ -178,10 +243,35 @@ describe('OptionsApp', () => {
     const view = mount();
     await flushMany();
 
+    const domainInput = view.container.querySelector('input[placeholder="example.com"]');
+    const aiToggle = view.container.querySelector('#enable-ai-features');
+    const saveButton = Array.from(view.container.querySelectorAll('button')).find((button) => button.textContent.includes('Save Settings'));
+    expect(domainInput).toBeTruthy();
+    expect(aiToggle).toBeTruthy();
+    expect(saveButton).toBeTruthy();
+
+    domainInput.value = 'confluence.example.com';
+    act(() => {
+      domainInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flushMany();
+
+    aiToggle.checked = true;
+    act(() => {
+      aiToggle.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushMany();
+
+    const apiKeyInput = view.container.querySelector('#api-key');
     const endpointInput = view.container.querySelector('#custom-endpoint');
-    const grantButton = Array.from(view.container.querySelectorAll('button')).find((button) => button.textContent.includes('Grant Endpoint Permission'));
+    expect(apiKeyInput).toBeTruthy();
     expect(endpointInput).toBeTruthy();
-    expect(grantButton).toBeTruthy();
+
+    apiKeyInput.value = 'sk-test-key';
+    act(() => {
+      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flushMany();
 
     endpointInput.value = 'bad url value';
     act(() => {
@@ -189,10 +279,11 @@ describe('OptionsApp', () => {
     });
     await flushMany();
     act(() => {
-      grantButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushMany();
-    expect(view.container.textContent).toContain('Invalid OpenAI endpoint URL.');
+    expect(view.container.textContent).toContain('Invalid custom OpenAI API Base URL.');
+    expect(serviceMocks.requestOriginsPermission).not.toHaveBeenCalled();
 
     endpointInput.value = 'https://custom.openai.example/v1';
     act(() => {
@@ -200,22 +291,159 @@ describe('OptionsApp', () => {
     });
     await flushMany();
     act(() => {
-      grantButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushMany();
-    expect(view.container.textContent).toContain('Could not request endpoint permission.');
-    expect(serviceMocks.requestOriginsPermission).toHaveBeenCalledWith(['https://custom.openai.example/*']);
+    expect(view.container.textContent).toContain('Could not request required permissions.');
+    expect(serviceMocks.requestOriginsPermission).toHaveBeenCalledWith(
+      ['*://confluence.example.com/*', 'https://custom.openai.example/*'],
+    );
 
     act(() => {
-      grantButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushMany();
-    expect(view.container.textContent).toContain('Endpoint permission granted for https://custom.openai.example.');
+    expect(serviceMocks.setSync).toHaveBeenCalledWith({
+      domainSettings: [{ domain: 'confluence.example.com' }],
+      customApiEndpoint: 'https://custom.openai.example/v1',
+    });
+    expect(view.container.textContent).toContain('Settings saved');
+
+    view.unmount();
+  });
+
+  it('tests OpenAI API key against configured/default endpoint', async () => {
+    const runtimeSendMessage = vi.fn((_message, callback) => {
+      callback?.({ ok: true, valid: true });
+    });
+    serviceMocks.getChrome.mockReturnValue({
+      runtime: {
+        sendMessage: runtimeSendMessage,
+      },
+    });
+
+    const view = mount();
+    await flushMany();
+
+    const aiToggle = view.container.querySelector('#enable-ai-features');
+    expect(aiToggle).toBeTruthy();
+    aiToggle.checked = true;
+    act(() => {
+      aiToggle.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushMany();
+
+    const apiKeyInput = view.container.querySelector('#api-key');
+    expect(apiKeyInput).toBeTruthy();
+    apiKeyInput.value = 'sk-test-key';
+    act(() => {
+      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flushMany();
+
+    const testButton = view.container.querySelector('.inline-action-btn');
+    expect(testButton).toBeTruthy();
+    expect(testButton?.textContent).toBe('Test');
+    act(() => {
+      testButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushMany();
+
+    expect(runtimeSendMessage).toHaveBeenCalledWith(
+      {
+        action: 'validateOpenAiApiKey',
+        apiKey: 'sk-test-key',
+        apiUrl: 'https://api.openai.com/v1',
+      },
+      expect.any(Function),
+    );
+    expect(view.container.textContent).toContain('OpenAI API key is valid');
+    expect(testButton?.textContent).toBe('✓');
+    expect(testButton?.classList.contains('inline-action-btn--success')).toBe(true);
+
+    const endpointInput = view.container.querySelector('#custom-endpoint');
+    expect(endpointInput).toBeTruthy();
+    endpointInput.value = 'https://custom.openai.example/v1';
+    act(() => {
+      endpointInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flushMany();
+
+    expect(testButton?.textContent).toBe('Test');
+    expect(testButton?.classList.contains('inline-action-btn--success')).toBe(false);
+    expect(testButton?.classList.contains('inline-action-btn--error')).toBe(false);
+
+    apiKeyInput.value = 'sk-test-key-updated';
+    act(() => {
+      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flushMany();
+
+    expect(testButton?.textContent).toBe('Test');
+
+    view.unmount();
+  });
+
+  it('shows failed API key test state and resets on edits', async () => {
+    const runtimeSendMessage = vi.fn((_message, callback) => {
+      callback?.({ ok: true, valid: false, error: 'Invalid API key' });
+    });
+    serviceMocks.getChrome.mockReturnValue({
+      runtime: {
+        sendMessage: runtimeSendMessage,
+      },
+    });
+
+    const view = mount();
+    await flushMany();
+
+    const aiToggle = view.container.querySelector('#enable-ai-features');
+    expect(aiToggle).toBeTruthy();
+    aiToggle.checked = true;
+    act(() => {
+      aiToggle.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushMany();
+
+    const apiKeyInput = view.container.querySelector('#api-key');
+    expect(apiKeyInput).toBeTruthy();
+    apiKeyInput.value = 'sk-invalid-key';
+    act(() => {
+      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flushMany();
+
+    const testButton = view.container.querySelector('.inline-action-btn');
+    expect(testButton).toBeTruthy();
+    act(() => {
+      testButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushMany();
+
+    expect(runtimeSendMessage).toHaveBeenCalled();
+    expect(view.container.textContent).toContain('OpenAI API key appears invalid');
+    expect(testButton?.textContent).toBe('✕');
+    expect(testButton?.classList.contains('inline-action-btn--error')).toBe(true);
+
+    apiKeyInput.value = 'sk-fixed-key';
+    act(() => {
+      apiKeyInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flushMany();
+
+    expect(testButton?.textContent).toBe('Test');
+    expect(testButton?.classList.contains('inline-action-btn--error')).toBe(false);
 
     view.unmount();
   });
 
   it('persists floating primary action selection', async () => {
+    serviceMocks.getSync.mockResolvedValue({
+      enableAiFeatures: true,
+      enableSummaries: true,
+      enableFloatingSummarize: true,
+      floatingPrimaryAction: 'summarize',
+    });
     const view = mount();
     await flushMany();
 
@@ -233,6 +461,127 @@ describe('OptionsApp', () => {
     view.unmount();
   });
 
+  it('toggles AI settings visibility via Enable AI Features', async () => {
+    const view = mount();
+    await flushMany();
+
+    const sectionHeadings = Array.from(view.container.querySelectorAll('h2')).map((node) => node.textContent || '');
+    const aiHeadingIndex = sectionHeadings.findIndex((text) => text.startsWith('AI Options'));
+    const additionalOptionsHeadingIndex = sectionHeadings.findIndex((text) => text.startsWith('Additional Options'));
+    const domainHeadingText = sectionHeadings.find((text) => text.startsWith('Domain Options')) || '';
+    expect(aiHeadingIndex).toBeGreaterThan(-1);
+    expect(additionalOptionsHeadingIndex).toBeGreaterThan(-1);
+    expect(aiHeadingIndex).toBeLessThan(additionalOptionsHeadingIndex);
+    expect(domainHeadingText).toContain('Required');
+
+    const aiToggle = view.container.querySelector('#enable-ai-features');
+    expect(aiToggle).toBeTruthy();
+    expect(view.container.querySelector('#api-key')).toBeNull();
+
+    aiToggle.checked = true;
+    act(() => {
+      aiToggle.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushMany();
+
+    expect(view.container.querySelector('#api-key')).toBeTruthy();
+    expect(view.container.textContent).toContain('Optional');
+    const floatingPrimaryActionSelect = view.container.querySelector('#floating-primary-action');
+    expect(floatingPrimaryActionSelect?.value).toBe('search');
+    expect(serviceMocks.setSync).toHaveBeenCalledWith({
+      enableAiFeatures: true,
+      enableSummaries: true,
+      enableFloatingSummarize: true,
+    });
+
+    aiToggle.checked = false;
+    act(() => {
+      aiToggle.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushMany();
+
+    expect(view.container.querySelector('#api-key')).toBeNull();
+    expect(serviceMocks.setSync).toHaveBeenCalledWith({
+      enableAiFeatures: false,
+      enableSummaries: false,
+      enableFloatingSummarize: true,
+      floatingPrimaryAction: 'search',
+    });
+
+    view.unmount();
+  });
+
+  it('warns before unload when settings were changed without Save Settings', async () => {
+    const view = mount();
+    await flushMany();
+
+    const treeTooltipToggle = view.container.querySelector('#tree-tooltips');
+    expect(treeTooltipToggle).toBeTruthy();
+
+    treeTooltipToggle.checked = false;
+    act(() => {
+      treeTooltipToggle.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await flushMany();
+
+    const beforeUnloadEvent = new Event('beforeunload', { cancelable: true });
+    Object.defineProperty(beforeUnloadEvent, 'returnValue', { writable: true, value: '' });
+    window.dispatchEvent(beforeUnloadEvent);
+
+    expect(beforeUnloadEvent.defaultPrevented).toBe(true);
+
+    view.unmount();
+  });
+
+  it('does not mark settings as unsaved when toggling theme in the header', async () => {
+    const view = mount();
+    await flushMany();
+
+    const themeToggleButton = view.container.querySelector('#theme-toggle-btn');
+    expect(themeToggleButton).toBeTruthy();
+
+    act(() => {
+      themeToggleButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushMany();
+
+    expect(document.body.classList.contains('dark-mode')).toBe(true);
+    expect(serviceMocks.setSync).toHaveBeenCalledWith({ darkMode: true });
+
+    const beforeUnloadEvent = new Event('beforeunload', { cancelable: true });
+    Object.defineProperty(beforeUnloadEvent, 'returnValue', { writable: true, value: '' });
+    window.dispatchEvent(beforeUnloadEvent);
+
+    expect(beforeUnloadEvent.defaultPrevented).toBe(false);
+
+    view.unmount();
+  });
+
+  it('syncs the header theme toggle from sync storage changes', async () => {
+    let onStorageChange = null;
+    serviceMocks.subscribeStorageChanges.mockImplementation((listener) => {
+      onStorageChange = listener;
+      return () => {};
+    });
+
+    const view = mount();
+    await flushMany();
+
+    expect(document.body.classList.contains('dark-mode')).toBe(false);
+    expect(onStorageChange).toBeTypeOf('function');
+
+    act(() => {
+      onStorageChange({ darkMode: { newValue: true } }, 'sync');
+    });
+    await flushMany();
+
+    expect(document.body.classList.contains('dark-mode')).toBe(true);
+    const themeToggleButton = view.container.querySelector('#theme-toggle-btn');
+    expect(themeToggleButton?.getAttribute('title')).toBe('Switch to light mode');
+
+    view.unmount();
+  });
+
   it('confirms and clears summaries plus conversations', async () => {
     const runtimeSendMessage = vi.fn();
     serviceMocks.getChrome.mockReturnValue({
@@ -242,6 +591,14 @@ describe('OptionsApp', () => {
     });
 
     const view = mount();
+    await flushMany();
+
+    const aiToggle = view.container.querySelector('#enable-ai-features');
+    expect(aiToggle).toBeTruthy();
+    aiToggle.checked = true;
+    act(() => {
+      aiToggle.dispatchEvent(new Event('change', { bubbles: true }));
+    });
     await flushMany();
 
     const clearAllButton = Array.from(view.container.querySelectorAll('button')).find((button) => button.textContent.includes('Summaries + Conversations'));

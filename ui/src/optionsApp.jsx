@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import {
   AI_MODEL_OPTIONS,
   CONVERSATION_STORE,
@@ -15,7 +15,10 @@ import { normalizeResponsesUrl } from './shared/openai.js';
 
 const DEFAULT_RESULTS_PER_REQUEST = 75;
 const STORAGE_WRITE_DEBOUNCE_MS = 320;
-const FLOATING_PRIMARY_ACTION_DEFAULT = 'summarize';
+const STATUS_FADE_START_MS = 9400;
+const STATUS_AUTO_DISMISS_MS = 10000;
+const FLOATING_PRIMARY_ACTION_DEFAULT = 'search';
+const DEFAULT_OPENAI_API_BASE_URL = 'https://api.openai.com/v1';
 
 const floatingPrimaryActionOptions = [
   { value: 'search', label: 'Search' },
@@ -44,6 +47,62 @@ const normalizeReasoningEffort = (value, legacyHigh = false) => {
 const hasRtl = (value) => /[\u0590-\u05FF\u0600-\u06FF]/.test(value || '');
 
 const isValidDomain = (domain) => /^(?!:\/\/)([a-zA-Z0-9-_]+\.)*[a-zA-Z0-9][a-zA-Z0-9-_]+\.[a-zA-Z]{2,11}?$/.test(domain);
+const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+const normalizeDomainInput = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  const hasScheme = HAS_SCHEME.test(raw);
+  const candidate = hasScheme ? raw : `https://${raw}`;
+
+  try {
+    const parsed = new URL(candidate);
+    if (hasScheme && !/^https?:$/.test(parsed.protocol)) return '';
+    return String(parsed.hostname || '').trim().toLowerCase().replace(/\.+$/, '');
+  } catch {
+    return '';
+  }
+};
+
+const normalizeDomainListForCompare = (entries) => {
+  if (!Array.isArray(entries)) return [];
+  const tokens = entries
+    .map((entry) => {
+      const raw = String(entry?.domain || '').trim();
+      if (!raw) return '';
+      const normalized = normalizeDomainInput(raw);
+      return normalized || `invalid:${raw.toLowerCase()}`;
+    })
+    .filter(Boolean);
+  return [...new Set(tokens)].sort();
+};
+
+const normalizeDomainListForSave = (entries) => {
+  if (!Array.isArray(entries)) return { normalized: [], invalid: false };
+  const normalized = [];
+  for (const entry of entries) {
+    const raw = String(entry?.domain || '').trim();
+    if (!raw) continue;
+    const domain = normalizeDomainInput(raw);
+    if (!domain || !isValidDomain(domain)) {
+      return { normalized: [], invalid: true };
+    }
+    normalized.push({ domain });
+  }
+  return {
+    normalized: [...new Map(normalized.map((item) => [item.domain, item])).values()],
+    invalid: false,
+  };
+};
+
+const areArraysEqual = (left, right) => {
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i += 1) {
+    if (left[i] !== right[i]) return false;
+  }
+  return true;
+};
+
 let domainRowSeed = 0;
 const createDomainEntry = (entry = {}) => ({
   rowId: `domain-row-${Date.now()}-${domainRowSeed += 1}`,
@@ -95,8 +154,7 @@ export function OptionsApp() {
   const [showTreeTooltips, setShowTreeTooltips] = useState(true);
   const [showTableTooltips, setShowTableTooltips] = useState(true);
   const [highlightResultRows, setHighlightResultRows] = useState(true);
-  const [enableSummaries, setEnableSummaries] = useState(true);
-  const [enableFloatingSummarize, setEnableFloatingSummarize] = useState(true);
+  const [enableAiFeatures, setEnableAiFeatures] = useState(false);
   const [floatingPrimaryAction, setFloatingPrimaryAction] = useState(FLOATING_PRIMARY_ACTION_DEFAULT);
   const [selectedAiModel, setSelectedAiModel] = useState(DEFAULT_AI_MODEL);
   const [reasoningEffort, setReasoningEffort] = useState('');
@@ -106,10 +164,20 @@ export function OptionsApp() {
   const [resultsPerRequest, setResultsPerRequest] = useState(DEFAULT_RESULTS_PER_REQUEST);
 
   const [domainSettings, setDomainSettings] = useState([createDomainEntry()]);
-  const [domainDirty, setDomainDirty] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [hasPendingSettingsChanges, setHasPendingSettingsChanges] = useState(false);
+  const [saveBaseline, setSaveBaseline] = useState({ domains: [], endpoint: '' });
+  const [defaultEndpointWarningShown, setDefaultEndpointWarningShown] = useState(false);
+  const [attentionState, setAttentionState] = useState({
+    domain: false,
+    endpoint: false,
+    apiKey: false,
+  });
 
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [status, setStatus] = useState({ type: '', msg: '' });
+  const [testingApiKey, setTestingApiKey] = useState(false);
+  const [apiKeyTestResult, setApiKeyTestResult] = useState('');
+  const [statusNotices, setStatusNotices] = useState([]);
   const [confirmState, setConfirmState] = useState({
     open: false,
     title: '',
@@ -121,18 +189,62 @@ export function OptionsApp() {
 
   const promptDebounceRef = useRef(null);
   const apiKeyDebounceRef = useRef(null);
-  const endpointDebounceRef = useRef(null);
+  const statusNoticeIdRef = useRef(0);
+  const statusNoticeTimersRef = useRef(new Map());
   const skipInitialApiKeySaveRef = useRef(true);
-  const skipInitialEndpointSaveRef = useRef(true);
   const poofAudioRef = useRef(null);
 
-  const statusClass = useMemo(() => {
-    if (!status.type) return 'status';
-    return `status ${status.type}`;
-  }, [status.type]);
+  const markSettingsChanged = () => {
+    setHasPendingSettingsChanges(true);
+  };
+
+  const dismissStatus = (id) => {
+    setStatusNotices((prev) => prev.filter((item) => item.id !== id));
+    const timers = statusNoticeTimersRef.current.get(id);
+    if (timers) {
+      clearTimeout(timers.fadeTimer);
+      clearTimeout(timers.removeTimer);
+      statusNoticeTimersRef.current.delete(id);
+    }
+  };
+
+  const clearStatusNotices = (resetState = true) => {
+    statusNoticeTimersRef.current.forEach((timers) => {
+      clearTimeout(timers.fadeTimer);
+      clearTimeout(timers.removeTimer);
+    });
+    statusNoticeTimersRef.current.clear();
+    if (resetState) {
+      setStatusNotices([]);
+    }
+  };
 
   const showStatus = (msg, type = 'success') => {
-    setStatus({ msg, type });
+    if (!msg) return;
+    const id = statusNoticeIdRef.current + 1;
+    statusNoticeIdRef.current = id;
+
+    setStatusNotices((prev) => {
+      const next = [...prev, {
+        id,
+        type,
+        msg,
+        closing: false,
+      }];
+      return next.slice(-5);
+    });
+
+    const fadeTimer = setTimeout(() => {
+      setStatusNotices((prev) => prev.map((item) => (item.id === id ? { ...item, closing: true } : item)));
+    }, STATUS_FADE_START_MS);
+    const removeTimer = setTimeout(() => {
+      dismissStatus(id);
+    }, STATUS_AUTO_DISMISS_MS);
+    statusNoticeTimersRef.current.set(id, { fadeTimer, removeTimer });
+  };
+
+  const showStatuses = (items = []) => {
+    items.forEach(({ msg, type }) => showStatus(msg, type));
   };
 
   const showStorageWriteError = (label, error) => {
@@ -158,60 +270,125 @@ export function OptionsApp() {
   };
 
   const updateDomainAt = (index, patch) => {
+    markSettingsChanged();
     setDomainSettings((prev) => prev.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)));
-    setDomainDirty(true);
+    setAttentionState((prev) => ({ ...prev, domain: false }));
   };
 
   const addDomain = () => {
+    markSettingsChanged();
     setDomainSettings((prev) => [...prev, createDomainEntry()]);
-    setDomainDirty(true);
+    setAttentionState((prev) => ({ ...prev, domain: false }));
   };
 
   const removeDomain = (index) => {
+    markSettingsChanged();
     setDomainSettings((prev) => {
       const next = prev.filter((_, i) => i !== index);
       return next.length > 0 ? next : [createDomainEntry()];
     });
-    setDomainDirty(true);
+    setAttentionState((prev) => ({ ...prev, domain: false }));
   };
 
-  const saveDomains = async () => {
-    const normalized = [];
+  const saveSettings = async () => {
+    if (savingSettings) return;
+    clearStatusNotices();
+    setSavingSettings(true);
 
-    for (const entry of domainSettings) {
-      const domain = (entry.domain || '').trim();
+    try {
+      const domainResult = normalizeDomainListForSave(domainSettings);
+      const normalizedDomains = [...domainResult.normalized];
 
-      if (!domain) continue;
-
-      if (!isValidDomain(domain)) {
-        showStatus('Invalid domain.', 'error');
+      if (domainResult.invalid) {
+        setAttentionState((prev) => ({ ...prev, domain: true }));
+        showStatus('Invalid domain. Enter hostnames like confluence.example.com.', 'error');
         return;
       }
 
-      normalized.push({ domain });
-    }
-
-    if (normalized.length === 0) {
-      showStatus('Please add at least one valid domain setting.', 'error');
-      return;
-    }
-
-    const origins = [...new Set(normalized.map((item) => `*://${item.domain}/*`))];
-    const permissionResult = await requestOriginsPermission(origins);
-    if (!permissionResult.granted) {
-      if (permissionResult.reason === 'permissions_api_unavailable') {
-        showStatus('Permissions API is unavailable. Reload the extension and verify manifest permissions.', 'error');
+      if (normalizedDomains.length === 0) {
+        setAttentionState((prev) => ({ ...prev, domain: true }));
+        showStatus('Add at least one Confluence domain before saving. Example: confluence.example.com.', 'error');
         return;
       }
-      showStatus('Permission denied for one or more domains.', 'error');
-      return;
-    }
 
-    const saved = await persistSync({ domainSettings: normalized }, 'domain settings');
-    if (!saved) return;
-    setDomainSettings(normalized.map((entry) => createDomainEntry(entry)));
-    setDomainDirty(false);
-    showStatus('Domain settings saved.', 'success');
+      const endpointValue = String(customApiEndpoint || '').trim();
+      const usingDefaultEndpoint = !endpointValue;
+      let endpointOrigin = '';
+      try {
+        endpointOrigin = new URL(normalizeResponsesUrl(endpointValue || DEFAULT_OPENAI_API_BASE_URL)).origin;
+      } catch {
+        setAttentionState((prev) => ({ ...prev, endpoint: true }));
+        showStatus('Invalid custom OpenAI API Base URL. Enter a valid URL or leave it blank to use the default.', 'error');
+        return;
+      }
+
+      const origins = [...new Set([
+        ...normalizedDomains.map((item) => `*://${item.domain}/*`),
+        `${endpointOrigin}/*`,
+      ])];
+      const permissionResult = await requestOriginsPermission(origins);
+      if (!permissionResult.granted) {
+        setAttentionState((prev) => ({ ...prev, domain: true, endpoint: true }));
+        if (permissionResult.reason === 'permissions_api_unavailable') {
+          showStatus('Permissions API is unavailable. Reload the extension and verify manifest permissions.', 'error');
+          return;
+        }
+        if (permissionResult.reason === 'request_failed' || permissionResult.reason === 'contains_failed') {
+          showStatus('Could not request required permissions. Keep this Options page open and try Save Settings again.', 'error');
+          return;
+        }
+        showStatus('Permissions were not granted. Domain and OpenAI endpoint permissions are required.', 'error');
+        return;
+      }
+
+      const saved = await persistSync({
+        domainSettings: normalizedDomains,
+        customApiEndpoint: endpointValue,
+      }, 'settings');
+      if (!saved) return;
+
+      const missingApiKey = enableAiFeatures && !String(openaiApiKey || '').trim();
+      const postSaveNotices = [];
+      const shouldWarnDefaultEndpoint = enableAiFeatures && usingDefaultEndpoint && !defaultEndpointWarningShown;
+      if (shouldWarnDefaultEndpoint) {
+        postSaveNotices.push({
+          type: 'warning',
+          msg: 'No custom OpenAI API Base URL is set, so the default OpenAI base URL (https://api.openai.com/v1) will be used.',
+        });
+      }
+      if (missingApiKey) {
+        postSaveNotices.push({
+          type: 'error',
+          msg: 'OpenAI API Key is empty, so AI summaries and follow-up Q&A will remain unavailable.',
+        });
+      }
+
+      setAttentionState({
+        domain: false,
+        endpoint: false,
+        apiKey: missingApiKey,
+      });
+      setDomainSettings(normalizedDomains.map((entry) => createDomainEntry(entry)));
+      setCustomApiEndpoint(endpointValue);
+      setSaveBaseline({
+        domains: normalizedDomains.map((item) => item.domain).sort(),
+        endpoint: endpointValue,
+      });
+      setHasPendingSettingsChanges(false);
+
+      if (postSaveNotices.length > 0) {
+        if (shouldWarnDefaultEndpoint) {
+          setDefaultEndpointWarningShown(true);
+          void persistLocal({ defaultEndpointWarningShown: true }, 'default endpoint warning state');
+        }
+        showStatuses(postSaveNotices);
+        return;
+      }
+
+      showStatus('Settings saved', 'success');
+    } finally {
+      setSavingSettings(false);
+    }
   };
 
   const askConfirm = ({ title, message, confirmLabel = 'Confirm', danger = false, onConfirm }) => {
@@ -245,13 +422,17 @@ export function OptionsApp() {
   useEffect(() => {
     const unsubscribe = subscribeStorageChanges((changes, area) => {
       if (area !== 'sync') return;
-      if (!changes.selectedAiModel) return;
-      const requestedModel = retiredModelFallbacks[changes.selectedAiModel.newValue]
-        || changes.selectedAiModel.newValue
-        || DEFAULT_AI_MODEL;
-      setSelectedAiModel(requestedModel);
-      if (changes.selectedAiModel.newValue && requestedModel !== changes.selectedAiModel.newValue) {
-        void persistSync({ selectedAiModel: requestedModel }, 'AI model');
+      if (changes.darkMode) {
+        setDarkMode(!!changes.darkMode.newValue);
+      }
+      if (changes.selectedAiModel) {
+        const requestedModel = retiredModelFallbacks[changes.selectedAiModel.newValue]
+          || changes.selectedAiModel.newValue
+          || DEFAULT_AI_MODEL;
+        setSelectedAiModel(requestedModel);
+        if (changes.selectedAiModel.newValue && requestedModel !== changes.selectedAiModel.newValue) {
+          void persistSync({ selectedAiModel: requestedModel }, 'AI model');
+        }
       }
     });
 
@@ -264,6 +445,7 @@ export function OptionsApp() {
         'showTreeTooltips',
         'showTableTooltips',
         'highlightResultRows',
+        'enableAiFeatures',
         'enableSummaries',
         'enableFloatingSummarize',
         'floatingPrimaryAction',
@@ -274,7 +456,7 @@ export function OptionsApp() {
         'reasoningEffort',
         'useHighReasoningEffort',
       ]);
-      const localData = await getLocal(['customUserPrompt', 'openaiApiKey']);
+      const localData = await getLocal(['customUserPrompt', 'openaiApiKey', 'defaultEndpointWarningShown']);
       const merged = { ...syncData, ...localData };
       const syncApiKey = typeof syncData.openaiApiKey === 'string' ? syncData.openaiApiKey.trim() : '';
       const localApiKey = typeof localData.openaiApiKey === 'string' ? localData.openaiApiKey.trim() : '';
@@ -286,12 +468,32 @@ export function OptionsApp() {
       setShowTreeTooltips((merged.showTreeTooltips ?? legacyTooltip) !== false);
       setShowTableTooltips((merged.showTableTooltips ?? legacyTooltip) !== false);
       setHighlightResultRows(merged.highlightResultRows !== false);
-      setEnableSummaries(merged.enableSummaries !== false);
-      setEnableFloatingSummarize(merged.enableFloatingSummarize !== false);
-      setFloatingPrimaryAction(normalizeFloatingPrimaryAction(merged.floatingPrimaryAction));
+      const hasAiFeaturesFlag = typeof merged.enableAiFeatures === 'boolean';
+      const hasSummariesFlag = typeof merged.enableSummaries === 'boolean';
+      const hasFloatingFlag = typeof merged.enableFloatingSummarize === 'boolean';
+      const mergedSummariesEnabled = merged.enableSummaries !== false;
+      const mergedFloatingEnabled = merged.enableFloatingSummarize !== false;
+      const aiEnabled = hasAiFeaturesFlag
+        ? merged.enableAiFeatures
+        : (hasSummariesFlag || hasFloatingFlag ? (mergedSummariesEnabled || mergedFloatingEnabled) : false);
+      setEnableAiFeatures(aiEnabled);
+      if (aiEnabled && (!mergedSummariesEnabled || !mergedFloatingEnabled)) {
+        void persistSync({
+          enableSummaries: true,
+          enableFloatingSummarize: true,
+        }, 'AI summary availability');
+      }
+      const preferredPrimaryAction = aiEnabled
+        ? normalizeFloatingPrimaryAction(merged.floatingPrimaryAction)
+        : 'search';
+      setFloatingPrimaryAction(preferredPrimaryAction);
+      if (!aiEnabled && merged.floatingPrimaryAction !== 'search') {
+        void persistSync({ floatingPrimaryAction: 'search' }, 'floating primary action');
+      }
       setOpenaiApiKey(effectiveApiKey);
       setCustomApiEndpoint(merged.customApiEndpoint || '');
       setCustomUserPrompt(merged.customUserPrompt || '');
+      setDefaultEndpointWarningShown(localData.defaultEndpointWarningShown === true);
       if (Number.isInteger(merged.resultsPerRequest)) {
         setResultsPerRequest(merged.resultsPerRequest);
       }
@@ -306,8 +508,15 @@ export function OptionsApp() {
       const domains = Array.isArray(merged.domainSettings) && merged.domainSettings.length > 0
         ? merged.domainSettings
         : [createDomainEntry()];
-      setDomainSettings(domains.map((entry) => createDomainEntry(entry)));
-      setDomainDirty(false);
+      const normalizedDomainEntries = domains.map((entry) => createDomainEntry({
+        ...entry,
+        domain: normalizeDomainInput(entry?.domain) || String(entry?.domain || '').trim(),
+      }));
+      setDomainSettings(normalizedDomainEntries);
+      setSaveBaseline({
+        domains: normalizeDomainListForSave(normalizedDomainEntries).normalized.map((item) => item.domain).sort(),
+        endpoint: String(merged.customApiEndpoint || '').trim(),
+      });
 
       if (!localApiKey && syncApiKey) {
         const writeLocalResult = await setLocal({ openaiApiKey: syncApiKey });
@@ -316,6 +525,7 @@ export function OptionsApp() {
         }
       }
 
+      setHasPendingSettingsChanges(false);
       setLoading(false);
     })();
 
@@ -329,8 +539,18 @@ export function OptionsApp() {
   useEffect(() => () => {
     if (promptDebounceRef.current) clearTimeout(promptDebounceRef.current);
     if (apiKeyDebounceRef.current) clearTimeout(apiKeyDebounceRef.current);
-    if (endpointDebounceRef.current) clearTimeout(endpointDebounceRef.current);
+    clearStatusNotices(false);
   }, []);
+
+  useEffect(() => {
+    const onBeforeUnload = (event) => {
+      if (!hasPendingSettingsChanges) return;
+      event.preventDefault();
+      event.returnValue = 'Unsaved changes detected. Are you sure you want to leave this page?';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [hasPendingSettingsChanges]);
 
   const onDarkModeChange = (next) => {
     setDarkMode(next);
@@ -338,47 +558,65 @@ export function OptionsApp() {
   };
 
   const onSyncThemeToConfluencePageChange = (next) => {
+    markSettingsChanged();
     setSyncThemeToConfluencePage(next);
     void persistSync({ syncThemeToConfluencePage: next }, 'Confluence modal theme sync');
   };
 
   const onTreeTooltipChange = (next) => {
+    markSettingsChanged();
     setShowTreeTooltips(next);
     void persistSync({ showTreeTooltips: next }, 'tree tooltip preference');
   };
 
   const onTableTooltipChange = (next) => {
+    markSettingsChanged();
     setShowTableTooltips(next);
     void persistSync({ showTableTooltips: next }, 'table tooltip preference');
   };
 
   const onHighlightChange = (next) => {
+    markSettingsChanged();
     setHighlightResultRows(next);
     void persistSync({ highlightResultRows: next }, 'row highlight preference');
   };
 
-  const onEnableSummariesChange = (next) => {
-    setEnableSummaries(next);
-    void persistSync({ enableSummaries: next }, 'AI summary toggle');
-  };
+  const onEnableAiFeaturesChange = (next) => {
+    markSettingsChanged();
+    setEnableAiFeatures(next);
+    if (!next) {
+      setFloatingPrimaryAction('search');
+      void persistSync({
+        enableAiFeatures: false,
+        enableSummaries: false,
+        enableFloatingSummarize: true,
+        floatingPrimaryAction: 'search',
+      }, 'AI features');
+      return;
+    }
 
-  const onEnableFloatingSummarizeChange = (next) => {
-    setEnableFloatingSummarize(next);
-    void persistSync({ enableFloatingSummarize: next }, 'floating summary toggle');
+    void persistSync({
+      enableAiFeatures: true,
+      enableSummaries: true,
+      enableFloatingSummarize: true,
+    }, 'AI features');
   };
 
   const onFloatingPrimaryActionChange = (next) => {
+    markSettingsChanged();
     const normalized = normalizeFloatingPrimaryAction(next);
     setFloatingPrimaryAction(normalized);
     void persistSync({ floatingPrimaryAction: normalized }, 'floating primary action');
   };
 
   const onModelChange = (next) => {
+    markSettingsChanged();
     setSelectedAiModel(next);
     void persistSync({ selectedAiModel: next }, 'AI model');
   };
 
   const onReasoningEffortChange = (next) => {
+    markSettingsChanged();
     const normalized = normalizeReasoningEffort(next, false);
     setReasoningEffort(normalized);
     void persistSync({
@@ -388,37 +626,97 @@ export function OptionsApp() {
   };
 
   const onApiKeyChange = (next) => {
+    markSettingsChanged();
     setOpenaiApiKey(next);
+    setApiKeyTestResult('');
+    setAttentionState((prev) => ({ ...prev, apiKey: false }));
   };
 
   const onCustomEndpointChange = (next) => {
+    markSettingsChanged();
     setCustomApiEndpoint(next);
+    setApiKeyTestResult('');
+    setAttentionState((prev) => ({ ...prev, endpoint: false }));
   };
 
-  const onGrantEndpointPermission = async () => {
-    const configuredBase = (customApiEndpoint || '').trim() || 'https://api.openai.com/v1';
-    let origin = '';
-    try {
-      origin = new URL(normalizeResponsesUrl(configuredBase)).origin;
-    } catch {
-      showStatus('Invalid OpenAI endpoint URL.', 'error');
+  const onTestApiKey = async () => {
+    if (testingApiKey) return;
+
+    const apiKey = String(openaiApiKey || '').trim();
+    if (!apiKey) {
+      setApiKeyTestResult('error');
+      setAttentionState((prev) => ({ ...prev, apiKey: true }));
+      showStatus('OpenAI API Key is empty. Add your key before running a test.', 'error');
       return;
     }
 
-    const permissionResult = await requestOriginsPermission([`${origin}/*`]);
-    if (!permissionResult.granted) {
-      if (permissionResult.reason === 'request_failed' || permissionResult.reason === 'contains_failed') {
-        showStatus('Could not request endpoint permission. Try again from this Options page.', 'error');
+    const baseApiUrl = String(customApiEndpoint || '').trim() || DEFAULT_OPENAI_API_BASE_URL;
+    try {
+      // Validate early to avoid unnecessary runtime messaging for malformed URLs.
+      // normalizeResponsesUrl appends /responses as needed.
+      // eslint-disable-next-line no-new
+      new URL(normalizeResponsesUrl(baseApiUrl));
+    } catch {
+      setApiKeyTestResult('error');
+      setAttentionState((prev) => ({ ...prev, endpoint: true }));
+      showStatus('Invalid custom OpenAI API Base URL. Fix it before testing the API key.', 'error');
+      return;
+    }
+
+    const api = getChrome();
+    if (!api?.runtime?.sendMessage) {
+      setApiKeyTestResult('error');
+      showStatus('Runtime messaging API is unavailable. Reload the extension and try again.', 'error');
+      return;
+    }
+
+    setApiKeyTestResult('');
+    setTestingApiKey(true);
+
+    try {
+      const result = await new Promise((resolve) => {
+        api.runtime.sendMessage(
+          {
+            action: 'validateOpenAiApiKey',
+            apiKey,
+            apiUrl: baseApiUrl,
+          },
+          (response) => {
+            const runtimeError = api.runtime?.lastError?.message || '';
+            if (runtimeError) {
+              resolve({ ok: false, valid: false, error: runtimeError });
+              return;
+            }
+            resolve({
+              ok: response?.ok !== false,
+              valid: response?.valid === true,
+              error: response?.error || '',
+            });
+          },
+        );
+      });
+
+      if (!result.ok) {
+        setApiKeyTestResult('error');
+        showStatus(`API key test failed: ${result.error || 'Unknown error'}`, 'error');
         return;
       }
-      showStatus('Permission denied for the OpenAI endpoint domain.', 'error');
-      return;
-    }
 
-    showStatus(`Endpoint permission granted for ${origin}.`, 'success');
+      if (result.valid) {
+        setApiKeyTestResult('success');
+        showStatus('OpenAI API key is valid for the currently configured endpoint.', 'success');
+        return;
+      }
+
+      setApiKeyTestResult('error');
+      showStatus(`OpenAI API key appears invalid: ${result.error || 'Authentication failed.'}`, 'error');
+    } finally {
+      setTestingApiKey(false);
+    }
   };
 
   const onCustomPromptChange = (next) => {
+    markSettingsChanged();
     setCustomUserPrompt(next);
     if (promptDebounceRef.current) clearTimeout(promptDebounceRef.current);
     promptDebounceRef.current = setTimeout(() => {
@@ -429,6 +727,7 @@ export function OptionsApp() {
   const onResultsPerRequestChange = (next) => {
     const parsed = Number.parseInt(next, 10);
     if (!Number.isInteger(parsed)) return;
+    markSettingsChanged();
     setResultsPerRequest(parsed);
     void persistSync({ resultsPerRequest: parsed }, 'results per batch');
   };
@@ -449,23 +748,6 @@ export function OptionsApp() {
       if (apiKeyDebounceRef.current) clearTimeout(apiKeyDebounceRef.current);
     };
   }, [openaiApiKey, loading]);
-
-  useEffect(() => {
-    if (loading) return undefined;
-    if (skipInitialEndpointSaveRef.current) {
-      skipInitialEndpointSaveRef.current = false;
-      return undefined;
-    }
-
-    if (endpointDebounceRef.current) clearTimeout(endpointDebounceRef.current);
-    endpointDebounceRef.current = setTimeout(() => {
-      void persistSync({ customApiEndpoint: customApiEndpoint.trim() }, 'custom API endpoint');
-    }, STORAGE_WRITE_DEBOUNCE_MS);
-
-    return () => {
-      if (endpointDebounceRef.current) clearTimeout(endpointDebounceRef.current);
-    };
-  }, [customApiEndpoint, loading]);
 
   const clearAllSummariesAndConversations = async () => {
     try {
@@ -507,20 +789,102 @@ export function OptionsApp() {
     );
   }
 
+  const domainCompareTokens = normalizeDomainListForCompare(domainSettings);
+  const hasUnsavedDomainChanges = !areArraysEqual(domainCompareTokens, saveBaseline.domains);
+  const hasUnsavedEndpointChanges = String(customApiEndpoint || '').trim() !== saveBaseline.endpoint;
+  const requiresInitialDomain = normalizeDomainListForSave(domainSettings).normalized.length === 0;
+  const saveButtonNeedsAttention = hasPendingSettingsChanges || hasUnsavedDomainChanges || hasUnsavedEndpointChanges || requiresInitialDomain;
+  const saveButtonClass = `btn floating-save-btn ${saveButtonNeedsAttention ? 'attention' : ''}`.trim();
+  const apiKeyTestButtonClass = [
+    'btn',
+    'secondary',
+    'inline-action-btn',
+    apiKeyTestResult ? `inline-action-btn--${apiKeyTestResult}` : '',
+    (!testingApiKey && apiKeyTestResult) ? 'inline-action-btn--symbol' : '',
+  ].filter(Boolean).join(' ');
+  const apiKeyTestButtonText = testingApiKey
+    ? 'Testing...'
+    : (apiKeyTestResult === 'success' ? '✓' : (apiKeyTestResult === 'error' ? '✕' : 'Test'));
+  const apiKeyTestButtonTitle = testingApiKey
+    ? 'Testing current API key against current endpoint'
+    : (apiKeyTestResult === 'success'
+      ? 'API key is valid for the current endpoint'
+      : (apiKeyTestResult === 'error'
+        ? 'API key validation failed for the current key/endpoint'
+        : 'Test current API key with current endpoint'));
+  const extensionVersion = getChrome()?.runtime?.getManifest?.()?.version || 'unknown';
+
   return (
     <div class="options-root">
       <header class="options-hero panel">
         <img src="../../assets/logo.png" alt="Enhanced Search Results" class="options-logo" />
-        <div>
+        <div class="options-hero-copy">
           <h1>Extension Options</h1>
           <p>Configure appearance, AI behavior, and workspace-specific settings.</p>
         </div>
+        <div class="options-hero-actions">
+          <button
+            id="theme-toggle-btn"
+            class="icon-btn topbar-icon-btn"
+            type="button"
+            onClick={() => onDarkModeChange(!darkMode)}
+            title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {darkMode ? (
+              <span class="theme-moon-emoji" aria-hidden="true">🌙</span>
+            ) : (
+              <svg class="theme-icon-svg sun" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="4.8" fill="#f59e0b" />
+                <g stroke="#fbbf24" stroke-width="1.7" stroke-linecap="round">
+                  <path d="M12 2.4v2.2M12 19.4v2.2M4.6 12H2.4M21.6 12h-2.2M5.9 5.9l1.6 1.6M18.1 18.1l-1.6-1.6M18.1 5.9l-1.6 1.6M5.9 18.1l1.6-1.6" />
+                </g>
+              </svg>
+            )}
+          </button>
+        </div>
       </header>
+      {statusNotices.length > 0 && (
+        <div class="status-stack" aria-live="polite">
+          {statusNotices.map((notice) => (
+            <div
+              key={notice.id}
+              class={`status status-floating ${notice.type || ''} ${notice.closing ? 'closing' : ''}`.trim()}
+              role="status"
+            >
+              {notice.msg}
+            </div>
+          ))}
+        </div>
+      )}
 
       <main class="options-layout">
-        <section class="panel">
+        <section class="panel quickstart-panel">
+          <h2>{`Quick Setup Guide (v${extensionVersion})`}</h2>
+          <p class="quickstart-intro">Follow these steps to set up the extension for your Confluence pages.</p>
+          <div class="quickstart-group">
+            <h3 class="quickstart-group-title">Basic Setup (Required)</h3>
+            <ul class="quickstart-list">
+              <li>Add at least one Confluence domain under <span class="quickstart-option-tag">Domain Options</span> (for example, <code>confluence.example.com</code>).</li>
+              <li>Click <span class="quickstart-option-tag">Save Settings</span>. The browser will request the domain permissions required for content injection.</li>
+            </ul>
+          </div>
+          <div class="quickstart-group">
+            <h3 class="quickstart-group-title">AI Options (Optional)</h3>
+            <ul class="quickstart-list">
+              <li>Enable <span class="quickstart-option-tag">AI Options</span> and add your <span class="quickstart-option-tag">OpenAI API Key</span> to enable summaries and follow-up Q&amp;A.</li>
+              <li><span class="quickstart-option-tag">Custom OpenAI API Base URL</span> is optional. If left empty, the default OpenAI endpoint will be used.</li>
+              <li>When you click <span class="quickstart-option-tag">Save Settings</span>, the browser will request endpoint permissions required for API calls.</li>
+              <li>You can set <span class="quickstart-option-tag">Floating Primary Button</span> to either Search or Summarize &amp; Chat.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class={`panel ${attentionState.domain ? 'needs-attention' : ''}`.trim()}>
           <div class="section-head">
-            <h2>Domain Options</h2>
+            <h2>
+              Domain Options
+              <span class="meta-chip required">Required</span>
+            </h2>
             <button class="btn secondary" onClick={addDomain}>+ Add Domain</button>
           </div>
 
@@ -534,23 +898,179 @@ export function OptionsApp() {
               />
             ))}
           </div>
-
-          <div class="section-actions">
-            <button class="btn" disabled={!domainDirty} onClick={saveDomains}>Save Domain Settings</button>
-          </div>
-          <div class={statusClass}>{status.msg || ' '}</div>
         </section>
 
         <section class="panel">
-          <h2>Appearance</h2>
+          <div class="section-head">
+            <h2>
+              AI Options
+              <span class="meta-chip recommended">Recommended</span>
+            </h2>
+            <label class="switch section-head-toggle" htmlFor="enable-ai-features">
+              <input
+                id="enable-ai-features"
+                type="checkbox"
+                checked={enableAiFeatures}
+                onChange={(e) => onEnableAiFeaturesChange(e.currentTarget.checked)}
+              />
+              <span class="switch-slider" />
+            </label>
+          </div>
+          <p class="section-subtitle">Turn on AI summaries and follow-up Q&amp;A in views and Confluence pages.</p>
           <div class="settings-list">
-            <ToggleRow
-              id="dark-mode"
-              label="Dark Mode"
-              desc="Use dark surfaces across the extension UI."
-              checked={darkMode}
-              onChange={onDarkModeChange}
-            />
+            {enableAiFeatures ? (
+              <>
+                <div class="setting-row stacked">
+                  <div>
+                    <label class="setting-label" htmlFor="floating-primary-action">
+                      Floating Primary Button
+                      <span class="meta-chip recommended">Recommended</span>
+                    </label>
+                    <p class="setting-desc">Pick which action appears as the default floating button. Hover still reveals Search, Summarize and chat, and Settings.</p>
+                  </div>
+                  <select
+                    id="floating-primary-action"
+                    value={floatingPrimaryAction}
+                    onChange={(e) => onFloatingPrimaryActionChange(e.currentTarget.value)}
+                  >
+                    {floatingPrimaryActionOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div class={`setting-row stacked ${attentionState.apiKey ? 'needs-attention' : ''}`.trim()}>
+                  <div>
+                    <label class="setting-label" htmlFor="api-key">
+                      OpenAI API Key
+                      <span class="meta-chip required">Required</span>
+                    </label>
+                    <p class="setting-desc">Stored locally in extension local storage (not synced). If this is blank, AI functionality will not be available.</p>
+                  </div>
+                  <div class="field-with-action-stack">
+                    <div class="field-with-action">
+                      <input
+                        id="api-key"
+                        type="password"
+                        value={openaiApiKey}
+                        onInput={(e) => onApiKeyChange(e.currentTarget.value)}
+                        placeholder="Paste your API key"
+                      />
+                      <button
+                        type="button"
+                        class={apiKeyTestButtonClass}
+                        onClick={onTestApiKey}
+                        disabled={testingApiKey}
+                        title={apiKeyTestButtonTitle}
+                        aria-label={apiKeyTestButtonTitle}
+                      >
+                        {apiKeyTestButtonText}
+                      </button>
+                    </div>
+                    <p class="field-hint">Test checks the current API key against the current endpoint URL.</p>
+                  </div>
+                </div>
+
+                <div class={`setting-row stacked ${attentionState.endpoint ? 'needs-attention' : ''}`.trim()}>
+                  <div>
+                    <label class="setting-label" htmlFor="custom-endpoint">
+                      Custom OpenAI API Base URL
+                      <span class="meta-chip optional">Optional</span>
+                      {attentionState.endpoint && <span class="attention-chip">Needs attention</span>}
+                    </label>
+                    <p class="setting-desc">Optional override (the extension appends /responses automatically). Leave blank to use OpenAI default. Save Settings to apply permission changes.</p>
+                  </div>
+                  <input
+                    id="custom-endpoint"
+                    type="text"
+                    value={customApiEndpoint}
+                    onInput={(e) => onCustomEndpointChange(e.currentTarget.value)}
+                    placeholder="https://api.openai.com/v1"
+                  />
+                </div>
+
+                <div class="setting-row stacked">
+                  <div>
+                    <label class="setting-label" htmlFor="ai-model">AI Model</label>
+                    <p class="setting-desc">Model used for summaries and follow-up Q&A.</p>
+                  </div>
+                  <select id="ai-model" value={selectedAiModel} onChange={(e) => onModelChange(e.currentTarget.value)}>
+                    {AI_MODEL_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div class="setting-row stacked">
+                  <div>
+                    <label class="setting-label" htmlFor="reasoning-effort">Reasoning Effort</label>
+                    <p class="setting-desc">Choose how much deliberate reasoning to request for supported models.</p>
+                  </div>
+                  <select
+                    id="reasoning-effort"
+                    value={reasoningEffort}
+                    onChange={(e) => onReasoningEffortChange(e.currentTarget.value)}
+                  >
+                    {reasoningEffortOptions.map((option) => (
+                      <option key={option.value || 'default'} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div class="setting-row stacked">
+                  <div>
+                    <label class="setting-label" htmlFor="custom-prompt">Custom User Prompt</label>
+                    <p class="setting-desc">This prompt is appended to the default prompt for summary generation.</p>
+                  </div>
+                  <textarea
+                    id="custom-prompt"
+                    value={customUserPrompt}
+                    onInput={(e) => onCustomPromptChange(e.currentTarget.value)}
+                    dir={hasRtl(customUserPrompt) ? 'rtl' : 'ltr'}
+                    placeholder="Optional custom prompt"
+                  />
+                </div>
+
+                <div class="danger-block">
+                  <div>
+                    <div class="setting-label">Clear Cached AI-Generated Content</div>
+                    <p class="setting-desc">Remove local summaries and/or follow-up conversation history.</p>
+                  </div>
+                  <div class="danger-actions">
+                    <button
+                      class="btn danger"
+                      onClick={() => askConfirm({
+                        title: 'Delete all summaries and conversations?',
+                        message: 'This action cannot be undone.',
+                        confirmLabel: 'Delete All',
+                        danger: true,
+                        onConfirm: clearAllSummariesAndConversations,
+                      })}
+                    >
+                      Summaries + Conversations
+                    </button>
+                    <button
+                      class="btn danger ghost"
+                      onClick={() => askConfirm({
+                        title: 'Delete follow-up conversations?',
+                        message: 'Summaries will be kept.',
+                        confirmLabel: 'Delete Conversations',
+                        danger: true,
+                        onConfirm: clearOnlyConversations,
+                      })}
+                    >
+                      Conversations Only
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Additional Options</h2>
+          <div class="settings-list">
             <ToggleRow
               id="sync-theme-confluence"
               label="Sync theme selection in Confluence page"
@@ -579,153 +1099,6 @@ export function OptionsApp() {
               checked={highlightResultRows}
               onChange={onHighlightChange}
             />
-          </div>
-        </section>
-
-        <section class="panel">
-          <h2>AI Options</h2>
-          <div class="settings-list">
-            <ToggleRow
-              id="enable-summaries"
-              label="Enable AI Summary in Enhanced Results Page"
-              desc="Show the summarize/open button next to search results."
-              checked={enableSummaries}
-              onChange={onEnableSummariesChange}
-            />
-            <ToggleRow
-              id="enable-floating"
-              label="Enable AI Summary in Confluence Pages"
-              desc="Show summarize actions directly on Confluence content pages."
-              checked={enableFloatingSummarize}
-              onChange={onEnableFloatingSummarizeChange}
-            />
-
-            <div class="setting-row stacked">
-              <div>
-                <label class="setting-label" htmlFor="floating-primary-action">Floating Primary Button</label>
-                <p class="setting-desc">Pick which action appears as the default floating button. Hover still reveals Search, Summarize and chat, and Settings.</p>
-              </div>
-              <select
-                id="floating-primary-action"
-                value={floatingPrimaryAction}
-                onChange={(e) => onFloatingPrimaryActionChange(e.currentTarget.value)}
-                disabled={!enableFloatingSummarize}
-              >
-                {floatingPrimaryActionOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div class="setting-row stacked">
-              <div>
-                <label class="setting-label" htmlFor="ai-model">AI Model</label>
-                <p class="setting-desc">Model used for summaries and follow-up Q&A.</p>
-              </div>
-              <select id="ai-model" value={selectedAiModel} onChange={(e) => onModelChange(e.currentTarget.value)}>
-                {AI_MODEL_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div class="setting-row stacked">
-              <div>
-                <label class="setting-label" htmlFor="reasoning-effort">Reasoning Effort</label>
-                <p class="setting-desc">Choose how much deliberate reasoning to request for supported models.</p>
-              </div>
-              <select
-                id="reasoning-effort"
-                value={reasoningEffort}
-                onChange={(e) => onReasoningEffortChange(e.currentTarget.value)}
-              >
-                {reasoningEffortOptions.map((option) => (
-                  <option key={option.value || 'default'} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div class="setting-row stacked">
-              <div>
-                <label class="setting-label" htmlFor="api-key">OpenAI API Key</label>
-                <p class="setting-desc">Stored locally in extension local storage (not synced).</p>
-              </div>
-              <input
-                id="api-key"
-                type="password"
-                value={openaiApiKey}
-                onInput={(e) => onApiKeyChange(e.currentTarget.value)}
-                placeholder="Paste your API key"
-              />
-            </div>
-
-            <div class="setting-row stacked">
-              <div>
-                <label class="setting-label" htmlFor="custom-endpoint">Custom OpenAI API Base URL</label>
-                <p class="setting-desc">Optional override (the extension appends /responses automatically). Click Grant Endpoint Permission after changes.</p>
-              </div>
-              <div class="inline-control-stack">
-                <input
-                  id="custom-endpoint"
-                  type="text"
-                  value={customApiEndpoint}
-                  onInput={(e) => onCustomEndpointChange(e.currentTarget.value)}
-                  placeholder="https://api.openai.com/v1"
-                />
-                <div class="section-actions tight">
-                  <button class="btn secondary" type="button" onClick={onGrantEndpointPermission}>
-                    Grant Endpoint Permission
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div class="setting-row stacked">
-              <div>
-                <label class="setting-label" htmlFor="custom-prompt">Custom User Prompt</label>
-                <p class="setting-desc">This prompt is appended to the default prompt for summary generation.</p>
-              </div>
-              <textarea
-                id="custom-prompt"
-                value={customUserPrompt}
-                onInput={(e) => onCustomPromptChange(e.currentTarget.value)}
-                dir={hasRtl(customUserPrompt) ? 'rtl' : 'ltr'}
-                placeholder="Optional custom prompt"
-              />
-            </div>
-
-            <div class="danger-block">
-              <div>
-                <div class="setting-label">Clear Cached AI-Generated Content</div>
-                <p class="setting-desc">Remove local summaries and/or follow-up conversation history.</p>
-              </div>
-              <div class="danger-actions">
-                <button
-                  class="btn danger"
-                  onClick={() => askConfirm({
-                    title: 'Delete all summaries and conversations?',
-                    message: 'This action cannot be undone.',
-                    confirmLabel: 'Delete All',
-                    danger: true,
-                    onConfirm: clearAllSummariesAndConversations,
-                  })}
-                >
-                  Summaries + Conversations
-                </button>
-                <button
-                  class="btn danger ghost"
-                  onClick={() => askConfirm({
-                    title: 'Delete follow-up conversations?',
-                    message: 'Summaries will be kept.',
-                    confirmLabel: 'Delete Conversations',
-                    danger: true,
-                    onConfirm: clearOnlyConversations,
-                  })}
-                >
-                  Conversations Only
-                </button>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -765,6 +1138,14 @@ export function OptionsApp() {
       </main>
 
       <audio ref={poofAudioRef} src="../../assets/sounds/swoosh.mp3" preload="auto" />
+      <button
+        type="button"
+        class={saveButtonClass}
+        onClick={saveSettings}
+        disabled={savingSettings}
+      >
+        {savingSettings ? 'Saving...' : 'Save Settings'}
+      </button>
 
       {confirmState.open && (
         <div class="dialog-overlay" onClick={closeConfirm}>

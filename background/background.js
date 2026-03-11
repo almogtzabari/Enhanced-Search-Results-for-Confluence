@@ -152,6 +152,31 @@ chrome.runtime.onMessage.addListener(function (request) {
     }
 });
 
+if (chrome.runtime?.onInstalled?.addListener) {
+    chrome.runtime.onInstalled.addListener((details) => {
+        if (!details || (details.reason !== 'install' && details.reason !== 'update')) return;
+
+        const fallbackOpenOptionsTab = () => {
+            try {
+                chrome.tabs?.create?.({ url: chrome.runtime.getURL('options/options.html') });
+            } catch (err) {
+                log.error('Failed to open options page on install/update:', err);
+            }
+        };
+
+        if (chrome.runtime?.openOptionsPage) {
+            chrome.runtime.openOptionsPage(() => {
+                if (chrome.runtime?.lastError) {
+                    fallbackOpenOptionsTab();
+                }
+            });
+            return;
+        }
+
+        fallbackOpenOptionsTab();
+    });
+}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request?.action !== 'ensureApiOriginPermission') return;
 
@@ -394,6 +419,13 @@ function performOpenAIRequest({ apiKey, apiUrl, model, messages, reasoningEffort
     })();
 }
 
+function normalizeResponsesUrl(apiUrl) {
+    const fallback = 'https://api.openai.com/v1';
+    let sanitizedBase = String(apiUrl || fallback).trim().replace(/\/+$/, '');
+    if (!sanitizedBase) sanitizedBase = fallback;
+    return /\/responses$/i.test(sanitizedBase) ? sanitizedBase : `${sanitizedBase}/responses`;
+}
+
 function ensureOriginPermission(origin, { requestIfMissing = true } = {}) {
     return new Promise((resolve) => {
         if (!supportsDynamicOriginPermissionRequests()) {
@@ -454,6 +486,87 @@ function ensureOriginPermission(origin, { requestIfMissing = true } = {}) {
         });
     });
 }
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request?.action !== 'validateOpenAiApiKey') return;
+
+    const apiKey = String(request?.apiKey || '').trim();
+    const inputApiUrl = String(request?.apiUrl || '').trim() || 'https://api.openai.com/v1';
+    if (!apiKey) {
+        sendResponse({ ok: false, valid: false, error: 'OpenAI API key is required' });
+        return false;
+    }
+
+    let responsesUrl = '';
+    let origin = '';
+    try {
+        responsesUrl = normalizeResponsesUrl(inputApiUrl);
+        origin = new URL(responsesUrl).origin;
+    } catch {
+        sendResponse({ ok: false, valid: false, error: 'Invalid API URL' });
+        return false;
+    }
+
+    ensureOriginPermission(origin, { requestIfMissing: true }).then(async (permission) => {
+        if (!permission.granted) {
+            sendResponse({
+                ok: false,
+                valid: false,
+                error: permission.error || 'Permission denied for OpenAI endpoint'
+            });
+            return;
+        }
+
+        try {
+            const res = await fetch(responsesUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: '{}'
+            });
+
+            if (res.status === 401 || res.status === 403) {
+                sendResponse({
+                    ok: true,
+                    valid: false,
+                    error: 'Authentication failed for the provided API key.'
+                });
+                return;
+            }
+
+            if (res.ok || res.status === 400 || res.status === 422) {
+                sendResponse({ ok: true, valid: true, error: '' });
+                return;
+            }
+
+            if (res.status === 404 || res.status === 405) {
+                sendResponse({
+                    ok: true,
+                    valid: false,
+                    error: 'Endpoint does not appear to support the Responses API.'
+                });
+                return;
+            }
+
+            const text = await res.text();
+            sendResponse({
+                ok: true,
+                valid: false,
+                error: `HTTP ${res.status}: ${text || 'Unexpected error from endpoint'}`
+            });
+        } catch (err) {
+            sendResponse({
+                ok: false,
+                valid: false,
+                error: err?.message || 'Failed to validate OpenAI API key'
+            });
+        }
+    });
+
+    return true;
+});
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'openaiRequest') {

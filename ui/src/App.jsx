@@ -174,12 +174,13 @@ export function App() {
     };
 
     const loadSettings = async () => {
-      const data = await getSync(['darkMode', 'syncThemeToConfluencePage', 'resultsPerRequest', 'enableSummaries', 'selectedAiModel', 'highlightResultRows', 'showTooltips', 'showTreeTooltips', 'showTableTooltips']);
+      const data = await getSync(['darkMode', 'syncThemeToConfluencePage', 'resultsPerRequest', 'enableAiFeatures', 'enableSummaries', 'selectedAiModel', 'highlightResultRows', 'showTooltips', 'showTreeTooltips', 'showTableTooltips']);
       currentDarkModePreference = !!data.darkMode;
       currentSyncThemeToConfluencePage = data.syncThemeToConfluencePage === true;
       applyThemeFromPreferences();
       if (Number.isInteger(data.resultsPerRequest)) setResultsPerRequest(data.resultsPerRequest);
-      setEnableSummaries(data.enableSummaries !== false);
+      const hasAiFeaturesFlag = typeof data.enableAiFeatures === 'boolean';
+      setEnableSummaries(hasAiFeaturesFlag ? data.enableAiFeatures === true : data.enableSummaries !== false);
       setHighlightResultRows(data.highlightResultRows !== false);
       const legacyTooltip = data.showTooltips;
       setShowTreeTooltips((data.showTreeTooltips ?? legacyTooltip) !== false);
@@ -207,7 +208,11 @@ export function App() {
       if (changes.resultsPerRequest && Number.isInteger(changes.resultsPerRequest.newValue)) {
         setResultsPerRequest(changes.resultsPerRequest.newValue);
       }
-      if (changes.enableSummaries) setEnableSummaries(changes.enableSummaries.newValue !== false);
+      if (changes.enableAiFeatures) {
+        setEnableSummaries(changes.enableAiFeatures.newValue === true);
+      } else if (changes.enableSummaries) {
+        setEnableSummaries(changes.enableSummaries.newValue !== false);
+      }
       if (changes.highlightResultRows) setHighlightResultRows(changes.highlightResultRows.newValue !== false);
       if (changes.showTooltips && !changes.showTreeTooltips) {
         setShowTreeTooltips(changes.showTooltips.newValue !== false);

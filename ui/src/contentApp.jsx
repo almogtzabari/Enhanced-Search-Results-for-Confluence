@@ -14,7 +14,7 @@ const AI_MODAL_FETCH_IMAGE_MESSAGE = 'enhanced-ai-modal-fetch-image';
 const AI_MODAL_FETCH_IMAGE_RESULT_MESSAGE = 'enhanced-ai-modal-fetch-image-result';
 const FLOATING_PRIMARY_ACTION_SEARCH = 'search';
 const FLOATING_PRIMARY_ACTION_SUMMARIZE = 'summarize';
-const FLOATING_PRIMARY_ACTION_DEFAULT = FLOATING_PRIMARY_ACTION_SUMMARIZE;
+const FLOATING_PRIMARY_ACTION_DEFAULT = FLOATING_PRIMARY_ACTION_SEARCH;
 const PREFETCH_TTL_MS = 45_000;
 const PREFETCH_METADATA_TIMEOUT_MS = 4_000;
 const PREFETCH_IDLE_DELAY_MS = 450;
@@ -710,6 +710,36 @@ async function hasConfiguredOpenAiKey() {
   });
 }
 
+async function isAiFeaturesEnabled() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(['enableAiFeatures', 'enableSummaries', 'enableFloatingSummarize'], (syncData) => {
+      const hasAiFeaturesFlag = typeof syncData?.enableAiFeatures === 'boolean';
+      const hasSummariesFlag = typeof syncData?.enableSummaries === 'boolean';
+      const hasFloatingFlag = typeof syncData?.enableFloatingSummarize === 'boolean';
+
+      if (hasAiFeaturesFlag) {
+        resolve(syncData.enableAiFeatures === true);
+        return;
+      }
+
+      if (hasSummariesFlag || hasFloatingFlag) {
+        resolve((syncData.enableSummaries !== false) || (syncData.enableFloatingSummarize !== false));
+        return;
+      }
+
+      resolve(false);
+    });
+  });
+}
+
+async function canUseAiSummaryActions() {
+  const [aiEnabled, hasApiKey] = await Promise.all([
+    isAiFeaturesEnabled(),
+    hasConfiguredOpenAiKey(),
+  ]);
+  return aiEnabled && hasApiKey;
+}
+
 async function getConfiguredOpenAiOrigin() {
   return new Promise((resolve) => {
     chrome.storage.sync.get(['customApiEndpoint'], (data) => {
@@ -780,6 +810,7 @@ function FloatingSummarizeButton({
   const [uiReady, setUiReady] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [hasStoredSummary, setHasStoredSummary] = useState(!!initialHasStoredSummary);
+  const [canUseAiActions, setCanUseAiActions] = useState(false);
   const [floatingPrimaryAction, setFloatingPrimaryAction] = useState(
     normalizeFloatingPrimaryAction(initialFloatingPrimaryAction),
   );
@@ -972,11 +1003,23 @@ function FloatingSummarizeButton({
     };
 
     const handleStorageChanged = (changes, area) => {
-      if (area !== 'sync') return;
-      if (!changes.floatingPrimaryAction) return;
-      setFloatingPrimaryAction(
-        normalizeFloatingPrimaryAction(changes.floatingPrimaryAction.newValue),
-      );
+      if (area === 'sync' && changes.floatingPrimaryAction) {
+        setFloatingPrimaryAction(
+          normalizeFloatingPrimaryAction(changes.floatingPrimaryAction.newValue),
+        );
+      }
+
+      if (
+        (area === 'sync' && (changes.enableAiFeatures || changes.enableSummaries || changes.enableFloatingSummarize || changes.openaiApiKey))
+        || (area === 'local' && changes.openaiApiKey)
+      ) {
+        void refreshAiActionAvailability();
+      }
+    };
+
+    const refreshAiActionAvailability = async () => {
+      const available = await canUseAiSummaryActions();
+      setCanUseAiActions(available);
     };
 
     const refreshForVisiblePage = () => {
@@ -1000,6 +1043,7 @@ function FloatingSummarizeButton({
 
     scheduleInitialPrefetch();
     void refreshStoredSummaryStatus();
+    void refreshAiActionAvailability();
 
     window.addEventListener('unhandledrejection', handleUnhandledRejection);
     window.addEventListener('popstate', refreshForVisiblePage);
@@ -1183,12 +1227,16 @@ function FloatingSummarizeButton({
     ),
   };
 
-  const primaryAction = floatingPrimaryAction === FLOATING_PRIMARY_ACTION_SUMMARIZE
+  const primaryAction = (canUseAiActions && floatingPrimaryAction === FLOATING_PRIMARY_ACTION_SUMMARIZE)
     ? summarizeAction
     : searchAction;
-  const splitActions = floatingPrimaryAction === FLOATING_PRIMARY_ACTION_SUMMARIZE
-    ? [summarizeAction, searchAction, settingsAction]
-    : [searchAction, summarizeAction, settingsAction];
+  const splitActions = canUseAiActions
+    ? (
+      floatingPrimaryAction === FLOATING_PRIMARY_ACTION_SUMMARIZE
+        ? [summarizeAction, searchAction, settingsAction]
+        : [searchAction, summarizeAction, settingsAction]
+    )
+    : [searchAction, settingsAction];
   const shellInlineStyle = {
     position: 'fixed',
     bottom: '50px',
@@ -1269,14 +1317,6 @@ export function bootstrapContentApp() {
   window[LOADER_FLAG] = true;
   removeContentModalHost();
 
-  const unmountFloatingButton = () => {
-    const existingRoot = document.getElementById(ROOT_ID);
-    if (!existingRoot) return;
-    render(null, existingRoot);
-    existingRoot.remove();
-    removeContentModalHost();
-  };
-
   const resolveCurrentSummaryAvailability = async () => {
     const baseUrl = detectConfluenceBaseUrl();
     const contentId = await extractContentIdFromUrl(window.location.pathname);
@@ -1303,18 +1343,12 @@ export function bootstrapContentApp() {
     );
   };
 
-  let floatingEnabledCache = true;
   let floatingPrimaryActionCache = FLOATING_PRIMARY_ACTION_DEFAULT;
   let applyRequestSeq = 0;
 
-  const applyFloatingSummarizeSetting = async (enabled) => {
+  const applyFloatingSummarizeSetting = async () => {
     const requestSeq = applyRequestSeq + 1;
     applyRequestSeq = requestSeq;
-
-    if (enabled === false) {
-      unmountFloatingButton();
-      return;
-    }
 
     ensureContentStyles();
     const initialHasStoredSummary = await resolveCurrentSummaryAvailability();
@@ -1326,27 +1360,21 @@ export function bootstrapContentApp() {
     });
   };
 
-  chrome.storage.sync.get(['enableFloatingSummarize', 'floatingPrimaryAction'], ({
-    enableFloatingSummarize,
+  chrome.storage.sync.get(['floatingPrimaryAction'], ({
     floatingPrimaryAction,
   }) => {
-    floatingEnabledCache = enableFloatingSummarize !== false;
     floatingPrimaryActionCache = normalizeFloatingPrimaryAction(floatingPrimaryAction);
-    void applyFloatingSummarizeSetting(floatingEnabledCache);
+    void applyFloatingSummarizeSetting();
   });
 
   const onStorageChanged = (changes, area) => {
     if (area !== 'sync') return;
-    if (!changes.enableFloatingSummarize && !changes.floatingPrimaryAction) return;
-
-    if (changes.enableFloatingSummarize) {
-      floatingEnabledCache = changes.enableFloatingSummarize.newValue !== false;
-    }
+    if (!changes.floatingPrimaryAction) return;
     if (changes.floatingPrimaryAction) {
       floatingPrimaryActionCache = normalizeFloatingPrimaryAction(changes.floatingPrimaryAction.newValue);
     }
 
-    void applyFloatingSummarizeSetting(floatingEnabledCache);
+    void applyFloatingSummarizeSetting();
   };
   chrome.storage.onChanged.addListener(onStorageChanged);
 

@@ -201,6 +201,26 @@ export function useAiSummaryController({
   const cachedSummaryByIdRef = useRef({});
   const summaryRequestSeqRef = useRef(0);
   const activeModalRequestRef = useRef({ requestId: 0, contentId: '' });
+  const clearConversationAudioRef = useRef(null);
+
+  const playClearConversationSound = () => {
+    if (typeof window === 'undefined' || typeof window.Audio !== 'function') return;
+    try {
+      if (!clearConversationAudioRef.current) {
+        const player = new window.Audio('../../assets/sounds/swoosh.mp3');
+        player.preload = 'auto';
+        clearConversationAudioRef.current = player;
+      }
+      const player = clearConversationAudioRef.current;
+      player.currentTime = 0;
+      const playback = player.play?.();
+      if (playback && typeof playback.catch === 'function') {
+        playback.catch(() => {});
+      }
+    } catch {
+      // Ignore audio playback errors so clearing conversation still succeeds.
+    }
+  };
 
   const createBaseConversation = (userPromptText, summaryHtml) => ([
     { role: 'system', content: qaSystemPrompt },
@@ -634,6 +654,7 @@ Content (HTML): ${bodyHtml}
       danger: true,
     });
     if (!confirmed) return;
+    playClearConversationSound();
     const resetConversation = createBaseConversation(aiUserPrompt, aiSummaryHtml);
     setAiConversation(resetConversation);
     try {

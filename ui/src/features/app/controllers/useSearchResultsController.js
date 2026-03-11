@@ -37,7 +37,7 @@ export function useSearchResultsController({
   const [initialContributorKey, initialContributorLabel] = (params.contributor || '').split(':');
 
   const [baseUrl, setBaseUrl] = useState(initialBase);
-  const [searchInput, setSearchInput] = useState(initialText);
+  const [searchInput, setSearchInputState] = useState(initialText);
   const [searchText, setSearchText] = useState(initialText);
   const [searchInputAttention, setSearchInputAttention] = useState(false);
   const [domainName, setDomainName] = useState('Unknown');
@@ -549,20 +549,24 @@ export function useSearchResultsController({
 
   useEffect(() => {
     if (!shouldFocusSearchFromQuery || didAutoFocusSearchRef.current) return;
-    let clearAttentionTimer = null;
     const timer = setTimeout(() => {
       const input = searchInputRef.current;
       if (!input) return;
       input.focus();
       setSearchInputAttention(true);
-      clearAttentionTimer = setTimeout(() => setSearchInputAttention(false), 5600);
       didAutoFocusSearchRef.current = true;
     }, 0);
     return () => {
       clearTimeout(timer);
-      if (clearAttentionTimer) clearTimeout(clearAttentionTimer);
     };
   }, [shouldFocusSearchFromQuery]);
+
+  const setSearchInput = (value) => {
+    setSearchInputState(value);
+    if (searchInputAttention) {
+      setSearchInputAttention(false);
+    }
+  };
 
   const runSearch = () => {
     const next = searchInput.trim();
