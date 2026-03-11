@@ -107,14 +107,35 @@ describe('SidebarPanel', () => {
     });
     expect(props.setFilterText).toHaveBeenCalledWith('beta');
 
-    const selects = view.container.querySelectorAll('select');
-    selects[0].value = '1w';
-    selects[1].value = 'page';
-    selects[2].value = 'gpt-5-mini';
     act(() => {
-      selects[0].dispatchEvent(new Event('change', { bubbles: true }));
-      selects[1].dispatchEvent(new Event('change', { bubbles: true }));
-      selects[2].dispatchEvent(new Event('change', { bubbles: true }));
+      view.container.querySelector('#filter-date-sidebar')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    const dateOption = view.container.querySelector('.custom-select-option[data-value="1w"]');
+    expect(dateOption).toBeTruthy();
+    act(() => {
+      dateOption.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    act(() => {
+      view.container.querySelector('#filter-type-sidebar')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    const typeOption = view.container.querySelector('.custom-select-option[data-value="page"]');
+    expect(typeOption).toBeTruthy();
+    act(() => {
+      typeOption.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const modelTrigger = view.container.querySelector('#ai-model-sidebar');
+    expect(modelTrigger).toBeTruthy();
+    act(() => {
+      modelTrigger.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    const modelOption = view.container.querySelector('.ai-model-select-option[data-value="gpt-5-mini"]');
+    expect(modelOption).toBeTruthy();
+    act(() => {
+      modelOption.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     expect(props.updateFilterDate).toHaveBeenCalledWith('1w');
     expect(props.updateFilterType).toHaveBeenCalledWith('page');

@@ -293,6 +293,31 @@ h2 {
   gap: 8px;
 }
 
+.ai-options-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: grid-template-rows 220ms ease, opacity 180ms ease, transform 220ms ease;
+}
+
+.ai-options-collapse.is-expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ai-options-collapse.is-closing {
+  pointer-events: none;
+}
+
+.ai-options-inner {
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  gap: 8px;
+}
+
 .setting-row {
   border: 1px solid color-mix(in srgb, var(--line) 68%, transparent 32%);
   border-radius: 12px;
@@ -511,6 +536,42 @@ textarea {
   font: inherit;
   font-size: 0.9rem;
   padding: 9px 11px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 58%, transparent 42%);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+select {
+  padding-right: 38px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, color-mix(in srgb, var(--muted) 84%, var(--text) 16%) 50%),
+    linear-gradient(135deg, color-mix(in srgb, var(--muted) 84%, var(--text) 16%) 50%, transparent 50%),
+    linear-gradient(
+      to right,
+      transparent 0%,
+      transparent 35%,
+      color-mix(in srgb, var(--line) 74%, transparent 26%) 35%,
+      color-mix(in srgb, var(--line) 74%, transparent 26%) 65%,
+      transparent 65%,
+      transparent 100%
+    );
+  background-position:
+    calc(100% - 17px) calc(50% - 2px),
+    calc(100% - 11px) calc(50% - 2px),
+    calc(100% - 31px) 50%;
+  background-size: 6px 6px, 6px 6px, 1px 56%;
+  background-repeat: no-repeat;
+}
+
+select:hover {
+  border-color: color-mix(in srgb, var(--line) 60%, var(--primary) 40%);
+  background-color: color-mix(in srgb, var(--surface-strong) 86%, var(--primary-soft) 14%);
 }
 
 textarea {
@@ -523,6 +584,196 @@ select:focus,
 textarea:focus {
   outline: 2px solid var(--primary-soft);
   outline-offset: 1px;
+  border-color: color-mix(in srgb, var(--line) 52%, var(--primary) 48%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-soft) 70%, transparent 30%);
+}
+
+select option {
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.custom-select {
+  position: relative;
+  width: 100%;
+}
+
+.custom-select-trigger {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 58%, transparent 42%);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 11px;
+}
+
+.custom-select-trigger-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-select-trigger-caret {
+  width: 14px;
+  height: 14px;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.custom-select-trigger-caret::before,
+.custom-select-trigger-caret::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  width: 8px;
+  height: 1.5px;
+  background: color-mix(in srgb, var(--muted) 84%, var(--text) 16%);
+}
+
+.custom-select-trigger-caret::before {
+  left: 0;
+  transform: rotate(38deg);
+}
+
+.custom-select-trigger-caret::after {
+  right: 0;
+  transform: rotate(-38deg);
+}
+
+.custom-select.is-open .custom-select-trigger-caret::before {
+  transform: rotate(-38deg);
+}
+
+.custom-select.is-open .custom-select-trigger-caret::after {
+  transform: rotate(38deg);
+}
+
+.custom-select-trigger:hover {
+  border-color: color-mix(in srgb, var(--line) 60%, var(--primary) 40%);
+  background-color: color-mix(in srgb, var(--surface-strong) 86%, var(--primary-soft) 14%);
+}
+
+.custom-select-trigger:focus {
+  outline: 2px solid var(--primary-soft);
+  outline-offset: 1px;
+  border-color: color-mix(in srgb, var(--line) 52%, var(--primary) 48%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-soft) 70%, transparent 30%);
+}
+
+.custom-select-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 40;
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--line) 60%, var(--primary) 40%);
+  border-radius: 14px;
+  padding: 6px;
+  background: color-mix(in srgb, var(--surface-strong) 92%, var(--primary-soft) 8%);
+  box-shadow: 0 22px 36px rgba(16, 24, 40, 0.22);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  scrollbar-width: thin;
+  scrollbar-color:
+    color-mix(in srgb, var(--primary) 46%, var(--line) 54%)
+    color-mix(in srgb, var(--surface-strong) 84%, var(--line) 16%);
+}
+
+.custom-select-panel::-webkit-scrollbar {
+  width: 10px;
+}
+
+.custom-select-panel::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-strong) 84%, var(--line) 16%);
+}
+
+.custom-select-panel::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--surface-strong) 88%, var(--line) 12%);
+  background: color-mix(in srgb, var(--primary) 46%, var(--line) 54%);
+}
+
+.custom-select-panel::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--primary) 62%, var(--line) 38%);
+}
+
+body.dark-mode .custom-select-panel {
+  scrollbar-color:
+    color-mix(in srgb, var(--primary) 56%, #42648e 44%)
+    color-mix(in srgb, #0f1f35 76%, var(--line) 24%);
+}
+
+body.dark-mode .custom-select-panel::-webkit-scrollbar-track {
+  background: color-mix(in srgb, #0f1f35 76%, var(--line) 24%);
+}
+
+body.dark-mode .custom-select-panel::-webkit-scrollbar-thumb {
+  border-color: color-mix(in srgb, #0f1f35 84%, var(--line) 16%);
+  background: color-mix(in srgb, var(--primary) 56%, #42648e 44%);
+}
+
+body.dark-mode .custom-select-panel::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--primary) 72%, #42648e 28%);
+}
+
+.custom-select-option {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 9px 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font: inherit;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.custom-select-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-select-option-mark {
+  min-width: 16px;
+  color: color-mix(in srgb, var(--primary) 82%, var(--text) 18%);
+  text-align: center;
+}
+
+.custom-select-option:hover,
+.custom-select-option.is-active {
+  background: color-mix(in srgb, var(--primary-soft) 66%, var(--surface-strong) 34%);
+  border-color: color-mix(in srgb, var(--line) 56%, var(--primary) 44%);
+}
+
+.custom-select-option:hover {
+  transform: translateX(1px);
+}
+
+.custom-select-option.is-selected {
+  background: color-mix(in srgb, var(--primary-soft) 78%, var(--surface-strong) 22%);
+  border-color: color-mix(in srgb, var(--line) 48%, var(--primary) 52%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent 76%);
 }
 
 .btn {
@@ -701,25 +952,6 @@ body.dark-mode .meta-chip.optional {
   flex-wrap: wrap;
 }
 
-.advanced-toggle {
-  width: 100%;
-  border: 1px solid color-mix(in srgb, var(--line) 68%, transparent 32%);
-  border-radius: 12px;
-  background: var(--surface-strong);
-  color: var(--text);
-  padding: 12px;
-  font: inherit;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  cursor: pointer;
-}
-
-.advanced-box {
-  margin-top: 10px;
-}
-
 .dialog-overlay {
   position: fixed;
   inset: 0;
@@ -783,6 +1015,11 @@ body.dark-mode .meta-chip.optional {
   .floating-save-btn.attention,
   .needs-attention {
     animation: none;
+  }
+
+  .ai-options-collapse {
+    transition: none;
+    transform: none;
   }
 }
 

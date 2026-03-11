@@ -8,6 +8,7 @@ import {
   retiredModelFallbacks,
   SUMMARY_STORE,
 } from './shared/constants.js';
+import { CustomSelect } from './components/CustomSelect.jsx';
 import { clearObjectStores } from './services/indexedDb.js';
 import { requestOriginsPermission } from './services/permissions.js';
 import { getChrome, getLocal, getSync, setLocal, setSync, subscribeStorageChanges } from './services/storage.js';
@@ -17,6 +18,7 @@ const DEFAULT_RESULTS_PER_REQUEST = 75;
 const STORAGE_WRITE_DEBOUNCE_MS = 320;
 const STATUS_FADE_START_MS = 9400;
 const STATUS_AUTO_DISMISS_MS = 10000;
+const AI_OPTIONS_ANIMATION_MS = 220;
 const FLOATING_PRIMARY_ACTION_DEFAULT = 'search';
 const DEFAULT_OPENAI_API_BASE_URL = 'https://api.openai.com/v1';
 
@@ -36,6 +38,15 @@ const reasoningEffortOptions = [
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
+];
+
+const resultsPerRequestOptions = [
+  { value: '50', label: '50' },
+  { value: '75', label: '75' },
+  { value: '100', label: '100' },
+  { value: '125', label: '125' },
+  { value: '150', label: '150' },
+  { value: '200', label: '200' },
 ];
 
 const normalizeReasoningEffort = (value, legacyHigh = false) => {
@@ -133,7 +144,11 @@ function ToggleRow({ label, desc, checked, onChange, id }) {
   );
 }
 
-function DomainRow({ domain, onChangeDomain, onRemove }) {
+function DomainRow({
+  domain,
+  onChangeDomain,
+  onRemove,
+}) {
   return (
     <div class="domain-row">
       <input
@@ -142,7 +157,7 @@ function DomainRow({ domain, onChangeDomain, onRemove }) {
         placeholder="example.com"
         dir={hasRtl(domain) ? 'rtl' : 'ltr'}
       />
-      <button class="domain-remove" onClick={onRemove} title="Remove domain">×</button>
+      <button type="button" class="domain-remove" onClick={onRemove} title="Remove domain">×</button>
     </div>
   );
 }
@@ -174,10 +189,10 @@ export function OptionsApp() {
     apiKey: false,
   });
 
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [testingApiKey, setTestingApiKey] = useState(false);
   const [apiKeyTestResult, setApiKeyTestResult] = useState('');
   const [statusNotices, setStatusNotices] = useState([]);
+  const [aiOptionsVisibilityState, setAiOptionsVisibilityState] = useState('closed');
   const [confirmState, setConfirmState] = useState({
     open: false,
     title: '',
@@ -193,6 +208,8 @@ export function OptionsApp() {
   const statusNoticeTimersRef = useRef(new Map());
   const skipInitialApiKeySaveRef = useRef(true);
   const poofAudioRef = useRef(null);
+  const aiOptionsCloseTimerRef = useRef(null);
+  const aiOptionsOpenFrameRef = useRef(null);
 
   const markSettingsChanged = () => {
     setHasPendingSettingsChanges(true);
@@ -536,9 +553,50 @@ export function OptionsApp() {
     document.body.classList.toggle('dark-mode', darkMode);
   }, [darkMode]);
 
+  useEffect(() => {
+    if (aiOptionsOpenFrameRef.current) {
+      cancelAnimationFrame(aiOptionsOpenFrameRef.current);
+      aiOptionsOpenFrameRef.current = null;
+    }
+    if (aiOptionsCloseTimerRef.current) {
+      clearTimeout(aiOptionsCloseTimerRef.current);
+      aiOptionsCloseTimerRef.current = null;
+    }
+
+    if (enableAiFeatures) {
+      if (aiOptionsVisibilityState === 'open') return undefined;
+      setAiOptionsVisibilityState('opening');
+      aiOptionsOpenFrameRef.current = window.requestAnimationFrame(() => {
+        setAiOptionsVisibilityState('open');
+        aiOptionsOpenFrameRef.current = null;
+      });
+      return () => {
+        if (aiOptionsOpenFrameRef.current) {
+          cancelAnimationFrame(aiOptionsOpenFrameRef.current);
+          aiOptionsOpenFrameRef.current = null;
+        }
+      };
+    }
+
+    if (aiOptionsVisibilityState === 'closed') return undefined;
+    setAiOptionsVisibilityState('closing');
+    aiOptionsCloseTimerRef.current = setTimeout(() => {
+      setAiOptionsVisibilityState('closed');
+      aiOptionsCloseTimerRef.current = null;
+    }, AI_OPTIONS_ANIMATION_MS);
+    return () => {
+      if (aiOptionsCloseTimerRef.current) {
+        clearTimeout(aiOptionsCloseTimerRef.current);
+        aiOptionsCloseTimerRef.current = null;
+      }
+    };
+  }, [enableAiFeatures, aiOptionsVisibilityState]);
+
   useEffect(() => () => {
     if (promptDebounceRef.current) clearTimeout(promptDebounceRef.current);
     if (apiKeyDebounceRef.current) clearTimeout(apiKeyDebounceRef.current);
+    if (aiOptionsOpenFrameRef.current) cancelAnimationFrame(aiOptionsOpenFrameRef.current);
+    if (aiOptionsCloseTimerRef.current) clearTimeout(aiOptionsCloseTimerRef.current);
     clearStatusNotices(false);
   }, []);
 
@@ -813,6 +871,13 @@ export function OptionsApp() {
         ? 'API key validation failed for the current key/endpoint'
         : 'Test current API key with current endpoint'));
   const extensionVersion = getChrome()?.runtime?.getManifest?.()?.version || 'unknown';
+  const aiOptionsMounted = aiOptionsVisibilityState !== 'closed';
+  const aiOptionsExpanded = aiOptionsVisibilityState === 'open';
+  const aiOptionsClassName = [
+    'ai-options-collapse',
+    aiOptionsExpanded ? 'is-expanded' : '',
+    aiOptionsVisibilityState === 'closing' ? 'is-closing' : '',
+  ].filter(Boolean).join(' ');
 
   return (
     <div class="options-root">
@@ -918,8 +983,9 @@ export function OptionsApp() {
           </div>
           <p class="section-subtitle">Turn on AI summaries and follow-up Q&amp;A in views and Confluence pages.</p>
           <div class="settings-list">
-            {enableAiFeatures ? (
-              <>
+            {aiOptionsMounted && (
+              <div class={aiOptionsClassName} aria-hidden={!enableAiFeatures}>
+                <div class="ai-options-inner">
                 <div class="setting-row stacked">
                   <div>
                     <label class="setting-label" htmlFor="floating-primary-action">
@@ -928,15 +994,17 @@ export function OptionsApp() {
                     </label>
                     <p class="setting-desc">Pick which action appears as the default floating button. Hover still reveals Search, Summarize and chat, and Settings.</p>
                   </div>
-                  <select
+                  <CustomSelect
                     id="floating-primary-action"
                     value={floatingPrimaryAction}
-                    onChange={(e) => onFloatingPrimaryActionChange(e.currentTarget.value)}
-                  >
-                    {floatingPrimaryActionOptions.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
+                    options={floatingPrimaryActionOptions}
+                    onChange={onFloatingPrimaryActionChange}
+                    ariaLabel="Floating primary button"
+                    className="options-model-select"
+                    triggerClassName="options-model-select-trigger"
+                    panelClassName="options-model-select-panel"
+                    optionClassName="options-model-select-option"
+                  />
                 </div>
 
                 <div class={`setting-row stacked ${attentionState.apiKey ? 'needs-attention' : ''}`.trim()}>
@@ -994,11 +1062,17 @@ export function OptionsApp() {
                     <label class="setting-label" htmlFor="ai-model">AI Model</label>
                     <p class="setting-desc">Model used for summaries and follow-up Q&A.</p>
                   </div>
-                  <select id="ai-model" value={selectedAiModel} onChange={(e) => onModelChange(e.currentTarget.value)}>
-                    {AI_MODEL_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
+                  <CustomSelect
+                    id="ai-model"
+                    ariaLabel="AI model"
+                    value={selectedAiModel}
+                    options={AI_MODEL_OPTIONS}
+                    onChange={onModelChange}
+                    className="options-model-select"
+                    triggerClassName="options-model-select-trigger"
+                    panelClassName="options-model-select-panel"
+                    optionClassName="options-model-select-option"
+                  />
                 </div>
 
                 <div class="setting-row stacked">
@@ -1006,15 +1080,17 @@ export function OptionsApp() {
                     <label class="setting-label" htmlFor="reasoning-effort">Reasoning Effort</label>
                     <p class="setting-desc">Choose how much deliberate reasoning to request for supported models.</p>
                   </div>
-                  <select
+                  <CustomSelect
                     id="reasoning-effort"
                     value={reasoningEffort}
-                    onChange={(e) => onReasoningEffortChange(e.currentTarget.value)}
-                  >
-                    {reasoningEffortOptions.map((option) => (
-                      <option key={option.value || 'default'} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
+                    options={reasoningEffortOptions}
+                    onChange={onReasoningEffortChange}
+                    ariaLabel="Reasoning effort"
+                    className="options-model-select"
+                    triggerClassName="options-model-select-trigger"
+                    panelClassName="options-model-select-panel"
+                    optionClassName="options-model-select-option"
+                  />
                 </div>
 
                 <div class="setting-row stacked">
@@ -1063,14 +1139,33 @@ export function OptionsApp() {
                     </button>
                   </div>
                 </div>
-              </>
-            ) : null}
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
         <section class="panel">
           <h2>Additional Options</h2>
           <div class="settings-list">
+            <div class="setting-row stacked">
+              <div>
+                <label class="setting-label" htmlFor="results-per-request">Results per Batch</label>
+                <p class="setting-desc">How many results are fetched per request in the enhanced view.</p>
+              </div>
+              <CustomSelect
+                id="results-per-request"
+                value={String(resultsPerRequest)}
+                options={resultsPerRequestOptions}
+                onChange={onResultsPerRequestChange}
+                ariaLabel="Results per batch"
+                className="options-model-select"
+                triggerClassName="options-model-select-trigger"
+                panelClassName="options-model-select-panel"
+                optionClassName="options-model-select-option"
+              />
+            </div>
+
             <ToggleRow
               id="sync-theme-confluence"
               label="Sync theme selection in Confluence page"
@@ -1100,40 +1195,6 @@ export function OptionsApp() {
               onChange={onHighlightChange}
             />
           </div>
-        </section>
-
-        <section class="panel">
-          <button
-            class="advanced-toggle"
-            onClick={() => setAdvancedOpen((prev) => !prev)}
-            title="Toggle advanced settings"
-          >
-            <span>Advanced Settings</span>
-            <span>{advancedOpen ? '▾' : '▸'}</span>
-          </button>
-
-          {advancedOpen && (
-            <div class="settings-list advanced-box">
-              <div class="setting-row stacked">
-                <div>
-                  <label class="setting-label" htmlFor="results-per-request">Results per Batch</label>
-                  <p class="setting-desc">How many results are fetched per request in the enhanced view.</p>
-                </div>
-                <select
-                  id="results-per-request"
-                  value={String(resultsPerRequest)}
-                  onChange={(e) => onResultsPerRequestChange(e.currentTarget.value)}
-                >
-                  <option value="50">50</option>
-                  <option value="75">75</option>
-                  <option value="100">100</option>
-                  <option value="125">125</option>
-                  <option value="150">150</option>
-                  <option value="200">200</option>
-                </select>
-              </div>
-            </div>
-          )}
         </section>
       </main>
 

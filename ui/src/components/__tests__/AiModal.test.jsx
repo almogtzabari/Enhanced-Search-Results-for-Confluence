@@ -252,9 +252,7 @@ describe('AiModal', () => {
     expect(view.container.textContent).toContain('Space: Engineering');
     expect(view.container.textContent).toContain('Contributor: Alex');
     const modelSelect = view.container.querySelector('#ai-model-modal');
-    expect(modelSelect?.value).toBe('gpt-5.4');
-    expect(Array.from(modelSelect?.querySelectorAll('option') || []).map((option) => option.value))
-      .toEqual(['gpt-5.4', 'gpt-5.3-codex', 'gpt-5-codex']);
+    expect(modelSelect?.getAttribute('data-value')).toBe('gpt-5.4');
 
     const avatars = view.container.querySelectorAll('.ai-chip-avatar');
     act(() => {
@@ -287,8 +285,12 @@ describe('AiModal', () => {
 
     textarea.value = 'next question';
     act(() => {
-      modelSelect.value = 'gpt-5.3-codex';
-      modelSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      modelSelect.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    const modelOption = view.container.querySelector('.ai-model-select-option[data-value="gpt-5.3-codex"]');
+    expect(modelOption).toBeTruthy();
+    act(() => {
+      modelOption.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       view.container.querySelector('.pane-resummarize-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
       view.container.querySelector('.pane-clear-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
       summaryFontButtons[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));

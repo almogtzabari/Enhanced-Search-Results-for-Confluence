@@ -311,7 +311,7 @@ body.modal-only-frame {
   margin: 16px auto;
   padding: 0 22px 22px;
   display: grid;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: 320px 1fr;
   gap: 18px;
   min-height: 0;
 }
@@ -327,9 +327,9 @@ body.modal-only-frame {
 .sidebar {
   position: sticky;
   top: 170px;
+  z-index: 5;
   height: fit-content;
-  max-height: calc(100vh - 208px);
-  overflow: auto;
+  overflow: visible;
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -401,15 +401,29 @@ body.dark-mode .sidebar-block:hover {
   transform: translateY(-50%);
   width: 16px;
   height: 16px;
-  color: color-mix(in srgb, var(--primary) 62%, var(--muted) 38%);
-  opacity: 0.92;
+  z-index: 3;
+  color: color-mix(in srgb, var(--primary) 74%, var(--text) 26%);
+  opacity: 1;
   pointer-events: none;
+  transition: color 140ms ease, transform 140ms ease;
 }
 
 .field-icon svg {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.field.with-icon:hover .field-icon,
+.field.with-icon:focus-within .field-icon,
+.combo-input-wrap.with-icon:hover .field-icon,
+.combo-input-wrap.with-icon:focus-within .field-icon {
+  color: color-mix(in srgb, var(--primary) 86%, var(--text) 14%);
+  transform: translateY(-50%) scale(1.03);
+}
+
+body.dark-mode .field-icon {
+  color: color-mix(in srgb, #8ec0ff 68%, #d9e9ff 32%);
 }
 
 .combo-field {
@@ -479,12 +493,52 @@ body.dark-mode .sidebar-block:hover {
   border-radius: 11px;
   background: var(--surface-strong);
   color: var(--text);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 58%, transparent 42%);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.field input {
   padding: 0 12px;
   font-size: 0.9rem;
 }
 
+.field select {
+  padding: 0 42px 0 12px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, color-mix(in srgb, var(--muted) 84%, var(--text) 16%) 50%),
+    linear-gradient(135deg, color-mix(in srgb, var(--muted) 84%, var(--text) 16%) 50%, transparent 50%),
+    linear-gradient(
+      to right,
+      transparent 0%,
+      transparent 35%,
+      color-mix(in srgb, var(--line) 74%, transparent 26%) 35%,
+      color-mix(in srgb, var(--line) 74%, transparent 26%) 65%,
+      transparent 65%,
+      transparent 100%
+    );
+  background-position:
+    calc(100% - 18px) calc(50% - 2px),
+    calc(100% - 12px) calc(50% - 2px),
+    calc(100% - 34px) 50%;
+  background-size: 6px 6px, 6px 6px, 1px 56%;
+  background-repeat: no-repeat;
+}
+
+.field select:hover {
+  border-color: color-mix(in srgb, var(--line) 62%, var(--primary) 38%);
+  background-color: color-mix(in srgb, var(--surface-strong) 86%, var(--primary-soft) 14%);
+}
+
 .field.with-icon input,
 .field.with-icon select,
+.field.with-icon .custom-select-trigger,
 .combo-input-wrap.with-icon input {
   padding-left: 34px;
 }
@@ -493,58 +547,259 @@ body.dark-mode .sidebar-block:hover {
 .field select:focus {
   outline: 2px solid var(--primary-soft);
   outline-offset: -1px;
+  border-color: color-mix(in srgb, var(--line) 54%, var(--primary) 46%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-soft) 70%, transparent 30%);
+}
+
+.field select option,
+.ai-model-picker select option {
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.custom-select {
+  position: relative;
+  width: 100%;
+}
+
+.custom-select-trigger {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 58%, transparent 42%);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.custom-select-trigger-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-select-trigger-caret {
+  width: 14px;
+  height: 14px;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.custom-select-trigger-caret::before,
+.custom-select-trigger-caret::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  width: 8px;
+  height: 1.5px;
+  background: color-mix(in srgb, var(--muted) 84%, var(--text) 16%);
+}
+
+.custom-select-trigger-caret::before {
+  left: 0;
+  transform: rotate(38deg);
+}
+
+.custom-select-trigger-caret::after {
+  right: 0;
+  transform: rotate(-38deg);
+}
+
+.custom-select.is-open .custom-select-trigger-caret::before {
+  transform: rotate(-38deg);
+}
+
+.custom-select.is-open .custom-select-trigger-caret::after {
+  transform: rotate(38deg);
+}
+
+.field .custom-select-trigger {
+  height: 42px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.sidebar .field .custom-select-trigger {
+  font-size: 0.9rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: color-mix(in srgb, var(--muted) 82%, var(--text) 18%);
+}
+
+.sidebar .combo-input-wrap.with-icon input {
+  font-size: 0.86rem;
+}
+
+.field .custom-select-trigger:hover {
+  border-color: color-mix(in srgb, var(--line) 62%, var(--primary) 38%);
+  background-color: color-mix(in srgb, var(--surface-strong) 86%, var(--primary-soft) 14%);
+}
+
+.custom-select-trigger:focus {
+  outline: 2px solid var(--primary-soft);
+  outline-offset: -1px;
+  border-color: color-mix(in srgb, var(--line) 54%, var(--primary) 46%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-soft) 70%, transparent 30%);
+}
+
+.custom-select-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 40;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--line) 60%, var(--primary) 40%);
+  border-radius: 14px;
+  padding: 6px;
+  background: color-mix(in srgb, var(--surface-strong) 92%, var(--primary-soft) 8%);
+  box-shadow: 0 22px 36px rgba(16, 24, 40, 0.22);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) color-mix(in srgb, var(--scroll-track) 88%, transparent 12%);
+}
+
+.custom-select-panel::-webkit-scrollbar {
+  width: 10px;
+}
+
+.custom-select-panel::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--scroll-track) 88%, transparent 12%);
+}
+
+.custom-select-panel::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--scroll-track) 90%, transparent 10%);
+  background: var(--scroll-thumb);
+}
+
+.custom-select-panel::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+}
+
+.custom-select-option {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 9px 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font: inherit;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.custom-select-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.custom-select-option-mark {
+  min-width: 16px;
+  color: color-mix(in srgb, var(--primary) 82%, var(--text) 18%);
+  text-align: center;
+}
+
+.custom-select-option:hover,
+.custom-select-option.is-active {
+  background: color-mix(in srgb, var(--primary-soft) 66%, var(--surface-strong) 34%);
+  border-color: color-mix(in srgb, var(--line) 56%, var(--primary) 44%);
+}
+
+.custom-select-option:hover {
+  transform: translateX(1px);
+}
+
+.custom-select-option.is-selected {
+  background: color-mix(in srgb, var(--primary-soft) 78%, var(--surface-strong) 22%);
+  border-color: color-mix(in srgb, var(--line) 48%, var(--primary) 52%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent 76%);
 }
 
 .combo-options {
   position: absolute;
   left: 0;
   right: 0;
-  top: calc(100% + 4px);
+  top: calc(100% + 6px);
   z-index: 8;
-  max-height: 220px;
+  max-height: 236px;
   overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface-strong);
-  box-shadow: 0 14px 24px rgba(16, 24, 40, 0.16);
+  border: 1px solid color-mix(in srgb, var(--line) 64%, var(--primary) 36%);
+  border-radius: 14px;
+  padding: 6px;
+  background: color-mix(in srgb, var(--surface-strong) 92%, var(--primary-soft) 8%);
+  box-shadow: 0 20px 34px rgba(16, 24, 40, 0.2);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .combo-option {
   width: 100%;
-  border: none;
-  border-bottom: 1px solid var(--line);
+  border: 1px solid transparent;
+  border-radius: 10px;
   background: transparent;
   color: var(--text);
   text-align: left;
-  padding: 8px 10px;
+  padding: 9px 10px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   cursor: pointer;
-}
-
-.combo-option:last-child {
-  border-bottom: none;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
 }
 
 .combo-option:hover {
-  background: var(--primary-soft);
+  background: color-mix(in srgb, var(--primary-soft) 66%, var(--surface-strong) 34%);
+  border-color: color-mix(in srgb, var(--line) 56%, var(--primary) 44%);
+  transform: translateX(1px);
 }
 
 .combo-option.highlighted {
-  background: color-mix(in srgb, var(--primary-soft) 74%, var(--surface-strong) 26%);
+  background: color-mix(in srgb, var(--primary-soft) 78%, var(--surface-strong) 22%);
+  border-color: color-mix(in srgb, var(--line) 48%, var(--primary) 52%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent 76%);
 }
 
 .combo-option img {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--line) 72%, var(--primary) 28%);
+}
+
+.combo-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .combo-empty {
-  padding: 10px;
+  padding: 10px 12px;
+  border: 1px dashed color-mix(in srgb, var(--line) 78%, var(--primary) 22%);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-strong) 90%, var(--primary-soft) 10%);
   color: var(--muted);
   font-size: 0.8rem;
 }
@@ -1629,21 +1884,31 @@ body.dark-mode .ai-visibility-btn.is-selected {
   min-width: 220px;
 }
 
-.ai-model-picker select {
+.ai-model-picker .custom-select {
   min-width: 0;
-  width: 100%;
-  height: 34px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-strong);
-  color: var(--text);
-  padding: 0 12px;
-  font-size: 0.82rem;
 }
 
-.ai-model-picker select:focus {
-  outline: 2px solid var(--primary-soft);
-  outline-offset: -1px;
+.ai-model-picker .custom-select-trigger {
+  height: 34px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0 12px;
+}
+
+.ai-model-picker .custom-select-trigger:hover {
+  border-color: color-mix(in srgb, var(--line) 56%, var(--primary) 44%);
+  background-color: color-mix(in srgb, var(--surface-strong) 84%, var(--primary-soft) 16%);
+}
+
+.ai-model-picker .custom-select-panel {
+  right: auto;
+  min-width: 220px;
+  width: max(100%, 220px);
+}
+
+.ai-model-picker .custom-select-option {
+  font-size: 0.82rem;
 }
 
 .ai-chip {
@@ -3183,7 +3448,7 @@ body.dark-mode .saved-modal-toolbar {
     flex: 1 1 220px;
   }
 
-  .ai-model-picker select {
+  .ai-model-picker .custom-select-trigger {
     width: 100%;
   }
 

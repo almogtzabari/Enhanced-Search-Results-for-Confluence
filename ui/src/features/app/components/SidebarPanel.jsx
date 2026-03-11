@@ -1,3 +1,21 @@
+import { CustomSelect } from '../../../components/CustomSelect.jsx';
+
+const DATE_FILTER_OPTIONS = [
+  { value: 'any', label: 'Any time' },
+  { value: '1d', label: 'Past day' },
+  { value: '1w', label: 'Past week' },
+  { value: '1m', label: 'Past month' },
+  { value: '1y', label: 'Past year' },
+];
+
+const TYPE_FILTER_OPTIONS = [
+  { value: '', label: '📚 All Types' },
+  { value: 'page', label: '📄 Page' },
+  { value: 'blogpost', label: '📰 Blog post' },
+  { value: 'attachment', label: '📎 Attachment' },
+  { value: 'comment', label: '💬 Comment' },
+];
+
 export function SidebarPanel({
   view,
   handleTreeViewClick,
@@ -210,37 +228,45 @@ export function SidebarPanel({
           <span class="field-icon">
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M8 3.5v3M16 3.5v3M4 9.3h16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /></svg>
           </span>
-          <select value={filterDate} onChange={(e) => updateFilterDate(e.currentTarget.value)}>
-            <option value="any">Any time</option>
-            <option value="1d">Past day</option>
-            <option value="1w">Past week</option>
-            <option value="1m">Past month</option>
-            <option value="1y">Past year</option>
-          </select>
+          <CustomSelect
+            id="filter-date-sidebar"
+            ariaLabel="Filter by date"
+            value={filterDate}
+            options={DATE_FILTER_OPTIONS}
+            onChange={updateFilterDate}
+            className="sidebar-filter-select"
+          />
         </div>
 
         <div class="field with-icon">
           <span class="field-icon">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7.5h15M4.5 12h15M4.5 16.5h15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /><circle cx="9" cy="7.5" r="1.3" fill="currentColor" /><circle cx="14" cy="12" r="1.3" fill="currentColor" /><circle cx="11" cy="16.5" r="1.3" fill="currentColor" /></svg>
           </span>
-          <select value={filterType} onChange={(e) => updateFilterType(e.currentTarget.value)}>
-            <option value="">📚 All Types</option>
-            <option value="page">📄 Page</option>
-            <option value="blogpost">📰 Blog post</option>
-            <option value="attachment">📎 Attachment</option>
-            <option value="comment">💬 Comment</option>
-          </select>
+          <CustomSelect
+            id="filter-type-sidebar"
+            ariaLabel="Filter by type"
+            value={filterType}
+            options={TYPE_FILTER_OPTIONS}
+            onChange={updateFilterType}
+            className="sidebar-filter-select"
+          />
         </div>
       </section>
 
       <section class="sidebar-block">
         <h3>AI</h3>
         <div class="field">
-          <select value={selectedAiModel} onChange={(e) => changeAiModel(e.currentTarget.value)}>
-            {aiModelOptions.map((modelOpt) => (
-              <option key={modelOpt.value} value={modelOpt.value}>{modelOpt.label}</option>
-            ))}
-          </select>
+          <CustomSelect
+            id="ai-model-sidebar"
+            ariaLabel="AI model"
+            value={selectedAiModel}
+            options={aiModelOptions}
+            onChange={changeAiModel}
+            className="ai-model-select"
+            triggerClassName="ai-model-select-trigger"
+            panelClassName="ai-model-select-panel"
+            optionClassName="ai-model-select-option"
+          />
         </div>
       </section>
 

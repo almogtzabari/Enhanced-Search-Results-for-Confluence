@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { CustomSelect } from './CustomSelect.jsx';
 
 const MIN_AI_TABLE_COL_WIDTH = 86;
 const AI_TABLE_SORT_NONE = 'none';
@@ -528,16 +529,17 @@ export function AiModal({
                   </button>
                 </div>
                 <div class="ai-model-picker">
-                  <select
+                  <CustomSelect
                     id="ai-model-modal"
-                    aria-label="AI model"
+                    ariaLabel="AI model"
                     value={selectedAiModel}
-                    onChange={(e) => changeAiModel(e.currentTarget.value)}
-                  >
-                    {aiModelOptions.map((modelOpt) => (
-                      <option key={modelOpt.value} value={modelOpt.value}>{modelOpt.label}</option>
-                    ))}
-                  </select>
+                    options={aiModelOptions}
+                    onChange={changeAiModel}
+                    className="ai-model-select ai-model-select--pill"
+                    triggerClassName="ai-model-select-trigger ai-model-select-trigger--pill"
+                    panelClassName="ai-model-select-panel"
+                    optionClassName="ai-model-select-option"
+                  />
                 </div>
               </div>
             </div>

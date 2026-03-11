@@ -75,6 +75,8 @@ describe('OptionsApp', () => {
     serviceMocks.subscribeStorageChanges.mockReturnValue(() => {});
     serviceMocks.getChrome.mockReturnValue({
       runtime: {
+        getURL: vi.fn((path) => `chrome-extension://test/${path}`),
+        getManifest: vi.fn(() => ({ version: 'test-version' })),
         sendMessage: vi.fn(),
       },
     });
@@ -114,9 +116,10 @@ describe('OptionsApp', () => {
     const floatingPrimaryActionSelect = view.container.querySelector('#floating-primary-action');
     const domainInput = view.container.querySelector('input[placeholder="example.com"]');
 
-    expect(modelSelect?.value).toBe(DEFAULT_AI_MODEL);
-    expect(reasoningSelect?.value).toBe('high');
-    expect(floatingPrimaryActionSelect?.value).toBe('summarize');
+    expect(modelSelect?.getAttribute('data-value')).toBe(DEFAULT_AI_MODEL);
+    expect(modelSelect?.textContent).toContain(DEFAULT_AI_MODEL);
+    expect(reasoningSelect?.getAttribute('data-value')).toBe('high');
+    expect(floatingPrimaryActionSelect?.getAttribute('data-value')).toBe('summarize');
     expect(domainInput?.value).toBe('example.atlassian.net');
 
     expect(serviceMocks.setLocal).toHaveBeenCalledWith({ openaiApiKey: 'sync-api-key' });
@@ -449,11 +452,15 @@ describe('OptionsApp', () => {
 
     const floatingPrimaryActionSelect = view.container.querySelector('#floating-primary-action');
     expect(floatingPrimaryActionSelect).toBeTruthy();
-    expect(floatingPrimaryActionSelect?.value).toBe('summarize');
+    expect(floatingPrimaryActionSelect?.getAttribute('data-value')).toBe('summarize');
 
-    floatingPrimaryActionSelect.value = 'search';
     act(() => {
-      floatingPrimaryActionSelect.dispatchEvent(new Event('change', { bubbles: true }));
+      floatingPrimaryActionSelect.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    const floatingPrimarySearchOption = view.container.querySelector('.options-model-select-option[data-value="search"]');
+    expect(floatingPrimarySearchOption).toBeTruthy();
+    act(() => {
+      floatingPrimarySearchOption.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await flushMany();
 
@@ -462,51 +469,79 @@ describe('OptionsApp', () => {
   });
 
   it('toggles AI settings visibility via Enable AI Features', async () => {
+    vi.useFakeTimers();
+    let view = null;
+    try {
+      view = mount();
+      await flushMany();
+
+      const sectionHeadings = Array.from(view.container.querySelectorAll('h2')).map((node) => node.textContent || '');
+      const aiHeadingIndex = sectionHeadings.findIndex((text) => text.startsWith('AI Options'));
+      const additionalOptionsHeadingIndex = sectionHeadings.findIndex((text) => text.startsWith('Additional Options'));
+      const domainHeadingText = sectionHeadings.find((text) => text.startsWith('Domain Options')) || '';
+      expect(aiHeadingIndex).toBeGreaterThan(-1);
+      expect(additionalOptionsHeadingIndex).toBeGreaterThan(-1);
+      expect(aiHeadingIndex).toBeLessThan(additionalOptionsHeadingIndex);
+      expect(domainHeadingText).toContain('Required');
+
+      const aiToggle = view.container.querySelector('#enable-ai-features');
+      expect(aiToggle).toBeTruthy();
+      expect(view.container.querySelector('#api-key')).toBeNull();
+
+      aiToggle.checked = true;
+      act(() => {
+        aiToggle.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(20);
+      });
+      await flushMany();
+
+      expect(view.container.querySelector('#api-key')).toBeTruthy();
+      expect(view.container.querySelector('.ai-options-collapse')).toBeTruthy();
+      expect(view.container.textContent).toContain('Optional');
+      const floatingPrimaryActionSelect = view.container.querySelector('#floating-primary-action');
+      expect(floatingPrimaryActionSelect?.getAttribute('data-value')).toBe('search');
+      expect(serviceMocks.setSync).toHaveBeenCalledWith({
+        enableAiFeatures: true,
+        enableSummaries: true,
+        enableFloatingSummarize: true,
+      });
+
+      aiToggle.checked = false;
+      act(() => {
+        aiToggle.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await flushMany();
+
+      expect(view.container.querySelector('#api-key')).toBeTruthy();
+      expect(view.container.querySelector('.ai-options-collapse')?.classList.contains('is-expanded')).toBe(false);
+      await act(async () => {
+        vi.advanceTimersByTime(260);
+      });
+      await flushMany();
+
+      expect(view.container.querySelector('#api-key')).toBeNull();
+      expect(serviceMocks.setSync).toHaveBeenCalledWith({
+        enableAiFeatures: false,
+        enableSummaries: false,
+        enableFloatingSummarize: true,
+        floatingPrimaryAction: 'search',
+      });
+    } finally {
+      if (view) view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows Results per Batch in Additional Options and removes Advanced Settings block', async () => {
     const view = mount();
     await flushMany();
 
-    const sectionHeadings = Array.from(view.container.querySelectorAll('h2')).map((node) => node.textContent || '');
-    const aiHeadingIndex = sectionHeadings.findIndex((text) => text.startsWith('AI Options'));
-    const additionalOptionsHeadingIndex = sectionHeadings.findIndex((text) => text.startsWith('Additional Options'));
-    const domainHeadingText = sectionHeadings.find((text) => text.startsWith('Domain Options')) || '';
-    expect(aiHeadingIndex).toBeGreaterThan(-1);
-    expect(additionalOptionsHeadingIndex).toBeGreaterThan(-1);
-    expect(aiHeadingIndex).toBeLessThan(additionalOptionsHeadingIndex);
-    expect(domainHeadingText).toContain('Required');
-
-    const aiToggle = view.container.querySelector('#enable-ai-features');
-    expect(aiToggle).toBeTruthy();
-    expect(view.container.querySelector('#api-key')).toBeNull();
-
-    aiToggle.checked = true;
-    act(() => {
-      aiToggle.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    await flushMany();
-
-    expect(view.container.querySelector('#api-key')).toBeTruthy();
-    expect(view.container.textContent).toContain('Optional');
-    const floatingPrimaryActionSelect = view.container.querySelector('#floating-primary-action');
-    expect(floatingPrimaryActionSelect?.value).toBe('search');
-    expect(serviceMocks.setSync).toHaveBeenCalledWith({
-      enableAiFeatures: true,
-      enableSummaries: true,
-      enableFloatingSummarize: true,
-    });
-
-    aiToggle.checked = false;
-    act(() => {
-      aiToggle.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    await flushMany();
-
-    expect(view.container.querySelector('#api-key')).toBeNull();
-    expect(serviceMocks.setSync).toHaveBeenCalledWith({
-      enableAiFeatures: false,
-      enableSummaries: false,
-      enableFloatingSummarize: true,
-      floatingPrimaryAction: 'search',
-    });
+    const resultsPerRequestSelect = view.container.querySelector('#results-per-request');
+    expect(resultsPerRequestSelect).toBeTruthy();
+    expect(resultsPerRequestSelect?.getAttribute('data-value')).toBe('75');
+    expect(view.container.textContent).not.toContain('Advanced Settings');
 
     view.unmount();
   });
