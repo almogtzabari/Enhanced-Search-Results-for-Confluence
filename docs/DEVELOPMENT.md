@@ -74,6 +74,71 @@ Build and verify in one command:
 npm run build:dist:checked
 ```
 
+## Live Confluence smoke tests
+
+The repo includes live Chromium smoke tests for the extension UI. They load `dist/chrome` with Playwright, use a persistent local browser profile, open a real authenticated Confluence page, and call the configured OpenAI-compatible Responses API endpoint.
+
+Use these checks only with a Confluence account, page, search query, and AI endpoint that are approved for this kind of local test. The smoke can send Confluence page/search content to the configured endpoint.
+
+Create `.codex/confluence-smoke.env` in the repo root. This file is ignored by git.
+
+Required:
+
+```bash
+CONFLUENCE_PAGE_URL=https://your-domain.atlassian.net/wiki/spaces/SPACE/pages/123456/Page
+CONFLUENCE_SEARCH_QUERY=some query that returns at least one result
+OPENAI_API_KEY=sk-...
+OPENAI_API_BASE_URL=https://your-openai-proxy.example.com/v1
+```
+
+Useful optional settings:
+
+```bash
+CONFLUENCE_BASE_URL=https://your-domain.atlassian.net/wiki
+OPENAI_MODEL=gpt-5.5
+OPENAI_REASONING_EFFORT=low
+CONFLUENCE_SMOKE_HEADLESS=0
+CONFLUENCE_SMOKE_PROFILE_DIR=.codex/playwright-profiles/chromium-live-ai
+CONFLUENCE_SMOKE_AI_TIMEOUT_MS=240000
+CONFLUENCE_SMOKE_SPACE_FILTER_NAME="space name to target in full smoke"
+CONFLUENCE_SMOKE_CONTRIBUTOR_FILTER_NAME="contributor display name to target in full smoke"
+```
+
+If the Playwright Chromium binary is missing:
+
+```bash
+npm --prefix ui exec playwright install chromium
+```
+
+First-time setup opens a headed browser so you can log in and approve extension host permissions:
+
+```bash
+npm run smoke:confluence:setup
+```
+
+Run the critical live path:
+
+```bash
+npm run smoke:confluence
+```
+
+Run the comprehensive Chromium UI regression smoke:
+
+```bash
+npm run smoke:confluence:full
+```
+
+Both smoke commands build and verify `dist/chrome` first. Use `--skip-build` only when the current `dist/chrome` is already up to date:
+
+```bash
+npm run smoke:confluence -- --skip-build
+npm run smoke:confluence:full -- --skip-build
+```
+
+Failure artifacts are written under `.codex/smoke-results/`, including screenshots, a Playwright trace, and `failure.json`. The persistent Chromium profile is stored under `.codex/playwright-profiles/` by default.
+
+Firefox behavior still needs a manual extension smoke because the Firefox build is MV2 and loaded through `about:debugging`. See `.codex/skills/confluence-ui-smoke/references/firefox-manual-smoke.md`.
+
 ## Package store upload archives
 
 Create store upload archives (builds `dist/` first):

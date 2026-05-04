@@ -29,11 +29,29 @@ npm run test:ui:coverage
 npm run lint
 ```
 
-For full local setup, build, packaging, and extension-loading instructions, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+For full local setup, build, packaging, extension-loading, and live smoke-test instructions, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Quick Smoke Checklist
 
-Run after loading both `dist/chrome` and `dist/firefox` builds:
+For changes that affect search results, saved searches, filters, the launcher, permissions, AI summaries, AI follow-up chat, dark mode, or either AI modal runtime, run the live Chromium smoke when you have an approved Confluence test page and AI endpoint:
+
+```bash
+npm run smoke:confluence
+```
+
+Run the full Chromium smoke before releases or after broader UI/AI/modal changes:
+
+```bash
+npm run smoke:confluence:full
+```
+
+If this is the first run on a machine, or the Confluence login or extension permissions expired, run:
+
+```bash
+npm run smoke:confluence:setup
+```
+
+The automated smoke covers Chromium. Run this manual checklist after loading both `dist/chrome` and `dist/firefox` builds, especially for Firefox-specific release confidence:
 
 1. Open options page in Chrome and Firefox.
 2. Save domain settings and verify permission prompt behavior.

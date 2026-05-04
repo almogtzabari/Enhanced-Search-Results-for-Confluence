@@ -12,3 +12,8 @@
 # Archives / logs
 *.zip
 npm-debug.log*
+
+# Local Codex smoke-test state and secrets
+.codex/confluence-smoke.env
+.codex/playwright-profiles/
+.codex/smoke-results/

@@ -73,7 +73,7 @@ The extension is available on the Chrome Web Store and Firefox Add-ons site:
 
 ## Development
 
-For full development/build/test docs, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+For full development/build/test docs, including live Confluence smoke-test setup, see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 Quickstart:
 

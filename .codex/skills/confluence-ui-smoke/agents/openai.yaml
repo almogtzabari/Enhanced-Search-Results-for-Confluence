@@ -1,0 +1,4 @@
+interface:
+  display_name: "Confluence UI Smoke"
+  short_description: "Run quick or comprehensive live Confluence UI smoke tests"
+  default_prompt: "Use $confluence-ui-smoke to run the quick or comprehensive live Confluence UI smoke test."
