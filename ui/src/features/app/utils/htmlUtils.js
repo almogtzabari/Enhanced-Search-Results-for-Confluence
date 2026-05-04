@@ -63,6 +63,10 @@ export function sanitizeHtmlFragment(html = '') {
       relValues.add('noreferrer');
       el.setAttribute('rel', [...relValues].join(' '));
     }
+
+    if (tag === 'pre' || tag === 'code') {
+      el.setAttribute('dir', 'ltr');
+    }
   });
   return doc.body.innerHTML;
 }

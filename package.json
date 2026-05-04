@@ -1,7 +1,7 @@
 {
   "name": "enhanced-confluence-search-results-extension",
   "private": true,
-  "version": "2.0.4",
+  "version": "2.0.5",
   "scripts": {
     "version:sync": "node scripts/sync-version.mjs",
     "version:check": "node scripts/sync-version.mjs --check",

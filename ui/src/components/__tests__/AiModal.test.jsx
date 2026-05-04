@@ -61,8 +61,9 @@ function createProps(overrides = {}) {
     aiContributorIconSrc: 'broken-user-icon',
     fallbackUserIcon: 'user-fallback',
     aiContributorName: 'Alex',
-    selectedAiModel: 'gpt-5.4',
+    selectedAiModel: 'gpt-5.5',
     aiModelOptions: [
+      { value: 'gpt-5.5', label: 'gpt-5.5' },
       { value: 'gpt-5.4', label: 'gpt-5.4' },
       { value: 'gpt-5.3-codex', label: 'gpt-5.3-codex' },
       { value: 'gpt-5-codex', label: 'gpt-5-codex' },
@@ -252,7 +253,7 @@ describe('AiModal', () => {
     expect(view.container.textContent).toContain('Space: Engineering');
     expect(view.container.textContent).toContain('Contributor: Alex');
     const modelSelect = view.container.querySelector('#ai-model-modal');
-    expect(modelSelect?.getAttribute('data-value')).toBe('gpt-5.4');
+    expect(modelSelect?.getAttribute('data-value')).toBe('gpt-5.5');
 
     const avatars = view.container.querySelectorAll('.ai-chip-avatar');
     act(() => {

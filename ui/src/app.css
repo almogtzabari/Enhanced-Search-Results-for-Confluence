@@ -2364,6 +2364,8 @@ body.dark-mode .ai-chip-popover {
 .ai-summary code,
 .qa-entry.assistant code {
   display: inline;
+  direction: ltr;
+  unicode-bidi: isolate;
   font-family: "JetBrains Mono", "SFMono-Regular", "SF Mono", Menlo, Consolas, monospace;
   font-size: 0.84em;
   font-weight: 600;
@@ -2380,13 +2382,33 @@ body.dark-mode .ai-chip-popover {
   overflow-wrap: anywhere;
 }
 
+.ai-summary pre,
+.qa-entry.assistant pre {
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--line) 70%);
+  background: color-mix(in srgb, var(--primary-soft) 64%, var(--surface-strong) 36%);
+}
+
 .ai-summary pre code,
 .qa-entry.assistant pre code {
+  display: block;
+  direction: inherit;
+  text-align: inherit;
+  unicode-bidi: normal;
+  white-space: inherit;
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+  overflow-wrap: normal;
 }
 
 .ai-thread-title {
@@ -2507,6 +2529,12 @@ body.dark-mode .qa-entry.assistant code {
   background: linear-gradient(180deg, rgba(66, 124, 197, 0.38), rgba(50, 101, 168, 0.28));
   color: #e7f1ff;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+body.dark-mode .ai-summary pre,
+body.dark-mode .qa-entry.assistant pre {
+  border-color: color-mix(in srgb, #5d9ff1 46%, #365881 54%);
+  background: color-mix(in srgb, #1b3a62 72%, #10243d 28%);
 }
 
 body.dark-mode .ai-summary :is(th, td),

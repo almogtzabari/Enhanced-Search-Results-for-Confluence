@@ -6,9 +6,10 @@ import {
   SAVED_SEARCH_STORE_NAME,
 } from '../../../shared/extensionConfig.js';
 
-export const DEFAULT_AI_MODEL = 'gpt-5.4';
+export const DEFAULT_AI_MODEL = 'gpt-5.5';
 
 export const AI_MODEL_OPTIONS = [
+  { value: 'gpt-5.5', label: 'gpt-5.5' },
   { value: 'gpt-5.4', label: 'gpt-5.4' },
   { value: 'gpt-5.4-pro', label: 'gpt-5.4-pro' },
   { value: 'gpt-5.3-codex', label: 'gpt-5.3-codex' },

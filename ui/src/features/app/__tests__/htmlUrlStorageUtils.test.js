@@ -12,6 +12,13 @@ describe('html/url/storage utils', () => {
     expect(out).not.toContain('javascript:');
   });
 
+  it('normalizes code direction for mixed rtl answers', () => {
+    const out = sanitizeHtmlFragment('<p>בדיקה <code>getUser()</code></p><pre><code>const value = 1;</code></pre>');
+
+    expect(out).toContain('<code dir="ltr">getUser()</code>');
+    expect(out).toContain('<pre dir="ltr"><code dir="ltr">const value = 1;</code></pre>');
+  });
+
   it('resolves confluence icon url and falls back when path is missing', () => {
     const base = 'https://example.atlassian.net/wiki';
     const fallback = 'data:image/png;base64,aaa';
