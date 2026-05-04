@@ -160,6 +160,8 @@ Generated files are written to `dist/packages/`:
 - `enhanced-search-results-for-confluence-firefox-v<version>.xpi`
 - `enhanced-search-results-for-confluence-source-v<version>.zip` (for Firefox reviewer source upload)
 
+The source archive is built from tracked repository files only and excludes local/runtime directories such as `.codex/`, `dist/`, `.build/`, `.vscode/`, and dependency/install outputs.
+
 Tip: if `dist/` is already built, you can skip rebuilding:
 
 ```bash

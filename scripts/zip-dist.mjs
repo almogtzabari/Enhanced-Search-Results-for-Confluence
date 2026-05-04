@@ -23,6 +23,20 @@ if (!allowedTargets.has(targetArg)) {
 const skipBuild = args.includes('--skip-build');
 const targets = targetArg === 'all' ? ['chrome', 'firefox'] : [targetArg];
 
+const sourceArchiveExcludedPrefixes = [
+  '.build/',
+  '.codex/',
+  '.git/',
+  '.vscode/',
+  'dist/',
+  'node_modules/',
+  'ui/coverage/',
+  'ui/node_modules/',
+];
+
+const sourceArchiveExcludedBasenames = new Set(['.DS_Store']);
+const sourceArchiveExcludedSuffixes = ['.zip', '.xpi'];
+
 function runCommand(command, commandArgs, cwd) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, commandArgs, {
@@ -40,6 +54,81 @@ function runCommand(command, commandArgs, cwd) {
       reject(new Error(`${command} ${commandArgs.join(' ')} failed with exit code ${code}`));
     });
   });
+}
+
+function collectCommandOutput(command, commandArgs, cwd) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, commandArgs, {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
+    });
+
+    const stdout = [];
+    const stderr = [];
+
+    child.stdout.on('data', (chunk) => stdout.push(chunk));
+    child.stderr.on('data', (chunk) => stderr.push(chunk));
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (code === 0) {
+        resolve(Buffer.concat(stdout).toString('utf8'));
+        return;
+      }
+
+      const stderrText = Buffer.concat(stderr).toString('utf8').trim();
+      const details = stderrText ? `\n${stderrText}` : '';
+      reject(new Error(`${command} ${commandArgs.join(' ')} failed with exit code ${code}${details}`));
+    });
+  });
+}
+
+function runCommandWithInput(command, commandArgs, cwd, input) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, commandArgs, {
+      cwd,
+      stdio: ['pipe', 'inherit', 'inherit'],
+      shell: process.platform === 'win32',
+    });
+
+    child.on('error', reject);
+    child.on('exit', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(`${command} ${commandArgs.join(' ')} failed with exit code ${code}`));
+    });
+
+    child.stdin.end(input);
+  });
+}
+
+function isSourceArchiveFile(filePath) {
+  const normalizedPath = filePath.replaceAll(path.sep, '/');
+  const basename = path.basename(normalizedPath);
+
+  if (sourceArchiveExcludedBasenames.has(basename)) {
+    return false;
+  }
+
+  if (sourceArchiveExcludedPrefixes.some((prefix) => normalizedPath.startsWith(prefix))) {
+    return false;
+  }
+
+  return !sourceArchiveExcludedSuffixes.some((suffix) => normalizedPath.endsWith(suffix));
+}
+
+async function listSourceArchiveFiles() {
+  const output = await collectCommandOutput('git', ['ls-files', '-z'], repoRoot);
+  const trackedFiles = output.split('\0').filter(Boolean);
+  const sourceFiles = trackedFiles.filter(isSourceArchiveFile).sort();
+
+  if (sourceFiles.length === 0) {
+    throw new Error('No source files found for source archive.');
+  }
+
+  return sourceFiles;
 }
 
 async function ensureManifest(target) {
@@ -74,15 +163,8 @@ async function createSourceArchive(version) {
   const archiveAbsPath = path.join(packagesDir, archiveName);
 
   await rm(archiveAbsPath, { force: true });
-  await createArchiveWithZipCommand(repoRoot, archiveAbsPath, [
-    '.git/*',
-    'dist/*',
-    '.build/*',
-    'node_modules/*',
-    'ui/node_modules/*',
-    '*.DS_Store',
-    '__MACOSX/*',
-  ]);
+  const sourceFiles = await listSourceArchiveFiles();
+  await createArchiveWithZipFileList(repoRoot, archiveAbsPath, sourceFiles);
 
   return archiveAbsPath;
 }
@@ -94,6 +176,17 @@ async function createArchiveWithZipCommand(targetDir, archiveAbsPath, excludes =
       ['-q', '-r', '-X', archiveAbsPath, '.', '-x', ...excludes],
       targetDir,
     );
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      throw new Error('The "zip" command was not found. Install zip and retry.');
+    }
+    throw error;
+  }
+}
+
+async function createArchiveWithZipFileList(targetDir, archiveAbsPath, files) {
+  try {
+    await runCommandWithInput('zip', ['-q', '-X', archiveAbsPath, '-@'], targetDir, `${files.join('\n')}\n`);
   } catch (error) {
     if (error?.code === 'ENOENT') {
       throw new Error('The "zip" command was not found. Install zip and retry.');
