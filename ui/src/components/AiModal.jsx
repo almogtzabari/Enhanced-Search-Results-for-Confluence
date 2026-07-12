@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
+import { AI_MODAL_BOUNDS_MESSAGE } from '../shared/constants.js';
 import { CustomSelect } from './CustomSelect.jsx';
 
 const MIN_AI_TABLE_COL_WIDTH = 86;
@@ -354,6 +355,7 @@ export function AiModal({
   setAiQuestion,
   submitAiQuestion,
   aiQuestionInputHeight,
+  modalOnlyMode = false,
 }) {
   const aiSummaryRef = useRef(null);
   const [layoutMotionClass, setLayoutMotionClass] = useState('');
@@ -399,6 +401,54 @@ export function AiModal({
     if (motionTimerRef.current) clearTimeout(motionTimerRef.current);
   }, []);
 
+  useEffect(() => {
+    if (!modalOnlyMode || !aiModalOpen || !aiModalRef.current) return undefined;
+    if (!window.parent || window.parent === window) return undefined;
+
+    let parentOrigin = '';
+    try {
+      parentOrigin = new URL(String(baseUrl || ''), window.location.href).origin;
+    } catch {
+      parentOrigin = '';
+    }
+    if (!parentOrigin || !/^https?:$/i.test(new URL(parentOrigin).protocol)) return undefined;
+
+    let animationFrameId = 0;
+    const postBounds = () => {
+      animationFrameId = 0;
+      const modal = aiModalRef.current;
+      if (!modal) return;
+      const rect = modal.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      window.parent.postMessage({
+        type: AI_MODAL_BOUNDS_MESSAGE,
+        bounds: {
+          x: rect.left,
+          y: rect.top,
+          width: rect.width,
+          height: rect.height,
+        },
+      }, parentOrigin);
+    };
+    const scheduleBounds = () => {
+      if (animationFrameId) window.cancelAnimationFrame(animationFrameId);
+      animationFrameId = window.requestAnimationFrame(postBounds);
+    };
+
+    const resizeObserver = typeof ResizeObserver === 'function'
+      ? new ResizeObserver(scheduleBounds)
+      : null;
+    resizeObserver?.observe(aiModalRef.current);
+    window.addEventListener('resize', scheduleBounds);
+    scheduleBounds();
+
+    return () => {
+      if (animationFrameId) window.cancelAnimationFrame(animationFrameId);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', scheduleBounds);
+    };
+  }, [modalOnlyMode, aiModalOpen, aiModalRef]);
+
   if (!aiModalOpen) return null;
 
   return (
@@ -414,25 +464,25 @@ export function AiModal({
       >
         <div
           class="ai-modal-resizer ai-modal-resizer-left"
-          onMouseDown={(e) => startAiModalResize(e, 'left')}
+          onPointerDown={(e) => startAiModalResize(e, 'left')}
           onDblClick={resetAiModalWidth}
           title="Drag to resize (double-click to reset)"
         />
         <div
           class="ai-modal-resizer ai-modal-resizer-right"
-          onMouseDown={(e) => startAiModalResize(e, 'right')}
+          onPointerDown={(e) => startAiModalResize(e, 'right')}
           onDblClick={resetAiModalWidth}
           title="Drag to resize (double-click to reset)"
         />
         <div
           class="ai-modal-height-resizer ai-modal-height-resizer-top"
-          onMouseDown={(e) => startAiModalHeightResize(e, 'top')}
+          onPointerDown={(e) => startAiModalHeightResize(e, 'top')}
           onDblClick={resetAiModalHeight}
           title="Drag to resize height (double-click to reset)"
         />
         <div
           class="ai-modal-height-resizer"
-          onMouseDown={(e) => startAiModalHeightResize(e, 'bottom')}
+          onPointerDown={(e) => startAiModalHeightResize(e, 'bottom')}
           onDblClick={resetAiModalHeight}
           title="Drag to resize height (double-click to reset)"
         />

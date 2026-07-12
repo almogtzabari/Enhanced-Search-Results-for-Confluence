@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const LOADER_FLAG = '__enhancedConfluenceContentAppLoaded';
 const ROOT_ID = 'enhanced-content-app-root';
 const MODAL_HOST_ID = 'enhanced-content-ai-modal-host';
+const MODAL_IFRAME_ID = 'enhanced-content-ai-modal-frame';
+const AI_MODAL_BOUNDS_MESSAGE = 'enhanced-ai-modal-bounds';
 
 function createChromeMock({
   enableFloatingSummarize = true,
@@ -329,6 +331,89 @@ describe('contentApp', () => {
     expect(modalUrl.searchParams.get('spaceKey')).toBe('ENG');
     expect(modalUrl.searchParams.get('contributorName')).toBe('Ada Lovelace');
     expect(modalUrl.searchParams.get('contributorUsername')).toBe('adal');
+  });
+
+  it('masks the content-modal iframe to validated bounds from its own frame', async () => {
+    const runtime = createChromeMock({
+      enableFloatingSummarize: true,
+      enableAiFeatures: true,
+      localApiKey: 'local-key',
+      storedSummariesByContentId: { 12345: true },
+    });
+    global.chrome = runtime.chrome;
+
+    const { bootstrapContentApp } = await loadContentAppModule();
+    bootstrapContentApp();
+    await flushMany();
+
+    clickByAriaLabel('Open Existing Summary and Q&A');
+    await flushMany();
+
+    const iframe = document.getElementById(MODAL_IFRAME_ID);
+    expect(iframe).toBeTruthy();
+    expect(iframe.style.getPropertyPriority('mask-image')).toBe('important');
+
+    const contentWindow = iframe.contentWindow;
+    window.dispatchEvent(new MessageEvent('message', {
+      source: contentWindow,
+      origin: 'https://extension.local',
+      data: {
+        type: AI_MODAL_BOUNDS_MESSAGE,
+        bounds: { x: 120, y: 80, width: 640, height: 480 },
+      },
+    }));
+
+    const maskImage = iframe.style.getPropertyValue('mask-image');
+    expect(maskImage).toContain('data:image/svg+xml');
+    expect(decodeURIComponent(maskImage)).toContain('<rect x="120" y="80" width="640" height="480" rx="16"');
+    expect(iframe.style.getPropertyPriority('mask-image')).toBe('important');
+
+    window.dispatchEvent(new MessageEvent('message', {
+      source: contentWindow,
+      origin: 'https://extension.local',
+      data: {
+        type: AI_MODAL_BOUNDS_MESSAGE,
+        bounds: { x: '120', y: 80, width: 640, height: 480 },
+      },
+    }));
+    expect(iframe.style.getPropertyValue('mask-image')).toBe(maskImage);
+  });
+
+  it('ignores modal bounds messages from other windows and origins', async () => {
+    const runtime = createChromeMock({
+      enableFloatingSummarize: true,
+      enableAiFeatures: true,
+      localApiKey: 'local-key',
+      storedSummariesByContentId: { 12345: true },
+    });
+    global.chrome = runtime.chrome;
+
+    const { bootstrapContentApp } = await loadContentAppModule();
+    bootstrapContentApp();
+    await flushMany();
+
+    clickByAriaLabel('Open Existing Summary and Q&A');
+    await flushMany();
+
+    const iframe = document.getElementById(MODAL_IFRAME_ID);
+    const initialMask = iframe.style.getPropertyValue('mask-image');
+    const boundsMessage = {
+      type: AI_MODAL_BOUNDS_MESSAGE,
+      bounds: { x: 120, y: 80, width: 640, height: 480 },
+    };
+
+    window.dispatchEvent(new MessageEvent('message', {
+      source: window,
+      origin: 'https://extension.local',
+      data: boundsMessage,
+    }));
+    window.dispatchEvent(new MessageEvent('message', {
+      source: iframe.contentWindow,
+      origin: 'https://attacker.example',
+      data: boundsMessage,
+    }));
+
+    expect(iframe.style.getPropertyValue('mask-image')).toBe(initialMask);
   });
 
   it('uses summarize as the primary floating action when configured', async () => {

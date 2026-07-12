@@ -7,6 +7,7 @@ import {
 } from '../../../shared/extensionConfig.js';
 
 export const DEFAULT_AI_MODEL = 'gpt-5.5';
+export const AI_MODAL_BOUNDS_MESSAGE = 'enhanced-ai-modal-bounds';
 
 export const AI_MODEL_OPTIONS = [
   { value: 'gpt-5.5', label: 'gpt-5.5' },

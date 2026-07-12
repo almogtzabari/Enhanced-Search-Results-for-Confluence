@@ -1647,6 +1647,7 @@ body.dark-mode .tree-tooltip-v2 {
   display: flex;
   align-items: center;
   justify-content: center;
+  touch-action: none;
 }
 
 .ai-modal-resizer::before {
@@ -1683,6 +1684,7 @@ body.dark-mode .tree-tooltip-v2 {
   display: flex;
   align-items: center;
   justify-content: center;
+  touch-action: none;
 }
 
 .ai-modal-height-resizer::before {

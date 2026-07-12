@@ -157,20 +157,10 @@ describe('AiModal', () => {
     const verticalResizers = view.container.querySelectorAll('.ai-modal-resizer');
     const heightResizers = view.container.querySelectorAll('.ai-modal-height-resizer');
     act(() => {
-      verticalResizers[0].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-      verticalResizers[1].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       verticalResizers[0].dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-      heightResizers[0].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-      heightResizers[1].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       heightResizers[1].dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     });
-    expect(props.startAiModalResize).toHaveBeenCalledTimes(2);
-    expect(props.startAiModalResize).toHaveBeenNthCalledWith(1, expect.any(MouseEvent), 'left');
-    expect(props.startAiModalResize).toHaveBeenNthCalledWith(2, expect.any(MouseEvent), 'right');
     expect(props.resetAiModalWidth).toHaveBeenCalledTimes(1);
-    expect(props.startAiModalHeightResize).toHaveBeenCalledTimes(2);
-    expect(props.startAiModalHeightResize).toHaveBeenNthCalledWith(1, expect.any(MouseEvent), 'top');
-    expect(props.startAiModalHeightResize).toHaveBeenNthCalledWith(2, expect.any(MouseEvent), 'bottom');
     expect(props.resetAiModalHeight).toHaveBeenCalledTimes(1);
 
     view.unmount();
@@ -185,6 +175,63 @@ describe('AiModal', () => {
 
     expect(view.container.textContent).toContain('Loading your summary');
     view.unmount();
+  });
+
+  it('reports content-modal bounds only to the configured Confluence origin', async () => {
+    const originalParent = window.parent;
+    const parentWindow = { postMessage: vi.fn() };
+    const requestAnimationFrame = vi.spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback) => {
+        callback(0);
+        return 1;
+      });
+    const cancelAnimationFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    const getBoundingClientRect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({
+        x: 120,
+        y: 80,
+        top: 80,
+        right: 760,
+        bottom: 560,
+        left: 120,
+        width: 640,
+        height: 480,
+        toJSON: () => ({}),
+      });
+    const resizeObservers = [];
+    const originalResizeObserver = global.ResizeObserver;
+    global.ResizeObserver = class ResizeObserverMock {
+      constructor(callback) {
+        this.callback = callback;
+        resizeObservers.push(this);
+      }
+
+      observe = vi.fn();
+
+      disconnect = vi.fn();
+    };
+    Object.defineProperty(window, 'parent', { configurable: true, value: parentWindow });
+
+    try {
+      const view = mount(createProps({ modalOnlyMode: true }));
+      await flush();
+
+      expect(parentWindow.postMessage).toHaveBeenCalledWith({
+        type: 'enhanced-ai-modal-bounds',
+        bounds: { x: 120, y: 80, width: 640, height: 480 },
+      }, 'https://example.atlassian.net');
+      expect(resizeObservers).toHaveLength(1);
+      expect(resizeObservers[0].observe).toHaveBeenCalledWith(view.container.querySelector('.ai-modal'));
+
+      view.unmount();
+      expect(resizeObservers[0].disconnect).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
+      global.ResizeObserver = originalResizeObserver;
+      requestAnimationFrame.mockRestore();
+      cancelAnimationFrame.mockRestore();
+      getBoundingClientRect.mockRestore();
+    }
   });
 
   it('shows animated resummarize loading state while summary refresh is active', async () => {

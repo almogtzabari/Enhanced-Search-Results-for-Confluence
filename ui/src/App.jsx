@@ -413,6 +413,7 @@ export function App() {
       />
 
       <AiModal
+        modalOnlyMode={modalOnlyMode}
         aiModalOpen={ai.state.aiModalOpen}
         closeAiModal={ai.actions.closeAiModal}
         aiModalRef={ai.refs.aiModalRef}

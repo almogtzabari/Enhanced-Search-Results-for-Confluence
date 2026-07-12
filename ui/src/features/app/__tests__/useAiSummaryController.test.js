@@ -408,4 +408,33 @@ describe('useAiSummaryController', () => {
     expect(hook.result.state.aiActiveItem?.title).toBe('Actual page title - Engineering Space - Confluence');
     hook.unmount();
   });
+
+  it('captures pointer movement while resizing the outer modal', async () => {
+    const hook = createHook();
+    const resizeHandle = document.createElement('div');
+    resizeHandle.setPointerCapture = vi.fn();
+    resizeHandle.releasePointerCapture = vi.fn();
+    resizeHandle.hasPointerCapture = vi.fn(() => true);
+    Object.defineProperty(hook.result.refs.aiModalRef, 'current', {
+      configurable: true,
+      value: { offsetWidth: 900, offsetHeight: 620 },
+    });
+
+    hook.result.actions.startAiModalResize({
+      preventDefault: vi.fn(),
+      clientX: 500,
+      pointerId: 7,
+      currentTarget: resizeHandle,
+    }, 'right');
+
+    expect(resizeHandle.setPointerCapture).toHaveBeenCalledWith(7);
+    resizeHandle.dispatchEvent(Object.assign(new Event('pointermove'), { clientX: 560 }));
+    await hook.flush();
+    expect(hook.result.state.aiModalWidth).toBe(window.innerWidth - 24);
+
+    resizeHandle.dispatchEvent(new Event('pointerup'));
+    expect(resizeHandle.releasePointerCapture).toHaveBeenCalledWith(7);
+    expect(document.body.style.cursor).toBe('');
+    hook.unmount();
+  });
 });

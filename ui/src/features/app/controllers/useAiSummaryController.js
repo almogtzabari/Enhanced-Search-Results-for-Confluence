@@ -924,6 +924,11 @@ Content (HTML): ${bodyHtml}
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = aiModalRef.current?.offsetWidth || aiModalWidth;
+    const resizeHandle = event.currentTarget;
+    const pointerId = event.pointerId;
+    if (typeof resizeHandle?.setPointerCapture === 'function') {
+      resizeHandle.setPointerCapture(pointerId);
+    }
 
     const onMove = (moveEvent) => {
       const delta = direction === 'right'
@@ -937,14 +942,22 @@ Content (HTML): ${bodyHtml}
     };
 
     const onStop = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onStop);
+      resizeHandle?.removeEventListener('pointermove', onMove);
+      resizeHandle?.removeEventListener('pointerup', onStop);
+      resizeHandle?.removeEventListener('pointercancel', onStop);
+      if (
+        typeof resizeHandle?.releasePointerCapture === 'function'
+        && (typeof resizeHandle.hasPointerCapture !== 'function' || resizeHandle.hasPointerCapture(pointerId))
+      ) {
+        resizeHandle.releasePointerCapture(pointerId);
+      }
       document.body.style.cursor = '';
     };
 
     document.body.style.cursor = 'ew-resize';
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onStop);
+    resizeHandle?.addEventListener('pointermove', onMove);
+    resizeHandle?.addEventListener('pointerup', onStop);
+    resizeHandle?.addEventListener('pointercancel', onStop);
   };
 
   const resetAiModalWidth = () => {
@@ -957,6 +970,11 @@ Content (HTML): ${bodyHtml}
     event.preventDefault();
     const startY = event.clientY;
     const startHeight = aiModalRef.current?.offsetHeight || aiModalHeight;
+    const resizeHandle = event.currentTarget;
+    const pointerId = event.pointerId;
+    if (typeof resizeHandle?.setPointerCapture === 'function') {
+      resizeHandle.setPointerCapture(pointerId);
+    }
 
     const onMove = (moveEvent) => {
       const delta = moveEvent.clientY - startY;
@@ -969,14 +987,22 @@ Content (HTML): ${bodyHtml}
     };
 
     const onStop = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onStop);
+      resizeHandle?.removeEventListener('pointermove', onMove);
+      resizeHandle?.removeEventListener('pointerup', onStop);
+      resizeHandle?.removeEventListener('pointercancel', onStop);
+      if (
+        typeof resizeHandle?.releasePointerCapture === 'function'
+        && (typeof resizeHandle.hasPointerCapture !== 'function' || resizeHandle.hasPointerCapture(pointerId))
+      ) {
+        resizeHandle.releasePointerCapture(pointerId);
+      }
       document.body.style.cursor = '';
     };
 
     document.body.style.cursor = 'ns-resize';
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onStop);
+    resizeHandle?.addEventListener('pointermove', onMove);
+    resizeHandle?.addEventListener('pointerup', onStop);
+    resizeHandle?.addEventListener('pointercancel', onStop);
   };
 
   const resetAiModalHeight = () => {

@@ -1,7 +1,7 @@
 import { render } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { normalizeResponsesUrl } from './shared/openai.js';
-import { SUMMARY_STORE } from './shared/constants.js';
+import { AI_MODAL_BOUNDS_MESSAGE, SUMMARY_STORE } from './shared/constants.js';
 
 const LOADER_FLAG = '__enhancedConfluenceContentAppLoaded';
 const ROOT_ID = 'enhanced-content-app-root';
@@ -18,6 +18,57 @@ const FLOATING_PRIMARY_ACTION_DEFAULT = FLOATING_PRIMARY_ACTION_SEARCH;
 const PREFETCH_TTL_MS = 45_000;
 const PREFETCH_METADATA_TIMEOUT_MS = 4_000;
 const PREFETCH_IDLE_DELAY_MS = 450;
+const MODAL_CLIP_BORDER_RADIUS_PX = 16;
+
+function normalizeModalBounds(rawBounds) {
+  const { x, y, width, height } = rawBounds || {};
+  if (![x, y, width, height].every((value) => typeof value === 'number' && Number.isFinite(value))) {
+    return null;
+  }
+  if (width <= 0 || height <= 0) return null;
+
+  const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+  const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+  const left = Math.max(0, Math.min(viewportWidth, x));
+  const top = Math.max(0, Math.min(viewportHeight, y));
+  const rightEdge = Math.max(left, Math.min(viewportWidth, x + width));
+  const bottomEdge = Math.max(top, Math.min(viewportHeight, y + height));
+  if (rightEdge <= left || bottomEdge <= top) return null;
+
+  return {
+    top,
+    right: viewportWidth - rightEdge,
+    bottom: viewportHeight - bottomEdge,
+    left,
+  };
+}
+
+function applyModalIframeMask(iframe, rawBounds) {
+  const bounds = normalizeModalBounds(rawBounds);
+  if (!bounds) return false;
+  const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+  const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+  const width = viewportWidth - bounds.left - bounds.right;
+  const height = viewportHeight - bounds.top - bounds.bottom;
+  const maskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${viewportWidth}" height="${viewportHeight}" viewBox="0 0 ${viewportWidth} ${viewportHeight}"><rect x="${bounds.left}" y="${bounds.top}" width="${width}" height="${height}" rx="${MODAL_CLIP_BORDER_RADIUS_PX}" fill="white"/></svg>`;
+  const maskImage = `url("data:image/svg+xml,${encodeURIComponent(maskSvg)}")`;
+  iframe.style.setProperty('mask-image', maskImage, 'important');
+  iframe.style.setProperty('-webkit-mask-image', maskImage, 'important');
+  return true;
+}
+
+function getFallbackModalBounds() {
+  const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+  const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+  const width = Math.min(viewportWidth - 24, Math.max(640, viewportWidth * 0.76));
+  const height = Math.min(viewportHeight - 32, Math.max(480, viewportHeight * 0.7));
+  return {
+    x: (viewportWidth - width) / 2,
+    y: (viewportHeight - height) / 2,
+    width,
+    height,
+  };
+}
 
 function normalizeFloatingPrimaryAction(value) {
   if (value === FLOATING_PRIMARY_ACTION_SEARCH) return FLOATING_PRIMARY_ACTION_SEARCH;
@@ -397,6 +448,8 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, options = {}, onClo
   iframe.style.boxShadow = 'none';
   iframe.style.display = 'block';
   iframe.style.opacity = '0';
+  iframe.style.setProperty('mask-image', 'linear-gradient(transparent, transparent)', 'important');
+  iframe.style.setProperty('-webkit-mask-image', 'linear-gradient(transparent, transparent)', 'important');
   iframe.style.transition = 'opacity 140ms ease';
 
   const bootstrapOverlay = document.createElement('div');
@@ -441,9 +494,12 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, options = {}, onClo
   };
 
   let closed = false;
+  let frameLoaded = false;
+  let modalBoundsReady = false;
   let revealTimerId = 0;
   const revealIframe = () => {
     if (closed) return;
+    if (!frameLoaded || !modalBoundsReady) return;
     iframe.style.opacity = '1';
     if (bootstrapOverlay.parentElement) bootstrapOverlay.remove();
     iframe.removeEventListener('load', onFrameLoad);
@@ -460,6 +516,7 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, options = {}, onClo
       frameHref = '';
     }
     if (frameHref === 'about:blank') return;
+    frameLoaded = true;
     revealIframe();
   };
   const cleanup = () => {
@@ -510,6 +567,13 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, options = {}, onClo
 
     if (payload.type === MODAL_CLOSE_MESSAGE) {
       cleanup();
+      return;
+    }
+
+    if (payload.type === AI_MODAL_BOUNDS_MESSAGE) {
+      if (!applyModalIframeMask(iframe, payload.bounds)) return;
+      modalBoundsReady = true;
+      revealIframe();
       return;
     }
 
@@ -610,7 +674,12 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, options = {}, onClo
   host.appendChild(iframe);
   document.body.appendChild(host);
   iframe.addEventListener('load', onFrameLoad);
-  revealTimerId = window.setTimeout(revealIframe, 5000);
+  revealTimerId = window.setTimeout(() => {
+    if (closed || modalBoundsReady) return;
+    applyModalIframeMask(iframe, getFallbackModalBounds());
+    modalBoundsReady = true;
+    revealIframe();
+  }, 5000);
   if (!closed) iframe.src = iframeUrl;
 
   window.__enhancedContentModalCleanup = cleanup;
