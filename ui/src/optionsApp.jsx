@@ -165,7 +165,7 @@ function DomainRow({
 export function OptionsApp() {
   const [loading, setLoading] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
-  const [syncThemeToConfluencePage, setSyncThemeToConfluencePage] = useState(false);
+  const [syncThemeToConfluencePage, setSyncThemeToConfluencePage] = useState(true);
   const [showTreeTooltips, setShowTreeTooltips] = useState(true);
   const [showTableTooltips, setShowTableTooltips] = useState(true);
   const [highlightResultRows, setHighlightResultRows] = useState(true);
@@ -442,6 +442,9 @@ export function OptionsApp() {
       if (changes.darkMode) {
         setDarkMode(!!changes.darkMode.newValue);
       }
+      if (changes.syncThemeToConfluencePage) {
+        setSyncThemeToConfluencePage(changes.syncThemeToConfluencePage.newValue !== false);
+      }
       if (changes.selectedAiModel) {
         const requestedModel = retiredModelFallbacks[changes.selectedAiModel.newValue]
           || changes.selectedAiModel.newValue
@@ -480,7 +483,7 @@ export function OptionsApp() {
       const effectiveApiKey = localApiKey || syncApiKey;
 
       setDarkMode(!!merged.darkMode);
-      setSyncThemeToConfluencePage(merged.syncThemeToConfluencePage === true);
+      setSyncThemeToConfluencePage(merged.syncThemeToConfluencePage !== false);
       const legacyTooltip = merged.showTooltips;
       setShowTreeTooltips((merged.showTreeTooltips ?? legacyTooltip) !== false);
       setShowTableTooltips((merged.showTableTooltips ?? legacyTooltip) !== false);
@@ -618,7 +621,7 @@ export function OptionsApp() {
   const onSyncThemeToConfluencePageChange = (next) => {
     markSettingsChanged();
     setSyncThemeToConfluencePage(next);
-    void persistSync({ syncThemeToConfluencePage: next }, 'Confluence modal theme sync');
+    void persistSync({ syncThemeToConfluencePage: next }, 'Confluence theme matching');
   };
 
   const onTreeTooltipChange = (next) => {
@@ -1168,8 +1171,8 @@ export function OptionsApp() {
 
             <ToggleRow
               id="sync-theme-confluence"
-              label="Sync theme selection in Confluence page"
-              desc="When enabled, dark mode is also applied to the AI modal opened inside Confluence pages."
+              label="Match Confluence theme in page modal"
+              desc="Use Confluence's light or dark theme for the summary and chat modal. When disabled, use the extension theme."
               checked={syncThemeToConfluencePage}
               onChange={onSyncThemeToConfluencePageChange}
             />

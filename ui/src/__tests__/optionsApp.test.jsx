@@ -542,6 +542,10 @@ describe('OptionsApp', () => {
     expect(resultsPerRequestSelect).toBeTruthy();
     expect(resultsPerRequestSelect?.getAttribute('data-value')).toBe('75');
     expect(view.container.textContent).not.toContain('Advanced Settings');
+    const confluenceThemeToggle = view.container.querySelector('#sync-theme-confluence');
+    expect(confluenceThemeToggle?.checked).toBe(true);
+    expect(view.container.textContent).toContain('Match Confluence theme in page modal');
+    expect(view.container.textContent).toContain('When disabled, use the extension theme.');
 
     view.unmount();
   });

@@ -293,14 +293,17 @@ describe('App', () => {
     controllerMocks.useSavedSearchesController.mockImplementation(() => savedController);
   });
 
-  it('loads sync settings, applies modal-only dark theme gating, and reacts to storage changes', async () => {
-    window.history.replaceState({}, '', '/views/index.html?mode=content-modal&contentId=10');
+  it('matches the content-page theme by default and falls back to the extension theme when disabled', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/views/index.html?mode=content-modal&contentId=10&baseUrl=https%3A%2F%2Fconfluence.example&hostTheme=light',
+    );
     const searchController = createSearchController();
     controllerMocks.useSearchResultsController.mockImplementation(() => searchController);
 
     storageServiceMocks.getSync.mockResolvedValue({
       darkMode: true,
-      syncThemeToConfluencePage: false,
       resultsPerRequest: 50,
       enableSummaries: false,
       selectedAiModel: 'gpt-4o',
@@ -329,8 +332,7 @@ describe('App', () => {
     act(() => {
       captured.storageListener?.(
         {
-          darkMode: { newValue: true },
-          syncThemeToConfluencePage: { newValue: true },
+          syncThemeToConfluencePage: { newValue: false },
         },
         'sync',
       );

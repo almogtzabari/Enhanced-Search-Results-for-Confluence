@@ -6,6 +6,7 @@ const ROOT_ID = 'enhanced-content-app-root';
 const MODAL_HOST_ID = 'enhanced-content-ai-modal-host';
 const MODAL_IFRAME_ID = 'enhanced-content-ai-modal-frame';
 const AI_MODAL_BOUNDS_MESSAGE = 'enhanced-ai-modal-bounds';
+const AI_MODAL_THEME_MESSAGE = 'enhanced-ai-modal-theme';
 
 function createChromeMock({
   enableFloatingSummarize = true,
@@ -153,6 +154,7 @@ describe('contentApp', () => {
     delete window.AJS;
     document.head.innerHTML = '';
     document.body.innerHTML = '';
+    document.documentElement.removeAttribute('data-color-mode');
     window.history.replaceState({}, '', '/wiki/pages/12345?pageId=12345');
     global.fetch = vi.fn();
     delete global.chrome;
@@ -170,6 +172,7 @@ describe('contentApp', () => {
     }
     document.body.innerHTML = '';
     document.head.innerHTML = '';
+    document.documentElement.removeAttribute('data-color-mode');
     delete window[LOADER_FLAG];
     window.__enhancedContentModalCleanup = null;
     delete window.AJS;
@@ -306,6 +309,7 @@ describe('contentApp', () => {
       storedSummariesByContentId: { 12345: true },
     });
     global.chrome = runtime.chrome;
+    document.documentElement.setAttribute('data-color-mode', 'dark');
     window.AJS = {
       Meta: { get: vi.fn(() => '') },
       params: {
@@ -331,6 +335,15 @@ describe('contentApp', () => {
     expect(modalUrl.searchParams.get('spaceKey')).toBe('ENG');
     expect(modalUrl.searchParams.get('contributorName')).toBe('Ada Lovelace');
     expect(modalUrl.searchParams.get('contributorUsername')).toBe('adal');
+    expect(modalUrl.searchParams.get('hostTheme')).toBe('dark');
+
+    const postMessage = vi.spyOn(iframe.contentWindow, 'postMessage');
+    document.documentElement.setAttribute('data-color-mode', 'light');
+    await flushMany();
+    expect(postMessage).toHaveBeenCalledWith(
+      { type: AI_MODAL_THEME_MESSAGE, theme: 'light' },
+      'https://extension.local',
+    );
   });
 
   it('masks the content-modal iframe to validated bounds from its own frame', async () => {

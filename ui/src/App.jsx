@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import {
+  AI_MODAL_THEME_MESSAGE,
   AI_MODEL_OPTIONS,
   DEFAULT_AI_MODEL,
   retiredModelFallbacks,
@@ -49,8 +50,13 @@ export function App() {
   const modalContributorUsername = (params.contributorUsername || '').trim();
   const modalContributorAvatarPath = (params.contributorAvatarPath || '').trim();
   const modalModifiedWhen = (params.modifiedWhen || '').trim();
+  const modalBaseUrl = (params.baseUrl || '').trim();
+  const initialHostTheme = ['dark', 'light'].includes(String(params.hostTheme || '').toLowerCase())
+    ? String(params.hostTheme).toLowerCase()
+    : '';
 
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [confluencePageTheme, setConfluencePageTheme] = useState(initialHostTheme);
   const [selectedAiModel, setSelectedAiModel] = useState(DEFAULT_AI_MODEL);
   const [resultsPerRequest, setResultsPerRequest] = useState(75);
   const [enableSummaries, setEnableSummaries] = useState(true);
@@ -164,11 +170,38 @@ export function App() {
   }, [modalOnlyMode]);
 
   useEffect(() => {
+    if (!modalOnlyMode || !modalBaseUrl || window.parent === window) return undefined;
+
+    let expectedHostOrigin = '';
+    try {
+      expectedHostOrigin = new URL(modalBaseUrl).origin;
+    } catch {
+      return undefined;
+    }
+
+    const onHostMessage = (event) => {
+      if (event.source !== window.parent || event.origin !== expectedHostOrigin) return;
+      if (event.data?.type !== AI_MODAL_THEME_MESSAGE) return;
+      const theme = String(event.data?.theme || '').toLowerCase();
+      if (theme !== 'dark' && theme !== 'light') return;
+      setConfluencePageTheme(theme);
+    };
+
+    window.addEventListener('message', onHostMessage);
+    return () => window.removeEventListener('message', onHostMessage);
+  }, [modalOnlyMode, modalBaseUrl]);
+
+  useEffect(() => {
     let currentDarkModePreference = false;
-    let currentSyncThemeToConfluencePage = false;
+    let currentMatchConfluenceTheme = true;
 
     const applyThemeFromPreferences = () => {
-      const shouldApplyDarkMode = currentDarkModePreference && (!modalOnlyMode || currentSyncThemeToConfluencePage);
+      const shouldMatchConfluence = modalOnlyMode
+        && currentMatchConfluenceTheme
+        && (confluencePageTheme === 'dark' || confluencePageTheme === 'light');
+      const shouldApplyDarkMode = shouldMatchConfluence
+        ? confluencePageTheme === 'dark'
+        : currentDarkModePreference;
       setIsDarkMode(shouldApplyDarkMode);
       document.body.classList.toggle('dark-mode', shouldApplyDarkMode);
     };
@@ -176,7 +209,7 @@ export function App() {
     const loadSettings = async () => {
       const data = await getSync(['darkMode', 'syncThemeToConfluencePage', 'resultsPerRequest', 'enableAiFeatures', 'enableSummaries', 'selectedAiModel', 'highlightResultRows', 'showTooltips', 'showTreeTooltips', 'showTableTooltips']);
       currentDarkModePreference = !!data.darkMode;
-      currentSyncThemeToConfluencePage = data.syncThemeToConfluencePage === true;
+      currentMatchConfluenceTheme = data.syncThemeToConfluencePage !== false;
       applyThemeFromPreferences();
       if (Number.isInteger(data.resultsPerRequest)) setResultsPerRequest(data.resultsPerRequest);
       const hasAiFeaturesFlag = typeof data.enableAiFeatures === 'boolean';
@@ -202,7 +235,7 @@ export function App() {
         applyThemeFromPreferences();
       }
       if (changes.syncThemeToConfluencePage) {
-        currentSyncThemeToConfluencePage = changes.syncThemeToConfluencePage.newValue === true;
+        currentMatchConfluenceTheme = changes.syncThemeToConfluencePage.newValue !== false;
         applyThemeFromPreferences();
       }
       if (changes.resultsPerRequest && Number.isInteger(changes.resultsPerRequest.newValue)) {
@@ -235,7 +268,7 @@ export function App() {
 
     const unsubscribe = subscribeStorageChanges(onStorage);
     return unsubscribe;
-  }, [modalOnlyMode]);
+  }, [modalOnlyMode, confluencePageTheme]);
 
   useEffect(() => {
     if (!showTreeTooltips) search.actions.setTreeTooltipData(null);

@@ -1,7 +1,11 @@
 import { render } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { normalizeResponsesUrl } from './shared/openai.js';
-import { AI_MODAL_BOUNDS_MESSAGE, SUMMARY_STORE } from './shared/constants.js';
+import {
+  AI_MODAL_BOUNDS_MESSAGE,
+  AI_MODAL_THEME_MESSAGE,
+  SUMMARY_STORE,
+} from './shared/constants.js';
 
 const LOADER_FLAG = '__enhancedConfluenceContentAppLoaded';
 const ROOT_ID = 'enhanced-content-app-root';
@@ -19,6 +23,21 @@ const PREFETCH_TTL_MS = 45_000;
 const PREFETCH_METADATA_TIMEOUT_MS = 4_000;
 const PREFETCH_IDLE_DELAY_MS = 450;
 const MODAL_CLIP_BORDER_RADIUS_PX = 16;
+
+function detectConfluenceTheme() {
+  const roots = [document.documentElement, document.body].filter(Boolean);
+  for (const root of roots) {
+    const colorMode = String(root.getAttribute('data-color-mode') || '').trim().toLowerCase();
+    if (colorMode === 'dark' || colorMode === 'light') return colorMode;
+  }
+
+  for (const root of roots) {
+    const colorScheme = String(window.getComputedStyle(root).colorScheme || '').trim().toLowerCase();
+    if (colorScheme === 'dark' || colorScheme === 'light') return colorScheme;
+  }
+
+  return '';
+}
 
 function normalizeModalBounds(rawBounds) {
   const { x, y, width, height } = rawBounds || {};
@@ -466,6 +485,8 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, options = {}, onClo
     contentId: String(contentId || ''),
     contentTitle: String(contentTitle || ''),
   });
+  const initialConfluenceTheme = detectConfluenceTheme();
+  if (initialConfluenceTheme) modalParams.set('hostTheme', initialConfluenceTheme);
   if (prefetchedMetadata) {
     const prefetchedPairs = [
       ['prefetched', '1'],
@@ -493,6 +514,22 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, options = {}, onClo
     iframe.contentWindow?.postMessage(payload, iframeOrigin);
   };
 
+  let lastPostedTheme = '';
+  const postConfluenceTheme = ({ force = false } = {}) => {
+    const theme = detectConfluenceTheme();
+    if (!theme || (!force && theme === lastPostedTheme)) return;
+    lastPostedTheme = theme;
+    postToIframe({ type: AI_MODAL_THEME_MESSAGE, theme });
+  };
+
+  const themeObserver = new MutationObserver(() => postConfluenceTheme());
+  [document.documentElement, document.body].filter(Boolean).forEach((root) => {
+    themeObserver.observe(root, {
+      attributes: true,
+      attributeFilter: ['data-color-mode', 'data-theme', 'class', 'style'],
+    });
+  });
+
   let closed = false;
   let frameLoaded = false;
   let modalBoundsReady = false;
@@ -517,6 +554,7 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, options = {}, onClo
     }
     if (frameHref === 'about:blank') return;
     frameLoaded = true;
+    postConfluenceTheme({ force: true });
     revealIframe();
   };
   const cleanup = () => {
@@ -527,6 +565,7 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, options = {}, onClo
       window.clearTimeout(revealTimerId);
       revealTimerId = 0;
     }
+    themeObserver.disconnect();
     window.removeEventListener('message', onMessage);
     host.remove();
     if (window.__enhancedContentModalCleanup === cleanup) {
