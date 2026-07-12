@@ -203,12 +203,10 @@ describe('AiModal', () => {
     global.ResizeObserver = class ResizeObserverMock {
       constructor(callback) {
         this.callback = callback;
+        this.observe = vi.fn();
+        this.disconnect = vi.fn();
         resizeObservers.push(this);
       }
-
-      observe = vi.fn();
-
-      disconnect = vi.fn();
     };
     Object.defineProperty(window, 'parent', { configurable: true, value: parentWindow });
 
