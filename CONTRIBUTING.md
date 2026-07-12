@@ -59,4 +59,5 @@ The automated smoke covers Chromium. Run this manual checklist after loading bot
 4. Open views page, run a search, switch tree/table, and load more results.
 5. Open AI modal from views and from Confluence content page.
 6. Generate summary and ask follow-up question in both browsers.
-7. Toggle dark mode and confirm expected behavior in views/content modal.
+7. Toggle dark mode and confirm expected behavior in the views page.
+8. In the Confluence content modal, confirm **Match Confluence theme in page modal** follows the host page by default, then disable it and verify the modal falls back to the extension theme.

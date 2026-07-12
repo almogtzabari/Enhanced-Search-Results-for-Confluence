@@ -62,6 +62,8 @@ Any agent working here must preserve cross-browser behavior, multi-domain Conflu
 - Opened inside iframe from Confluence page via `contentApp.jsx`.
 - Must rely on the host bridge (`postMessage`) for Confluence REST/image fetches.
 - Bridge security checks (allowed origins, `/rest/api/` restrictions) are intentional and must not be weakened.
+- The host also sends validated modal bounds for iframe masking and validated light/dark theme updates. Preserve source, parent-window, and origin validation for these messages.
+- The modal follows the Confluence page theme by default; an explicit `syncThemeToConfluencePage: false` setting makes it use the extension theme instead.
 - Close flow is cross-frame (`enhanced-ai-modal-close`) and must remain functional.
 
 When changing AI flows/components/services, test both contexts explicitly.

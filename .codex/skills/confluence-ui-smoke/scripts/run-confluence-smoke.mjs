@@ -142,7 +142,7 @@ function buildConfig(rawEnv, args) {
     openaiApiKey,
     openaiApiBaseUrl,
     openaiOrigin: new URL(normalizeResponsesUrl(openaiApiBaseUrl)).origin,
-    openaiModel: String(rawEnv.OPENAI_MODEL || 'gpt-5.5').trim(),
+    openaiModel: String(rawEnv.OPENAI_MODEL || 'gpt-5.6-terra').trim(),
     reasoningEffort: parseReasoningEffort(rawEnv.OPENAI_REASONING_EFFORT),
     targetSpaceFilterName: String(rawEnv.CONFLUENCE_SMOKE_SPACE_FILTER_NAME || '').trim(),
     targetContributorFilterName: String(rawEnv.CONFLUENCE_SMOKE_CONTRIBUTOR_FILTER_NAME || '').trim(),

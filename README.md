@@ -53,7 +53,7 @@ Enhance your Confluence experience with improved search functionality. This brow
 
 ### 🌙 Display and Personalization
 
-- **Dark Mode + Confluence Modal Theme Sync**: Toggle dark mode for extension pages and optionally apply it to the AI modal opened inside Confluence pages.
+- **Dark Mode + Confluence Theme Matching**: Use dark mode on extension pages while the AI modal opened inside Confluence automatically follows Confluence's light or dark theme. Theme matching is enabled by default and can be disabled to use the extension theme instead.
 - **Customizable Domains**: Configure multiple Confluence domains from the Options page.
 - **View-Specific Controls**: Independently toggle tree tooltips, table tooltips, and tree result-row highlighting.
 - **New Icons and Branding**: Refreshed extension logo and interface icons for a polished experience.
@@ -127,10 +127,12 @@ Add one or more Confluence domains via the Options page (for example, `confluenc
 ### Advanced Options
 
 - **Results per Batch**: Configure how many results are loaded at once to balance performance and speed.
-- **Dark Mode + Modal Theme Sync**: Toggle dark mode globally and optionally sync it into Confluence-page AI modal UI.
+- **Dark Mode + Confluence Theme Matching**: Toggle the extension theme independently. The Confluence-page AI modal follows the host page theme by default; disable **Match Confluence theme in page modal** to use the extension theme instead.
 - **Tooltips and Row Highlighting**: Enable/disable tree tooltips, table tooltips, and tree result-row highlighting.
 - **AI Feature Toggles**: Independently enable AI actions in enhanced results and floating summarize actions on Confluence pages.
 - **AI Settings**: Configure model, reasoning effort, API key, custom endpoint base URL, and custom summarization prompt.
+  - GPT-5.6 options include **Terra** for balanced everyday work, **Sol** as the flagship model, and **Luna** for the fastest responses.
+  - **GPT-5.6 Terra** is selected when no model preference has been saved. Existing saved model selections are preserved.
   - OpenAI API key is stored in extension local storage (not browser sync storage).
   - The extension appends `/responses` to the configured endpoint base URL.
 - **Cached Data Controls**: Clear all summaries + conversations, or clear only follow-up conversations.

@@ -95,7 +95,7 @@ Useful optional settings:
 
 ```bash
 CONFLUENCE_BASE_URL=https://your-domain.atlassian.net/wiki
-OPENAI_MODEL=gpt-5.5
+OPENAI_MODEL=gpt-5.6-terra
 OPENAI_REASONING_EFFORT=low
 CONFLUENCE_SMOKE_HEADLESS=0
 CONFLUENCE_SMOKE_PROFILE_DIR=.codex/playwright-profiles/chromium-live-ai
