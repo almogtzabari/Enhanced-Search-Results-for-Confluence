@@ -118,7 +118,7 @@ describe('useSearchResultsController', () => {
     hook.unmount();
   });
 
-  it('keeps search-box attention active from focusSearch until user input changes', async () => {
+  it('briefly highlights the search box from focusSearch and then dismisses attention', async () => {
     vi.useFakeTimers();
     try {
       const { hook } = createHook({
@@ -137,9 +137,13 @@ describe('useSearchResultsController', () => {
       expect(focus).toHaveBeenCalledTimes(1);
       expect(hook.result.state.searchInputAttention).toBe(true);
 
-      vi.advanceTimersByTime(15000);
+      vi.advanceTimersByTime(3000);
       await hook.flush();
       expect(hook.result.state.searchInputAttention).toBe(true);
+
+      vi.advanceTimersByTime(1300);
+      await hook.flush();
+      expect(hook.result.state.searchInputAttention).toBe(false);
 
       hook.result.actions.setSearchInput('a');
       await hook.flush();

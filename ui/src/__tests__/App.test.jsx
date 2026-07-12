@@ -323,7 +323,7 @@ describe('App', () => {
     expect(document.body.classList.contains('modal-only-frame')).toBe(true);
     expect(document.body.classList.contains('dark-mode')).toBe(false);
     expect(searchController.actions.setTreeTooltipData).toHaveBeenCalledWith(null);
-    expect(storageServiceMocks.setSync).toHaveBeenCalledWith({ selectedAiModel: 'gpt-5.5' });
+    expect(storageServiceMocks.setSync).toHaveBeenCalledWith({ selectedAiModel: 'gpt-5.6-terra' });
 
     const lastSearchCall = controllerMocks.useSearchResultsController.mock.calls.at(-1)[0];
     expect(lastSearchCall.resultsPerRequest).toBe(50);

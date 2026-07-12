@@ -246,7 +246,7 @@ body.modal-only-frame {
   inset: -2px;
   border-radius: calc(var(--radius) + 2px);
   pointer-events: none;
-  animation: search-input-attention-pulse 1.4s ease-out infinite;
+  animation: search-input-attention-pulse 1.4s ease-out 3;
 }
 
 .search-row.search-row-attention .search-input {
@@ -303,6 +303,16 @@ body.modal-only-frame {
 .search-btn:hover {
   background: var(--primary-hover);
   border-color: var(--primary-hover);
+}
+
+body.dark-mode .search-btn {
+  border-color: #0c66e4;
+  background: #0c66e4;
+}
+
+body.dark-mode .search-btn:hover {
+  border-color: #0055cc;
+  background: #0055cc;
 }
 
 .content-grid {
@@ -1371,17 +1381,17 @@ body.dark-mode .tree-row-result {
 }
 
 body.dark-mode .mini-ai-btn {
-  border-color: color-mix(in srgb, var(--primary) 46%, var(--line) 54%);
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--line) 62%);
   color: #85b8ff;
-  background: linear-gradient(140deg, #1c2b41 0%, #22272b 100%);
-  box-shadow: 0 8px 18px rgba(9, 12, 14, 0.42);
+  background: linear-gradient(140deg, #2c333a 0%, #252b31 48%, #1c2b41 100%);
+  box-shadow: 0 7px 16px rgba(9, 12, 14, 0.34);
   text-shadow: none;
 }
 
 body.dark-mode .mini-ai-btn:hover {
   border-color: #85b8ff;
   color: #cce0ff;
-  box-shadow: 0 11px 22px rgba(9, 12, 14, 0.5);
+  box-shadow: 0 10px 20px rgba(9, 12, 14, 0.44);
 }
 
 body.dark-mode .mini-ai-btn[data-status="ready"] {
@@ -2728,6 +2738,13 @@ body:not(.modal-only-frame) .ai-question-resize-handle:hover::before {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.78),
     0 4px 12px rgba(9, 31, 60, 0.06);
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.ai-input-area textarea:focus {
+  border-color: color-mix(in srgb, var(--primary) 70%, var(--line) 30%);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent 82%);
 }
 
 .ai-input-area textarea::placeholder {
@@ -2735,11 +2752,16 @@ body:not(.modal-only-frame) .ai-question-resize-handle:hover::before {
 }
 
 body.dark-mode .ai-input-area textarea {
-  border-color: #738496;
+  border-color: color-mix(in srgb, #738496 72%, var(--line) 28%);
   background: #22272b;
   box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+body.dark-mode .ai-input-area textarea:focus {
+  border-color: color-mix(in srgb, #579dff 68%, #738496 32%);
+  box-shadow: 0 0 0 2px rgba(87, 157, 255, 0.13);
 }
 
 body.dark-mode .ai-input-area textarea::placeholder {
@@ -2832,31 +2854,22 @@ body.dark-mode .ai-input-area textarea::placeholder {
 }
 
 body.dark-mode .ai-action-btn.ask {
-  border-color: color-mix(in srgb, #66b5ff 62%, #2b6cb2 38%);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, #4ea8ff 84%, #85cbff 16%) 0%,
-      color-mix(in srgb, #2f88df 84%, #2f77ca 16%) 52%,
-      color-mix(in srgb, #2267b5 84%, #1f5798 16%) 100%
-    ),
-    linear-gradient(118deg, rgba(255, 255, 255, 0.2) 0%, transparent 44%);
-  box-shadow:
-    0 12px 24px rgba(7, 26, 52, 0.52),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  border-color: #0c66e4;
+  background: #0c66e4;
+  box-shadow: 0 5px 12px rgba(9, 12, 14, 0.28);
+  text-shadow: none;
 }
 
 body.dark-mode .ai-action-btn.ask:hover {
-  border-color: color-mix(in srgb, #76bfff 66%, #2c6fb6 34%);
-  box-shadow:
-    0 15px 28px rgba(7, 26, 52, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.26);
+  border-color: #0055cc;
+  background: #0055cc;
+  box-shadow: 0 7px 14px rgba(9, 12, 14, 0.32);
 }
 
 body.dark-mode .ai-action-btn.ask:active {
-  box-shadow:
-    0 8px 18px rgba(7, 26, 52, 0.46),
-    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  background: #09326c;
+  border-color: #09326c;
+  box-shadow: 0 3px 8px rgba(9, 12, 14, 0.28);
 }
 
 body.dark-mode .ai-action-btn.ask:focus-visible {

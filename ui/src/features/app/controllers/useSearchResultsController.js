@@ -549,15 +549,20 @@ export function useSearchResultsController({
 
   useEffect(() => {
     if (!shouldFocusSearchFromQuery || didAutoFocusSearchRef.current) return;
+    let attentionTimer = 0;
     const timer = setTimeout(() => {
       const input = searchInputRef.current;
       if (!input) return;
       input.focus();
       setSearchInputAttention(true);
       didAutoFocusSearchRef.current = true;
+      attentionTimer = window.setTimeout(() => {
+        setSearchInputAttention(false);
+      }, 4200);
     }, 0);
     return () => {
       clearTimeout(timer);
+      if (attentionTimer) window.clearTimeout(attentionTimer);
     };
   }, [shouldFocusSearchFromQuery]);
 
@@ -569,6 +574,7 @@ export function useSearchResultsController({
   };
 
   const runSearch = () => {
+    setSearchInputAttention(false);
     const next = searchInput.trim();
     if (!next) {
       openNoticeDialog({

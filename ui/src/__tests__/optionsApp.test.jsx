@@ -87,6 +87,26 @@ describe('OptionsApp', () => {
     document.body.classList.remove('dark-mode');
   });
 
+  it('offers all GPT-5.6 variants and defaults to Terra for everyday work', async () => {
+    serviceMocks.getSync.mockResolvedValue({ enableAiFeatures: true });
+    const view = mount();
+    await flushMany();
+
+    const modelSelect = view.container.querySelector('#ai-model');
+    expect(modelSelect?.getAttribute('data-value')).toBe('gpt-5.6-terra');
+
+    act(() => {
+      modelSelect?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await flushMany();
+
+    expect(view.container.textContent).toContain('GPT-5.6 Terra · Everyday');
+    expect(view.container.textContent).toContain('GPT-5.6 Sol · Flagship');
+    expect(view.container.textContent).toContain('GPT-5.6 Luna · Fastest');
+
+    view.unmount();
+  });
+
   it('loads persisted settings, migrates API key, and normalizes retired model', async () => {
     serviceMocks.getSync.mockResolvedValue({
       domainSettings: [{ domain: 'example.atlassian.net' }],
@@ -117,7 +137,7 @@ describe('OptionsApp', () => {
     const domainInput = view.container.querySelector('input[placeholder="example.com"]');
 
     expect(modelSelect?.getAttribute('data-value')).toBe(DEFAULT_AI_MODEL);
-    expect(modelSelect?.textContent).toContain(DEFAULT_AI_MODEL);
+    expect(modelSelect?.textContent).toContain('GPT-5.6 Terra · Everyday');
     expect(reasoningSelect?.getAttribute('data-value')).toBe('high');
     expect(floatingPrimaryActionSelect?.getAttribute('data-value')).toBe('summarize');
     expect(domainInput?.value).toBe('example.atlassian.net');
