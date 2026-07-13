@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mountHook } from '../../../test/hookTestUtils.js';
+import { OPENAI_REQUEST_TIMEOUT_MS } from '../constants.js';
 import { useAiSummaryController } from '../controllers/useAiSummaryController.js';
 
 const storageMocks = vi.hoisted(() => ({
@@ -324,6 +325,37 @@ describe('useAiSummaryController', () => {
       tone: 'error',
     }));
     expect(hook.result.state.aiSummaryStatusById['99']).toBe('idle');
+    hook.unmount();
+  });
+
+  it('uses the extended request timeout for follow-up answers', async () => {
+    dbMocks.getStoredSummary.mockResolvedValue({
+      summaryHtml: '<p>cached summary</p>',
+      userPrompt: 'cached page content',
+    });
+    const hook = createHook();
+
+    await hook.result.actions.openAiSummaryModal(defaultPageData('100'));
+    await hook.flush();
+    hook.result.actions.setAiQuestion('Summarize this page extensively.');
+    await hook.flush();
+    await hook.result.actions.submitAiQuestion();
+    await hook.flush();
+
+    expect(OPENAI_REQUEST_TIMEOUT_MS).toBe(10 * 60 * 1000);
+    expect(aiRuntimeMocks.withTimeout).toHaveBeenCalledWith(
+      expect.any(Promise),
+      OPENAI_REQUEST_TIMEOUT_MS,
+      'Q&A request timed out. Please try again.',
+      expect.any(Function),
+    );
+    expect(dbMocks.storeConversation).toHaveBeenCalledWith(
+      '100',
+      'https://example.atlassian.net/wiki',
+      expect.arrayContaining([
+        expect.objectContaining({ role: 'assistant', content: '<p>generated</p>' }),
+      ]),
+    );
     hook.unmount();
   });
 

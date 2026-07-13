@@ -31,7 +31,10 @@ export const DEFAULT_AI_CHAT_FONT_SIZE_PX = 14.4;
 export const MIN_AI_CHAT_FONT_SIZE_PX = 10;
 export const MAX_AI_CHAT_FONT_SIZE_PX = 28;
 export const AI_FONT_SIZE_STEP_PX = 1;
-export const OPENAI_REQUEST_TIMEOUT_MS = 120000;
+// Responses with high reasoning effort or extensive output can legitimately
+// take several minutes. The runtime port keeps both Chromium MV3 workers and
+// Firefox MV2 background pages alive while the request is in flight.
+export const OPENAI_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
 export const MIN_TABLE_COL_WIDTH = 70;
 
 export const DEFAULT_TABLE_COL_WIDTHS = {

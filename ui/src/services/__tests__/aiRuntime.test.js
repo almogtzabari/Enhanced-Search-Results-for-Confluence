@@ -24,6 +24,7 @@ import {
   sendOpenAIRequest,
   withTimeout,
 } from '../aiRuntime.js';
+import { OPENAI_REQUEST_TIMEOUT_MS } from '../../features/app/constants.js';
 
 function createMockPort() {
   const onMessageListeners = [];
@@ -87,6 +88,42 @@ describe('aiRuntime service', () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.message).toBe('Timed out');
     expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows a long AI response beyond the former two-minute cutoff', async () => {
+    vi.useFakeTimers();
+    const port = createMockPort();
+    global.chrome = {
+      runtime: {
+        connect: vi.fn(() => port),
+        lastError: null,
+      },
+    };
+    const onTimeout = vi.fn();
+    const keepAliveTimer = setInterval(() => {
+      port.__emitMessage({ keepAlive: true });
+    }, 25_000);
+    setTimeout(() => {
+      clearInterval(keepAliveTimer);
+      port.__emitMessage({ success: true, data: { output_text: 'completed' } });
+    }, 120_001);
+
+    const promise = withTimeout(
+      sendOpenAIRequest({
+        apiKey: 'k',
+        apiUrl: 'https://api.openai.com/v1',
+        model: 'gpt-5',
+        messages: [{ role: 'user', content: 'Write an extensive summary.' }],
+      }),
+      OPENAI_REQUEST_TIMEOUT_MS,
+      'Timed out',
+      onTimeout,
+    );
+    await vi.advanceTimersByTimeAsync(120_001);
+
+    await expect(promise).resolves.toMatchObject({ output_text: 'completed' });
+    expect(onTimeout).not.toHaveBeenCalled();
+    expect(port.disconnect).not.toHaveBeenCalled();
   });
 
   it('resolves OpenAI responses via runtime port and extracts output_text', async () => {
