@@ -62,17 +62,13 @@ function normalizeModalBounds(rawBounds) {
   };
 }
 
-function applyModalIframeMask(iframe, rawBounds) {
+function applyModalIframeClip(iframe, rawBounds) {
   const bounds = normalizeModalBounds(rawBounds);
   if (!bounds) return false;
-  const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
-  const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
-  const width = viewportWidth - bounds.left - bounds.right;
-  const height = viewportHeight - bounds.top - bounds.bottom;
-  const maskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${viewportWidth}" height="${viewportHeight}" viewBox="0 0 ${viewportWidth} ${viewportHeight}"><rect x="${bounds.left}" y="${bounds.top}" width="${width}" height="${height}" rx="${MODAL_CLIP_BORDER_RADIUS_PX}" fill="white"/></svg>`;
-  const maskImage = `url("data:image/svg+xml,${encodeURIComponent(maskSvg)}")`;
-  iframe.style.setProperty('mask-image', maskImage, 'important');
-  iframe.style.setProperty('-webkit-mask-image', maskImage, 'important');
+  const clipPath = `inset(${bounds.top}px ${bounds.right}px ${bounds.bottom}px ${bounds.left}px round ${MODAL_CLIP_BORDER_RADIUS_PX}px)`;
+  // Keep clipping as geometry. Replacing an SVG mask image on every resize frame
+  // makes Gecko repeatedly rasterize the full-viewport iframe and can flash.
+  iframe.style.setProperty('clip-path', clipPath, 'important');
   return true;
 }
 
@@ -467,8 +463,12 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, options = {}, onClo
   iframe.style.boxShadow = 'none';
   iframe.style.display = 'block';
   iframe.style.opacity = '0';
-  iframe.style.setProperty('mask-image', 'linear-gradient(transparent, transparent)', 'important');
-  iframe.style.setProperty('-webkit-mask-image', 'linear-gradient(transparent, transparent)', 'important');
+  iframe.style.willChange = 'clip-path';
+  iframe.style.setProperty(
+    'clip-path',
+    `inset(50% round ${MODAL_CLIP_BORDER_RADIUS_PX}px)`,
+    'important',
+  );
   iframe.style.transition = 'opacity 140ms ease';
 
   const bootstrapOverlay = document.createElement('div');
@@ -610,7 +610,7 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, options = {}, onClo
     }
 
     if (payload.type === AI_MODAL_BOUNDS_MESSAGE) {
-      if (!applyModalIframeMask(iframe, payload.bounds)) return;
+      if (!applyModalIframeClip(iframe, payload.bounds)) return;
       modalBoundsReady = true;
       revealIframe();
       return;
@@ -715,7 +715,7 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, options = {}, onClo
   iframe.addEventListener('load', onFrameLoad);
   revealTimerId = window.setTimeout(() => {
     if (closed || modalBoundsReady) return;
-    applyModalIframeMask(iframe, getFallbackModalBounds());
+    applyModalIframeClip(iframe, getFallbackModalBounds());
     modalBoundsReady = true;
     revealIframe();
   }, 5000);

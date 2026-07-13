@@ -346,7 +346,7 @@ describe('contentApp', () => {
     );
   });
 
-  it('masks the content-modal iframe to validated bounds from its own frame', async () => {
+  it('clips the content-modal iframe to validated bounds from its own frame', async () => {
     const runtime = createChromeMock({
       enableFloatingSummarize: true,
       enableAiFeatures: true,
@@ -364,7 +364,9 @@ describe('contentApp', () => {
 
     const iframe = document.getElementById(MODAL_IFRAME_ID);
     expect(iframe).toBeTruthy();
-    expect(iframe.style.getPropertyPriority('mask-image')).toBe('important');
+    expect(iframe.style.getPropertyValue('clip-path')).toBe('inset(50% round 16px)');
+    expect(iframe.style.getPropertyPriority('clip-path')).toBe('important');
+    expect(iframe.style.getPropertyValue('mask-image')).toBe('');
 
     const contentWindow = iframe.contentWindow;
     window.dispatchEvent(new MessageEvent('message', {
@@ -376,10 +378,11 @@ describe('contentApp', () => {
       },
     }));
 
-    const maskImage = iframe.style.getPropertyValue('mask-image');
-    expect(maskImage).toContain('data:image/svg+xml');
-    expect(decodeURIComponent(maskImage)).toContain('<rect x="120" y="80" width="640" height="480" rx="16"');
-    expect(iframe.style.getPropertyPriority('mask-image')).toBe('important');
+    const clipPath = iframe.style.getPropertyValue('clip-path');
+    expect(clipPath).toBe(
+      `inset(80px ${window.innerWidth - 760}px ${window.innerHeight - 560}px 120px round 16px)`,
+    );
+    expect(iframe.style.getPropertyPriority('clip-path')).toBe('important');
 
     window.dispatchEvent(new MessageEvent('message', {
       source: contentWindow,
@@ -389,7 +392,7 @@ describe('contentApp', () => {
         bounds: { x: '120', y: 80, width: 640, height: 480 },
       },
     }));
-    expect(iframe.style.getPropertyValue('mask-image')).toBe(maskImage);
+    expect(iframe.style.getPropertyValue('clip-path')).toBe(clipPath);
   });
 
   it('ignores modal bounds messages from other windows and origins', async () => {
@@ -409,7 +412,7 @@ describe('contentApp', () => {
     await flushMany();
 
     const iframe = document.getElementById(MODAL_IFRAME_ID);
-    const initialMask = iframe.style.getPropertyValue('mask-image');
+    const initialClipPath = iframe.style.getPropertyValue('clip-path');
     const boundsMessage = {
       type: AI_MODAL_BOUNDS_MESSAGE,
       bounds: { x: 120, y: 80, width: 640, height: 480 },
@@ -426,7 +429,7 @@ describe('contentApp', () => {
       data: boundsMessage,
     }));
 
-    expect(iframe.style.getPropertyValue('mask-image')).toBe(initialMask);
+    expect(iframe.style.getPropertyValue('clip-path')).toBe(initialClipPath);
   });
 
   it('uses summarize as the primary floating action when configured', async () => {
