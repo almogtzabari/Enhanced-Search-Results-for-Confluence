@@ -166,7 +166,11 @@ export function App() {
 
   useEffect(() => {
     document.body.classList.toggle('modal-only-frame', modalOnlyMode);
-    return () => document.body.classList.remove('modal-only-frame');
+    document.documentElement.classList.toggle('modal-only-frame', modalOnlyMode);
+    return () => {
+      document.body.classList.remove('modal-only-frame');
+      document.documentElement.classList.remove('modal-only-frame', 'dark-mode');
+    };
   }, [modalOnlyMode]);
 
   useEffect(() => {
@@ -204,6 +208,10 @@ export function App() {
         : currentDarkModePreference;
       setIsDarkMode(shouldApplyDarkMode);
       document.body.classList.toggle('dark-mode', shouldApplyDarkMode);
+      document.documentElement.classList.toggle(
+        'dark-mode',
+        modalOnlyMode && shouldApplyDarkMode,
+      );
     };
 
     const loadSettings = async () => {

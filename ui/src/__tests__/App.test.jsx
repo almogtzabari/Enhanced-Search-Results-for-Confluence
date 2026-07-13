@@ -263,6 +263,7 @@ describe('App', () => {
     captured.topBarProps = null;
     captured.aiHookArgs = null;
     document.body.className = '';
+    document.documentElement.className = '';
     window.history.replaceState({}, '', '/views/index.html');
     delete global.chrome;
 
@@ -322,6 +323,8 @@ describe('App', () => {
 
     expect(document.body.classList.contains('modal-only-frame')).toBe(true);
     expect(document.body.classList.contains('dark-mode')).toBe(false);
+    expect(document.documentElement.classList.contains('modal-only-frame')).toBe(true);
+    expect(document.documentElement.classList.contains('dark-mode')).toBe(false);
     expect(searchController.actions.setTreeTooltipData).toHaveBeenCalledWith(null);
     expect(storageServiceMocks.setSync).toHaveBeenCalledWith({ selectedAiModel: 'gpt-5.6-terra' });
 
@@ -339,11 +342,14 @@ describe('App', () => {
     });
 
     expect(document.body.classList.contains('dark-mode')).toBe(true);
+    expect(document.documentElement.classList.contains('dark-mode')).toBe(true);
 
     act(() => {
       render(null, container);
     });
     container.remove();
+    expect(document.documentElement.classList.contains('modal-only-frame')).toBe(false);
+    expect(document.documentElement.classList.contains('dark-mode')).toBe(false);
     expect(storageServiceMocks.unsubscribe).toHaveBeenCalledTimes(1);
   });
 

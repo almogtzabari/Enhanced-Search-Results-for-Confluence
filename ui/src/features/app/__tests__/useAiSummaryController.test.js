@@ -209,6 +209,104 @@ describe('useAiSummaryController', () => {
     hook.unmount();
   });
 
+  it('reveals the modal-only loading shell before the stored-summary preflight finishes', async () => {
+    let resolveStoredSummary;
+    const storedSummaryPromise = new Promise((resolve) => {
+      resolveStoredSummary = resolve;
+    });
+    dbMocks.getStoredSummary.mockReturnValue(storedSummaryPromise);
+
+    const hook = createHook({ modalOnlyMode: true });
+    const openPromise = hook.result.actions.openAiSummaryModal(defaultPageData('44'));
+    await hook.flush();
+
+    expect(hook.result.state.aiModalOpen).toBe(true);
+    expect(hook.result.state.aiModalLoading).toBe(true);
+    expect(hook.result.state.aiModalLoadingTitle).toBe('Building your summary');
+    expect(hook.result.state.aiActiveItem?.id).toBe('44');
+    expect(aiRuntimeMocks.getAiRuntimeSettings).not.toHaveBeenCalled();
+
+    resolveStoredSummary({
+      summaryHtml: '<p>cached after preflight</p>',
+      userPrompt: 'cached prompt',
+    });
+    await openPromise;
+    await hook.flush();
+
+    expect(hook.result.state.aiModalLoading).toBe(false);
+    expect(hook.result.state.aiModalLoadingTitle).toBe('Loading your summary');
+    expect(hook.result.state.aiSummaryHtml).toContain('cached after preflight');
+    hook.unmount();
+  });
+
+  it('keeps the views modal hidden until its stored-summary preflight finishes', async () => {
+    let resolveStoredSummary;
+    const storedSummaryPromise = new Promise((resolve) => {
+      resolveStoredSummary = resolve;
+    });
+    dbMocks.getStoredSummary.mockReturnValue(storedSummaryPromise);
+
+    const hook = createHook();
+    const openPromise = hook.result.actions.openAiSummaryModal(defaultPageData('45'));
+    await hook.flush();
+
+    expect(hook.result.state.aiModalOpen).toBe(false);
+
+    resolveStoredSummary({
+      summaryHtml: '<p>cached views summary</p>',
+      userPrompt: 'cached prompt',
+    });
+    await openPromise;
+    await hook.flush();
+
+    expect(hook.result.state.aiModalOpen).toBe(true);
+    expect(hook.result.state.aiSummaryHtml).toContain('cached views summary');
+    hook.unmount();
+  });
+
+  it('stops modal-only preflight work when the loading shell is closed', async () => {
+    let resolveStoredSummary;
+    const storedSummaryPromise = new Promise((resolve) => {
+      resolveStoredSummary = resolve;
+    });
+    dbMocks.getStoredSummary.mockReturnValue(storedSummaryPromise);
+
+    const hook = createHook({ modalOnlyMode: true });
+    const openPromise = hook.result.actions.openAiSummaryModal(defaultPageData('46'));
+    await hook.flush();
+    expect(hook.result.state.aiModalOpen).toBe(true);
+
+    hook.result.actions.closeAiModal();
+    await hook.flush();
+    resolveStoredSummary(null);
+    await openPromise;
+    await hook.flush();
+
+    expect(hook.result.state.aiModalOpen).toBe(false);
+    expect(aiRuntimeMocks.getAiRuntimeSettings).not.toHaveBeenCalled();
+    expect(aiRuntimeMocks.sendOpenAIRequest).not.toHaveBeenCalled();
+    hook.unmount();
+  });
+
+  it('stops the modal-only loader when runtime preflight fails', async () => {
+    const openNoticeDialog = vi.fn();
+    aiRuntimeMocks.getAiRuntimeSettings.mockRejectedValueOnce(new Error('Endpoint permission missing'));
+
+    const hook = createHook({ modalOnlyMode: true, openNoticeDialog });
+    await hook.result.actions.openAiSummaryModal(defaultPageData('47'));
+    await hook.flush();
+
+    expect(hook.result.state.aiModalOpen).toBe(true);
+    expect(hook.result.state.aiModalLoading).toBe(false);
+    expect(openNoticeDialog).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'AI Setup Required',
+      message: 'Endpoint permission missing',
+      tone: 'error',
+    }));
+    expect(aiRuntimeMocks.sendOpenAIRequest).not.toHaveBeenCalled();
+    hook.unmount();
+  });
+
   it('shows a failure notice when OpenAI summary request fails', async () => {
     const openNoticeDialog = vi.fn();
     vi.spyOn(console, 'error').mockImplementation(() => {});

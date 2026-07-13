@@ -11,6 +11,7 @@ const LOADER_FLAG = '__enhancedConfluenceContentAppLoaded';
 const ROOT_ID = 'enhanced-content-app-root';
 const MODAL_HOST_ID = 'enhanced-content-ai-modal-host';
 const MODAL_IFRAME_ID = 'enhanced-content-ai-modal-frame';
+const MODAL_BOOTSTRAP_ID = 'enhanced-content-ai-modal-bootstrap';
 const MODAL_CLOSE_MESSAGE = 'enhanced-ai-modal-close';
 const AI_MODAL_FETCH_MESSAGE = 'enhanced-ai-modal-fetch';
 const AI_MODAL_FETCH_RESULT_MESSAGE = 'enhanced-ai-modal-fetch-result';
@@ -39,15 +40,22 @@ function detectConfluenceTheme() {
   return '';
 }
 
-function normalizeModalBounds(rawBounds) {
+function getHostViewportSize() {
+  return {
+    width: Math.max(1, document.documentElement.clientWidth || window.innerWidth || 1),
+    height: Math.max(1, document.documentElement.clientHeight || window.innerHeight || 1),
+  };
+}
+
+function normalizeModalBounds(rawBounds, viewportSize = getHostViewportSize()) {
   const { x, y, width, height } = rawBounds || {};
   if (![x, y, width, height].every((value) => typeof value === 'number' && Number.isFinite(value))) {
     return null;
   }
   if (width <= 0 || height <= 0) return null;
 
-  const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
-  const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+  const viewportWidth = Math.max(1, Number(viewportSize?.width) || 1);
+  const viewportHeight = Math.max(1, Number(viewportSize?.height) || 1);
   const left = Math.max(0, Math.min(viewportWidth, x));
   const top = Math.max(0, Math.min(viewportHeight, y));
   const rightEdge = Math.max(left, Math.min(viewportWidth, x + width));
@@ -63,8 +71,18 @@ function normalizeModalBounds(rawBounds) {
 }
 
 function applyModalIframeClip(iframe, rawBounds) {
-  const bounds = normalizeModalBounds(rawBounds);
+  const iframeRect = iframe.getBoundingClientRect();
+  const hostViewport = getHostViewportSize();
+  const bounds = normalizeModalBounds(rawBounds, {
+    // The iframe's percentage width is based on the host document's client
+    // area, while window.innerWidth includes Chrome's scrollbar gutter. Clip
+    // in the iframe's own coordinate space so its right edge is not truncated.
+    width: iframe.clientWidth || iframeRect.width || hostViewport.width,
+    height: iframe.clientHeight || iframeRect.height || hostViewport.height,
+  });
   if (!bounds) return false;
+  // Clip to the panel itself. Expanding beyond these bounds exposes the iframe
+  // canvas as a light ring around the modal when Confluence is in dark mode.
   const clipPath = `inset(${bounds.top}px ${bounds.right}px ${bounds.bottom}px ${bounds.left}px round ${MODAL_CLIP_BORDER_RADIUS_PX}px)`;
   // Keep clipping as geometry. Replacing an SVG mask image on every resize frame
   // makes Gecko repeatedly rasterize the full-viewport iframe and can flash.
@@ -73,8 +91,7 @@ function applyModalIframeClip(iframe, rawBounds) {
 }
 
 function getFallbackModalBounds() {
-  const viewportWidth = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
-  const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+  const { width: viewportWidth, height: viewportHeight } = getHostViewportSize();
   const width = Math.min(viewportWidth - 24, Math.max(640, viewportWidth * 0.76));
   const height = Math.min(viewportHeight - 32, Math.max(480, viewportHeight * 0.7));
   return {
@@ -479,13 +496,72 @@ function openSharedAiModal(contentId, baseUrl, contentTitle, options = {}, onClo
   bootstrapOverlay.style.pointerEvents = 'none';
   bootstrapOverlay.style.zIndex = '1';
 
+  const initialConfluenceTheme = detectConfluenceTheme();
+  const bootstrapBounds = getFallbackModalBounds();
+  const bootstrapPanel = document.createElement('div');
+  bootstrapPanel.id = MODAL_BOOTSTRAP_ID;
+  bootstrapPanel.setAttribute('role', 'status');
+  bootstrapPanel.setAttribute('aria-live', 'polite');
+  bootstrapPanel.style.position = 'absolute';
+  bootstrapPanel.style.left = `${bootstrapBounds.x}px`;
+  bootstrapPanel.style.top = `${bootstrapBounds.y}px`;
+  bootstrapPanel.style.width = `${bootstrapBounds.width}px`;
+  bootstrapPanel.style.height = `${bootstrapBounds.height}px`;
+  bootstrapPanel.style.boxSizing = 'border-box';
+  bootstrapPanel.style.display = 'grid';
+  bootstrapPanel.style.gridTemplateRows = '52px 1fr';
+  bootstrapPanel.style.overflow = 'hidden';
+  bootstrapPanel.style.borderRadius = `${MODAL_CLIP_BORDER_RADIUS_PX}px`;
+  bootstrapPanel.style.border = initialConfluenceTheme === 'dark'
+    ? '1px solid transparent'
+    : '1px solid rgba(173, 197, 224, 0.92)';
+  bootstrapPanel.style.background = initialConfluenceTheme === 'dark'
+    ? '#1c2227'
+    : 'rgba(248, 251, 255, 0.98)';
+  bootstrapPanel.style.color = initialConfluenceTheme === 'dark' ? '#e7eef9' : '#0f172a';
+  bootstrapPanel.style.boxShadow = initialConfluenceTheme === 'dark'
+    ? '0 24px 56px rgba(4, 8, 12, 0.58)'
+    : '0 18px 36px rgba(13, 30, 57, 0.26)';
+  bootstrapPanel.style.fontFamily = 'Plus Jakarta Sans, Avenir Next, Segoe UI, sans-serif';
+
+  const bootstrapHeader = document.createElement('div');
+  bootstrapHeader.style.display = 'flex';
+  bootstrapHeader.style.alignItems = 'center';
+  bootstrapHeader.style.justifyContent = 'center';
+  bootstrapHeader.style.padding = '0 56px';
+  bootstrapHeader.style.borderBottom = initialConfluenceTheme === 'dark'
+    ? '1px solid rgba(185, 204, 222, 0.28)'
+    : '1px solid rgba(193, 211, 232, 0.9)';
+  bootstrapHeader.style.background = initialConfluenceTheme === 'dark'
+    ? 'linear-gradient(132deg, #22272b 0%, #252b31 48%, #1c2b41 100%)'
+    : 'rgba(231, 244, 255, 0.94)';
+  bootstrapHeader.style.fontWeight = '700';
+  bootstrapHeader.style.whiteSpace = 'nowrap';
+  bootstrapHeader.style.overflow = 'hidden';
+  bootstrapHeader.style.textOverflow = 'ellipsis';
+  bootstrapHeader.textContent = String(contentTitle || '').trim() || 'Summary and Q&A';
+
+  const bootstrapBody = document.createElement('div');
+  bootstrapBody.style.display = 'grid';
+  bootstrapBody.style.placeItems = 'center';
+  bootstrapBody.style.textAlign = 'center';
+  bootstrapBody.style.padding = '24px';
+  const bootstrapMessage = document.createElement('div');
+  bootstrapMessage.style.fontSize = '16px';
+  bootstrapMessage.style.fontWeight = '700';
+  bootstrapMessage.style.letterSpacing = '0.01em';
+  bootstrapMessage.textContent = 'Opening Summary and Q&A…';
+  bootstrapBody.appendChild(bootstrapMessage);
+  bootstrapPanel.appendChild(bootstrapHeader);
+  bootstrapPanel.appendChild(bootstrapBody);
+  bootstrapOverlay.appendChild(bootstrapPanel);
+
   const modalParams = new URLSearchParams({
     mode: 'content-modal',
     baseUrl: String(baseUrl || ''),
     contentId: String(contentId || ''),
     contentTitle: String(contentTitle || ''),
   });
-  const initialConfluenceTheme = detectConfluenceTheme();
   if (initialConfluenceTheme) modalParams.set('hostTheme', initialConfluenceTheme);
   if (prefetchedMetadata) {
     const prefetchedPairs = [
@@ -779,6 +855,33 @@ async function extractContentIdFromUrl(pathname) {
   return null;
 }
 
+let resolvedPageContextCache = {
+  href: '',
+  context: null,
+  pendingPromise: null,
+};
+
+function resolveCurrentPageContext() {
+  const href = String(window.location.href || '');
+  const cached = resolvedPageContextCache;
+  if (cached.href === href && cached.context) return Promise.resolve(cached.context);
+  if (cached.href === href && cached.pendingPromise) return cached.pendingPromise;
+
+  const baseUrl = detectConfluenceBaseUrl();
+  const pendingPromise = extractContentIdFromUrl(window.location.pathname).then((contentId) => {
+    const context = { baseUrl, contentId };
+    if (
+      resolvedPageContextCache.href === href
+      && resolvedPageContextCache.pendingPromise === pendingPromise
+    ) {
+      resolvedPageContextCache = { href, context, pendingPromise: null };
+    }
+    return context;
+  });
+  resolvedPageContextCache = { href, context: null, pendingPromise };
+  return pendingPromise;
+}
+
 async function getStoredSummaryStatus(contentId, baseUrl) {
   if (!contentId) return false;
   return new Promise((resolve) => {
@@ -971,11 +1074,7 @@ function FloatingSummarizeButton({
     };
   }, []);
 
-  const resolvePageContext = async () => {
-    const baseUrl = detectConfluenceBaseUrl();
-    const contentId = await extractContentIdFromUrl(window.location.pathname);
-    return { baseUrl, contentId };
-  };
+  const resolvePageContext = () => resolveCurrentPageContext();
 
   const buildContextKey = (baseUrl, contentId) => (
     `${String(contentId || '').trim()}::${normalizeBaseUrlForKey(baseUrl)}`
@@ -1206,13 +1305,18 @@ function FloatingSummarizeButton({
     setIsLoading(true);
 
     try {
-      const {
-        baseUrl,
-        contentId,
-        cachedSummaryAvailable,
-      } = await refreshStoredSummaryStatus();
-      const prefetched = readPrefetchedSnapshot({ baseUrl, contentId })
-        || await prefetchPageContext();
+      const { baseUrl, contentId } = await resolvePageContext();
+
+      if (!contentId) {
+        showDialog('Unable to Summarize', 'Cannot determine content ID from URL.');
+        return;
+      }
+
+      const prefetched = readPrefetchedSnapshot({ baseUrl, contentId });
+      const cachedSummaryAvailable = (
+        hasStoredSummary
+        || prefetched?.cachedSummaryAvailable === true
+      );
       const prefetchMatchesCurrentPage = (
         prefetched?.contentId === contentId
         && normalizeBaseUrlForKey(prefetched?.baseUrl) === normalizeBaseUrlForKey(baseUrl)
@@ -1221,11 +1325,6 @@ function FloatingSummarizeButton({
       const modalMetadata = prefetchMatchesCurrentPage
         ? mergeMetadataSnapshot(prefetched?.metadata, runtimeMetadata)
         : runtimeMetadata;
-
-      if (!contentId) {
-        showDialog('Unable to Summarize', 'Cannot determine content ID from URL.');
-        return;
-      }
 
       if (!cachedSummaryAvailable) {
         const hasApiKey = await hasConfiguredOpenAiKey();
@@ -1263,6 +1362,8 @@ function FloatingSummarizeButton({
           void refreshStoredSummaryStatus({ baseUrl, contentId });
         },
       );
+      void refreshStoredSummaryStatus({ baseUrl, contentId });
+      if (!prefetched) void prefetchPageContext();
     } finally {
       setIsLoading(false);
     }
@@ -1426,8 +1527,7 @@ export function bootstrapContentApp() {
   removeContentModalHost();
 
   const resolveCurrentSummaryAvailability = async () => {
-    const baseUrl = detectConfluenceBaseUrl();
-    const contentId = await extractContentIdFromUrl(window.location.pathname);
+    const { baseUrl, contentId } = await resolveCurrentPageContext();
     if (!contentId) return false;
     return getStoredSummaryStatus(contentId, baseUrl);
   };

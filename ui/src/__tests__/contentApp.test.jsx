@@ -5,6 +5,7 @@ const LOADER_FLAG = '__enhancedConfluenceContentAppLoaded';
 const ROOT_ID = 'enhanced-content-app-root';
 const MODAL_HOST_ID = 'enhanced-content-ai-modal-host';
 const MODAL_IFRAME_ID = 'enhanced-content-ai-modal-frame';
+const MODAL_BOOTSTRAP_ID = 'enhanced-content-ai-modal-bootstrap';
 const AI_MODAL_BOUNDS_MESSAGE = 'enhanced-ai-modal-bounds';
 const AI_MODAL_THEME_MESSAGE = 'enhanced-ai-modal-theme';
 
@@ -138,9 +139,20 @@ async function flushMany(count = 5) {
   }
 }
 
+async function flushTask() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await flushMany();
+}
+
 function clickByAriaLabel(label) {
   const el = document.querySelector(`[aria-label="${label}"]`);
-  if (!el) throw new Error(`Element with aria-label "${label}" not found`);
+  if (!el) {
+    const available = [...document.querySelectorAll('[aria-label]')]
+      .map((node) => node.getAttribute('aria-label'));
+    throw new Error(`Element with aria-label "${label}" not found. Available: ${available.join(', ')}`);
+  }
   act(() => {
     el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
@@ -273,7 +285,7 @@ describe('contentApp', () => {
 
     const { bootstrapContentApp } = await loadContentAppModule();
     bootstrapContentApp();
-    await flushMany();
+    await flushTask();
 
     clickByAriaLabel('Open Summary and Q&A');
     await flushMany();
@@ -299,6 +311,41 @@ describe('contentApp', () => {
     const summarizeButton = document.querySelector('.enhanced-fab-btn.enhanced-fab-summarize');
     expect(summarizeButton?.getAttribute('data-label')).toBe('Open summary and chat');
     expect(summarizeButton?.classList.contains('has-summary')).toBe(true);
+  });
+
+  it('opens the content modal without repeating page lookup or waiting for summary refresh', async () => {
+    const runtime = createChromeMock({
+      enableFloatingSummarize: true,
+      enableAiFeatures: true,
+      localApiKey: 'local-key',
+      storedSummariesByContentId: { 12345: true },
+    });
+    global.chrome = runtime.chrome;
+    window.history.replaceState({}, '', '/display/ENG/My+Page');
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ results: [{ id: '12345' }] }),
+    });
+
+    const { bootstrapContentApp } = await loadContentAppModule();
+    bootstrapContentApp();
+    await flushTask();
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const originalSendMessage = runtime.runtimeSendMessage.getMockImplementation();
+    runtime.runtimeSendMessage.mockImplementation((message, callback) => {
+      if (message?.dbAction && message.store === 'summaries' && message.op === 'get') return;
+      originalSendMessage(message, callback);
+    });
+
+    clickByAriaLabel('Open Existing Summary and Q&A');
+    await flushMany();
+
+    expect(document.getElementById(MODAL_HOST_ID)).toBeTruthy();
+    expect(document.getElementById(MODAL_BOOTSTRAP_ID)?.textContent).toContain(
+      'Opening Summary and Q&A',
+    );
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('passes runtime fallback metadata into content-modal params when prefetched metadata is missing', async () => {
@@ -330,6 +377,12 @@ describe('contentApp', () => {
 
     const iframe = document.getElementById('enhanced-content-ai-modal-frame');
     expect(iframe).toBeTruthy();
+    const bootstrapPanel = document.getElementById(MODAL_BOOTSTRAP_ID);
+    expect(bootstrapPanel?.style.backgroundColor).toBe('rgb(28, 34, 39)');
+    expect(bootstrapPanel?.style.borderColor).toBe('transparent');
+    expect(bootstrapPanel?.firstElementChild?.style.borderBottomColor).toBe(
+      'rgba(185, 204, 222, 0.28)',
+    );
     const modalUrl = new URL(String(iframe.getAttribute('src') || ''), window.location.origin);
     expect(modalUrl.searchParams.get('spaceName')).toBe('Engineering');
     expect(modalUrl.searchParams.get('spaceKey')).toBe('ENG');
@@ -346,7 +399,7 @@ describe('contentApp', () => {
     );
   });
 
-  it('clips the content-modal iframe to validated bounds from its own frame', async () => {
+  it('clips the content-modal iframe exactly to validated bounds from its own frame', async () => {
     const runtime = createChromeMock({
       enableFloatingSummarize: true,
       enableAiFeatures: true,
@@ -364,6 +417,7 @@ describe('contentApp', () => {
 
     const iframe = document.getElementById(MODAL_IFRAME_ID);
     expect(iframe).toBeTruthy();
+    expect(document.getElementById(MODAL_BOOTSTRAP_ID)).toBeTruthy();
     expect(iframe.style.getPropertyValue('clip-path')).toBe('inset(50% round 16px)');
     expect(iframe.style.getPropertyPriority('clip-path')).toBe('important');
     expect(iframe.style.getPropertyValue('mask-image')).toBe('');
@@ -378,11 +432,17 @@ describe('contentApp', () => {
       },
     }));
 
+    act(() => {
+      iframe.dispatchEvent(new Event('load'));
+    });
+
     const clipPath = iframe.style.getPropertyValue('clip-path');
     expect(clipPath).toBe(
       `inset(80px ${window.innerWidth - 760}px ${window.innerHeight - 560}px 120px round 16px)`,
     );
     expect(iframe.style.getPropertyPriority('clip-path')).toBe('important');
+    expect(iframe.style.opacity).toBe('1');
+    expect(document.getElementById(MODAL_BOOTSTRAP_ID)).toBeFalsy();
 
     window.dispatchEvent(new MessageEvent('message', {
       source: contentWindow,
@@ -393,6 +453,43 @@ describe('contentApp', () => {
       },
     }));
     expect(iframe.style.getPropertyValue('clip-path')).toBe(clipPath);
+  });
+
+  it('clips against the iframe client box when Chrome innerWidth includes a scrollbar gutter', async () => {
+    const runtime = createChromeMock({
+      enableFloatingSummarize: true,
+      enableAiFeatures: true,
+      localApiKey: 'local-key',
+      storedSummariesByContentId: { 12345: true },
+    });
+    global.chrome = runtime.chrome;
+
+    const { bootstrapContentApp } = await loadContentAppModule();
+    bootstrapContentApp();
+    await flushMany();
+
+    clickByAriaLabel('Open Existing Summary and Q&A');
+    await flushMany();
+
+    const iframe = document.getElementById(MODAL_IFRAME_ID);
+    Object.defineProperties(iframe, {
+      clientWidth: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 700 },
+    });
+    const contentWindow = iframe.contentWindow;
+    window.dispatchEvent(new MessageEvent('message', {
+      source: contentWindow,
+      origin: 'https://extension.local',
+      data: {
+        type: AI_MODAL_BOUNDS_MESSAGE,
+        bounds: { x: 100, y: 50, width: 800, height: 600 },
+      },
+    }));
+
+    expect(window.innerWidth).toBeGreaterThan(1000);
+    expect(iframe.style.getPropertyValue('clip-path')).toBe(
+      'inset(50px 100px 50px 100px round 16px)',
+    );
   });
 
   it('ignores modal bounds messages from other windows and origins', async () => {

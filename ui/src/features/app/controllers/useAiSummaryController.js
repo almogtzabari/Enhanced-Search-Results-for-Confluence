@@ -393,9 +393,26 @@ Content (HTML): ${bodyHtml}
     const requestId = summaryRequestSeqRef.current + 1;
     summaryRequestSeqRef.current = requestId;
     activeModalRequestRef.current = { requestId, contentId };
+    const useBlockingLoader = !(forceResummarize && aiModalOpen);
+
+    // The content-page iframe starts fully transparent and clipped until the
+    // modal reports its bounds. Render its loading shell before any extension
+    // storage or permission preflight so the host can reveal it immediately.
+    if (modalOnlyMode && isActiveModalRequest(requestId, contentId)) {
+      setAiContextBaseUrl(effectiveBaseUrl);
+      if (useBlockingLoader) {
+        setAiModalLoadingTitle(AI_LOADING_TITLE_BUILDING);
+        setAiModalLoading(true);
+      }
+      setAiActiveItem(normalizedPageData);
+      if (!aiModalOpen) setAiModalOpen(true);
+    }
+
     const preflightStoredSummary = !forceResummarize
       ? (cachedSummaryByIdRef.current[contentId] || await getStoredSummary(contentId, effectiveBaseUrl))
       : null;
+    if (!isActiveModalRequest(requestId, contentId)) return;
+
     const loadingTitle = preflightStoredSummary?.summaryHtml
       ? AI_LOADING_TITLE_CACHED
       : AI_LOADING_TITLE_BUILDING;
@@ -407,6 +424,7 @@ Content (HTML): ${bodyHtml}
       try {
         await getAiRuntimeSettings({ requireApiKey: true, requestEndpointPermission: false });
       } catch (err) {
+        if (!isActiveModalRequest(requestId, contentId)) return;
         const message = err?.message || 'Unknown error';
         const isApiKeyIssue = /api key/i.test(message);
         openNoticeDialog({
@@ -416,12 +434,12 @@ Content (HTML): ${bodyHtml}
             : message,
           tone: 'error',
         });
+        if (modalOnlyMode) setAiModalLoading(false);
         return;
       }
     }
 
     if (modalOnlyMode && isActiveModalRequest(requestId, contentId)) {
-      const useBlockingLoader = !(forceResummarize && aiModalOpen);
       setAiContextBaseUrl(effectiveBaseUrl);
       if (useBlockingLoader) {
         setAiModalLoadingTitle(loadingTitle);

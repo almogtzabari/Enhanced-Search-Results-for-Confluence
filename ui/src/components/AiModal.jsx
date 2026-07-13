@@ -440,14 +440,22 @@ export function AiModal({
       : null;
     resizeObserver?.observe(aiModalRef.current);
     window.addEventListener('resize', scheduleBounds);
-    scheduleBounds();
+    // Firefox can suspend animation frames for the initially invisible, fully
+    // clipped iframe. Post once immediately so the host can reveal it; keep
+    // subsequent resize updates coalesced through requestAnimationFrame.
+    postBounds();
+    // Loading and font/layout transitions can move the centered modal without
+    // changing its size, which ResizeObserver does not report. Re-measure once
+    // the new layout has settled so the host clip cannot cut off the right edge.
+    const settledBoundsTimerId = window.setTimeout(postBounds, 100);
 
     return () => {
+      window.clearTimeout(settledBoundsTimerId);
       if (animationFrameId) window.cancelAnimationFrame(animationFrameId);
       resizeObserver?.disconnect();
       window.removeEventListener('resize', scheduleBounds);
     };
-  }, [modalOnlyMode, aiModalOpen, aiModalRef]);
+  }, [modalOnlyMode, aiModalOpen, aiModalLoading, aiModalRef]);
 
   if (!aiModalOpen) return null;
 
@@ -462,30 +470,6 @@ export function AiModal({
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div
-          class="ai-modal-resizer ai-modal-resizer-left"
-          onPointerDown={(e) => startAiModalResize(e, 'left')}
-          onDblClick={resetAiModalWidth}
-          title="Drag to resize (double-click to reset)"
-        />
-        <div
-          class="ai-modal-resizer ai-modal-resizer-right"
-          onPointerDown={(e) => startAiModalResize(e, 'right')}
-          onDblClick={resetAiModalWidth}
-          title="Drag to resize (double-click to reset)"
-        />
-        <div
-          class="ai-modal-height-resizer ai-modal-height-resizer-top"
-          onPointerDown={(e) => startAiModalHeightResize(e, 'top')}
-          onDblClick={resetAiModalHeight}
-          title="Drag to resize height (double-click to reset)"
-        />
-        <div
-          class="ai-modal-height-resizer"
-          onPointerDown={(e) => startAiModalHeightResize(e, 'bottom')}
-          onDblClick={resetAiModalHeight}
-          title="Drag to resize height (double-click to reset)"
-        />
         <div class="ai-modal-head">
           <div class="ai-modal-title">
             {aiActiveItem && (
@@ -746,6 +730,34 @@ export function AiModal({
             </div>
           </div>
         )}
+        <div
+          class="ai-modal-resizer ai-modal-resizer-left"
+          onPointerDown={(e) => startAiModalResize(e, 'left')}
+          onDblClick={resetAiModalWidth}
+          title="Drag to resize (double-click to reset)"
+        />
+        <div
+          class="ai-modal-resizer ai-modal-resizer-right"
+          onPointerDown={(e) => startAiModalResize(e, 'right')}
+          onDblClick={resetAiModalWidth}
+          title="Drag to resize (double-click to reset)"
+        />
+        <div
+          class="ai-modal-height-resizer ai-modal-height-resizer-top"
+          onPointerDown={(e) => startAiModalHeightResize(e, 'top')}
+          onDblClick={resetAiModalHeight}
+          title="Drag to resize height (double-click to reset)"
+        />
+        <div
+          class="ai-modal-height-resizer"
+          onPointerDown={(e) => startAiModalHeightResize(e, 'bottom')}
+          onDblClick={resetAiModalHeight}
+          title="Drag to resize height (double-click to reset)"
+        />
+        <div class="ai-modal-side-hints" aria-hidden="true">
+          <span class="ai-modal-side-hint ai-modal-side-hint-left" />
+          <span class="ai-modal-side-hint ai-modal-side-hint-right" />
+        </div>
       </div>
     </div>
   );

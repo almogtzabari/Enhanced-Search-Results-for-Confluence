@@ -156,6 +156,9 @@ describe('AiModal', () => {
 
     const verticalResizers = view.container.querySelectorAll('.ai-modal-resizer');
     const heightResizers = view.container.querySelectorAll('.ai-modal-height-resizer');
+    const sideHints = view.container.querySelectorAll('.ai-modal-side-hint');
+    expect(sideHints).toHaveLength(2);
+    expect(view.container.querySelector('.ai-modal-side-hints')?.getAttribute('aria-hidden')).toBe('true');
     act(() => {
       verticalResizers[0].dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
       heightResizers[1].dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
@@ -180,12 +183,19 @@ describe('AiModal', () => {
   it('reports content-modal bounds only to the configured Confluence origin', async () => {
     const originalParent = window.parent;
     const parentWindow = { postMessage: vi.fn() };
+    const animationFrameCallbacks = [];
+    const timeoutCallbacks = [];
     const requestAnimationFrame = vi.spyOn(window, 'requestAnimationFrame')
       .mockImplementation((callback) => {
-        callback(0);
-        return 1;
+        animationFrameCallbacks.push(callback);
+        return animationFrameCallbacks.length;
       });
     const cancelAnimationFrame = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    const setTimeout = vi.spyOn(window, 'setTimeout').mockImplementation((callback) => {
+      timeoutCallbacks.push(callback);
+      return timeoutCallbacks.length;
+    });
+    const clearTimeout = vi.spyOn(window, 'clearTimeout').mockImplementation(() => {});
     const getBoundingClientRect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
       .mockReturnValue({
         x: 120,
@@ -211,7 +221,8 @@ describe('AiModal', () => {
     Object.defineProperty(window, 'parent', { configurable: true, value: parentWindow });
 
     try {
-      const view = mount(createProps({ modalOnlyMode: true }));
+      const props = createProps({ modalOnlyMode: true });
+      const view = mount(props);
       await flush();
 
       expect(parentWindow.postMessage).toHaveBeenCalledWith({
@@ -220,14 +231,36 @@ describe('AiModal', () => {
       }, 'https://example.atlassian.net');
       expect(resizeObservers).toHaveLength(1);
       expect(resizeObservers[0].observe).toHaveBeenCalledWith(view.container.querySelector('.ai-modal'));
+      expect(animationFrameCallbacks).toHaveLength(0);
+      expect(timeoutCallbacks).toHaveLength(1);
+
+      resizeObservers[0].callback();
+      expect(animationFrameCallbacks).toHaveLength(1);
+      expect(parentWindow.postMessage).toHaveBeenCalledTimes(1);
+
+      animationFrameCallbacks.shift()(0);
+      expect(parentWindow.postMessage).toHaveBeenCalledTimes(2);
+
+      view.rerender({ ...props, aiModalLoading: true });
+      await flush();
+      expect(parentWindow.postMessage).toHaveBeenCalledTimes(3);
+      expect(resizeObservers).toHaveLength(2);
+      expect(timeoutCallbacks).toHaveLength(2);
+
+      timeoutCallbacks[1]();
+      expect(parentWindow.postMessage).toHaveBeenCalledTimes(4);
 
       view.unmount();
       expect(resizeObservers[0].disconnect).toHaveBeenCalledTimes(1);
+      expect(resizeObservers[1].disconnect).toHaveBeenCalledTimes(1);
+      expect(clearTimeout).toHaveBeenCalledTimes(2);
     } finally {
       Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
       global.ResizeObserver = originalResizeObserver;
       requestAnimationFrame.mockRestore();
       cancelAnimationFrame.mockRestore();
+      setTimeout.mockRestore();
+      clearTimeout.mockRestore();
       getBoundingClientRect.mockRestore();
     }
   });

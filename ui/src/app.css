@@ -88,8 +88,19 @@ body {
   background: var(--scroll-corner);
 }
 
+html.modal-only-frame,
+body.modal-only-frame {
+  overflow: hidden;
+}
+
 body.modal-only-frame {
   background: transparent !important;
+}
+
+/* Gecko uses the embedded document canvas while antialiasing the clipped
+   content iframe. Keep that canvas dark without painting over iframe content. */
+html.modal-only-frame.dark-mode {
+  background: #1c2227;
 }
 
 .v2-root {
@@ -1760,6 +1771,12 @@ body.dark-mode .ai-modal {
   box-shadow: 0 24px 56px rgba(4, 8, 12, 0.58);
 }
 
+/* The content modal is clipped to this panel inside a transparent iframe.
+   Avoid a bright composited edge in dark Confluence themes. */
+body.modal-only-frame.dark-mode .ai-modal {
+  border-color: transparent;
+}
+
 .ai-modal-resizer {
   position: absolute;
   top: 0;
@@ -1794,6 +1811,57 @@ body.dark-mode .ai-modal {
 
 .ai-modal-resizer-right {
   right: 0;
+}
+
+/* Keep both side handles inside the content iframe's clipped panel bounds. */
+body.modal-only-frame .ai-modal-resizer {
+  width: 16px;
+  z-index: 10;
+}
+
+body.modal-only-frame .ai-modal-resizer-left {
+  left: 2px;
+}
+
+body.modal-only-frame .ai-modal-resizer-right {
+  right: 2px;
+}
+
+/* Render content-modal side hints in one shared overlay. Gecko can omit the
+   right resizer's pseudo-element even when its hit target is fully visible. */
+.ai-modal-side-hints {
+  display: none;
+}
+
+body.modal-only-frame .ai-modal-side-hints {
+  --ai-modal-side-hint-inset: 16px;
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  display: block;
+  pointer-events: none;
+}
+
+body.modal-only-frame .ai-modal-side-hint {
+  position: absolute;
+  top: 17.5%;
+  bottom: 17.5%;
+  width: var(--resize-hint-thickness);
+  border-radius: 2px;
+  background: var(--resize-hint-base);
+  opacity: var(--resize-hint-opacity);
+}
+
+body.modal-only-frame .ai-modal-side-hint-left {
+  left: var(--ai-modal-side-hint-inset);
+}
+
+body.modal-only-frame .ai-modal-side-hint-right {
+  right: var(--ai-modal-side-hint-inset);
+}
+
+body.modal-only-frame .ai-modal-resizer::before {
+  opacity: 0;
 }
 
 .ai-modal-height-resizer {
