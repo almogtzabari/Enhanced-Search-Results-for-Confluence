@@ -1242,14 +1242,47 @@ async function runDarkModeSmoke({
   confluencePage,
   config,
 }) {
+  const confluenceTheme = await confluencePage.evaluate(() => {
+    const roots = [document.documentElement, document.body].filter(Boolean);
+    for (const root of roots) {
+      const colorMode = String(root.getAttribute('data-color-mode') || '').trim().toLowerCase();
+      if (colorMode === 'dark' || colorMode === 'light') return colorMode;
+    }
+    for (const root of roots) {
+      const colorScheme = String(window.getComputedStyle(root).colorScheme || '').trim().toLowerCase();
+      if (colorScheme === 'dark' || colorScheme === 'light') return colorScheme;
+    }
+    return '';
+  });
+  assertSmoke(
+    confluenceTheme === 'dark' || confluenceTheme === 'light',
+    'Could not detect the Confluence page theme for content-modal theme smoke.',
+  );
+  const extensionDarkMode = confluenceTheme !== 'dark';
+
   await viewsPage.bringToFront();
-  await setSyncStorage(extensionPage, { darkMode: true, syncThemeToConfluencePage: true });
-  await viewsPage.locator('body.dark-mode').waitFor({ state: 'attached', timeout: 10000 });
+  await setSyncStorage(extensionPage, { darkMode: extensionDarkMode, syncThemeToConfluencePage: true });
+  await waitForValue('views extension theme preference', () => viewsPage.locator('body').evaluate((body) => body.classList.contains('dark-mode')), (enabled) => enabled === extensionDarkMode, {
+    timeoutMs: 10000,
+    intervalMs: 100,
+  });
 
   await confluencePage.bringToFront();
   await ensureConfluenceLauncher(confluencePage, config);
-  const modalFrame = await openContentModalFromLauncher(confluencePage);
-  await modalFrame.locator('body.dark-mode').waitFor({ state: 'attached', timeout: 15000 });
+  let modalFrame = await openContentModalFromLauncher(confluencePage);
+  await waitForValue('content modal Confluence theme match', () => modalFrame.locator('body').evaluate((body) => body.classList.contains('dark-mode')), (enabled) => enabled === (confluenceTheme === 'dark'), {
+    timeoutMs: 15000,
+    intervalMs: 100,
+  });
+  await modalFrame.locator('.ai-modal-head button[title="Close"]').click();
+  await confluencePage.locator('#enhanced-content-ai-modal-host').waitFor({ state: 'detached', timeout: 15000 });
+
+  await setSyncStorage(extensionPage, { syncThemeToConfluencePage: false });
+  modalFrame = await openContentModalFromLauncher(confluencePage);
+  await waitForValue('content modal extension theme fallback', () => modalFrame.locator('body').evaluate((body) => body.classList.contains('dark-mode')), (enabled) => enabled === extensionDarkMode, {
+    timeoutMs: 15000,
+    intervalMs: 100,
+  });
   await modalFrame.locator('.ai-modal-head button[title="Close"]').click();
   await confluencePage.locator('#enhanced-content-ai-modal-host').waitFor({ state: 'detached', timeout: 15000 });
 

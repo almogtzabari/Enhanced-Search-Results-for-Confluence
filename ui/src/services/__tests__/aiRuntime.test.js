@@ -123,7 +123,7 @@ describe('aiRuntime service', () => {
 
     await expect(promise).resolves.toMatchObject({ output_text: 'completed' });
     expect(onTimeout).not.toHaveBeenCalled();
-    expect(port.disconnect).not.toHaveBeenCalled();
+    expect(port.disconnect).toHaveBeenCalledTimes(1);
   });
 
   it('resolves OpenAI responses via runtime port and extracts output_text', async () => {
@@ -158,6 +158,7 @@ describe('aiRuntime service', () => {
     await expect(promise).resolves.toMatchObject({
       output_text: 'Hello from model',
     });
+    expect(port.disconnect).toHaveBeenCalledTimes(1);
   });
 
   it('rejects with AbortError when request signal aborts', async () => {
@@ -201,6 +202,27 @@ describe('aiRuntime service', () => {
     port.__emitDisconnect();
 
     await expect(promise).rejects.toThrow('Port closed unexpectedly');
+  });
+
+  it('uses the Firefox port error when a connection closes', async () => {
+    const port = createMockPort();
+    port.error = { message: 'Firefox background page unloaded' };
+    global.chrome = {
+      runtime: {
+        connect: vi.fn(() => port),
+        lastError: null,
+      },
+    };
+
+    const promise = sendOpenAIRequest({
+      apiKey: 'k',
+      apiUrl: 'https://api.openai.com/v1',
+      model: 'gpt-5',
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+    port.__emitDisconnect();
+
+    await expect(promise).rejects.toThrow('Firefox background page unloaded');
   });
 
   it('loads runtime settings, preferring local API key and enforcing origin permission', async () => {

@@ -114,6 +114,9 @@ async function validateFirefoxDist() {
       await ensureFile(targetDir, script, 'background script');
     }
   }
+  if (manifest.background.persistent !== true) {
+    fail('Firefox dist must keep its MV2 background page persistent for long OpenAI requests');
+  }
 
   if (!Array.isArray(manifest.optional_permissions)) {
     fail('Firefox dist should include optional_permissions');

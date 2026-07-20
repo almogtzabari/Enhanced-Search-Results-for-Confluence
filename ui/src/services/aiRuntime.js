@@ -82,6 +82,11 @@ export function sendOpenAIRequest({
       if (signal?.removeEventListener) {
         signal.removeEventListener('abort', handleAbort);
       }
+      try {
+        port.disconnect();
+      } catch {
+        // Ignore an already-disconnected port.
+      }
     };
 
     const handleMessage = (response) => {
@@ -94,22 +99,20 @@ export function sendOpenAIRequest({
       settle(resolve, { ...data, output_text: data.output_text || extractOutputText(data) });
     };
 
-    const handleDisconnect = () => {
+    const handleDisconnect = (disconnectedPort) => {
       if (signal?.aborted) {
         settle(reject, createAbortError());
         return;
       }
-      const message = chrome.runtime.lastError?.message || 'OpenAI connection closed';
+      const message = disconnectedPort?.error?.message
+        || port?.error?.message
+        || chrome.runtime.lastError?.message
+        || 'OpenAI connection closed';
       settle(reject, new Error(message));
     };
 
     const handleAbort = () => {
       if (settled) return;
-      try {
-        port.disconnect();
-      } catch {
-        // Ignore disconnect errors.
-      }
       settle(reject, createAbortError());
     };
 

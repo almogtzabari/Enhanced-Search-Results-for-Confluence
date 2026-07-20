@@ -32,8 +32,8 @@ export const MIN_AI_CHAT_FONT_SIZE_PX = 10;
 export const MAX_AI_CHAT_FONT_SIZE_PX = 28;
 export const AI_FONT_SIZE_STEP_PX = 1;
 // Responses with high reasoning effort or extensive output can legitimately
-// take several minutes. The runtime port keeps both Chromium MV3 workers and
-// Firefox MV2 background pages alive while the request is in flight.
+// take several minutes. The runtime port keeps Chromium MV3 active, while the
+// Firefox build uses a persistent MV2 background page for the same request.
 export const OPENAI_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
 export const MIN_TABLE_COL_WIDTH = 70;
 

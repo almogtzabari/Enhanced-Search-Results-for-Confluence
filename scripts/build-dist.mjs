@@ -113,7 +113,10 @@ function buildTargetManifest(baseManifest, target) {
 
     manifest.background = {
       scripts: ['background/background.js'],
-      persistent: false,
+      // Firefox/Zen can unload an MV2 event page while a long OpenAI fetch is
+      // still in flight, which disconnects the runtime port at about 30s.
+      // Keep only the Firefox background page persistent; Chrome remains MV3.
+      persistent: true,
       type: 'module',
     };
 
